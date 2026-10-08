@@ -165,6 +165,17 @@ def format_bytes_summary(value: str | int) -> str:
     return rendered.replace(",", "#").replace(".", ",").replace("#", ".")
 
 
+def format_minutes_as_days(value: str | int) -> str:
+    """Return the minute value as a concise pt-BR day equivalent."""
+
+    text = str(value).strip()
+    if not text or not text.isdecimal():
+        return "Valor inválido"
+    days = int(text) / 1_440
+    unit = "dia" if days == 1 else "dias"
+    return f"{days:.2f} {unit}".replace(".", ",")
+
+
 def _projected_bytes(value: Any) -> int | None:
     """Normalize a planner byte value without treating unknown as zero."""
 
@@ -1001,6 +1012,7 @@ __all__ = [
     "default_username_for_perimeter",
     "format_watermark",
     "format_bytes_summary",
+    "format_minutes_as_days",
     "generate_watermark_validation_script",
     "label_for_code",
     "parse_optional_integer",

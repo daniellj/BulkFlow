@@ -39,6 +39,7 @@ from .gui_model import (
     connection_summary_rows,
     default_gui_config,
     format_bytes_summary,
+    format_minutes_as_days,
     format_watermark,
     label_for_code,
     parse_required_integer,
@@ -854,6 +855,7 @@ class BcpGuiApplication:
             "max_file_bytes": tk.StringVar(),
             "minimum_free_space_bytes": tk.StringVar(),
         }
+        self.cdc_retention_days = tk.StringVar()
         self.endpoint_enabled: dict[str, tk.BooleanVar] = {
             "source": tk.BooleanVar(value=True),
             "bronze_destination": tk.BooleanVar(value=True),
@@ -901,6 +903,9 @@ class BcpGuiApplication:
             self.global_variables[name].trace_add(
                 "write", lambda *_args, field=name: self._update_byte_display(field)
             )
+        self.global_variables["cdc_retention_minutes"].trace_add(
+            "write", lambda *_args: self._update_cdc_retention_days()
+        )
         self.global_variables["odbc_driver"].trace_add(
             "write", lambda *_args: self._update_prerequisite_descriptions()
         )
@@ -1223,10 +1228,37 @@ class BcpGuiApplication:
             _help_label(advanced, label, name).grid(
                 row=row, column=column, sticky="w", pady=5
             )
-            entry = ttk.Entry(advanced, textvariable=self.global_variables[name])
-            entry.grid(
-                row=row, column=column + 1, sticky="ew", padx=(8, 20 if column == 0 else 0), pady=5
-            )
+            entry_parent = advanced
+            if name == "cdc_retention_minutes":
+                entry_parent = ttk.Frame(advanced)
+                entry_parent.grid(
+                    row=row,
+                    column=column + 1,
+                    sticky="ew",
+                    padx=(8, 20 if column == 0 else 0),
+                    pady=5,
+                )
+                entry_parent.columnconfigure(0, weight=1)
+            entry = ttk.Entry(entry_parent, textvariable=self.global_variables[name])
+            if name == "cdc_retention_minutes":
+                entry.grid(row=0, column=0, sticky="ew")
+                days_display = ttk.Entry(
+                    entry_parent,
+                    textvariable=self.cdc_retention_days,
+                    state="readonly",
+                    width=18,
+                    bootstyle="secondary",
+                )
+                days_display.grid(row=0, column=1, sticky="ew", padx=(6, 0))
+                _attach_help(days_display, name)
+            else:
+                entry.grid(
+                    row=row,
+                    column=column + 1,
+                    sticky="ew",
+                    padx=(8, 20 if column == 0 else 0),
+                    pady=5,
+                )
             _attach_help(entry, name)
             if name == "control_schema":
                 # ``dbo`` is a fixed product default (and not one of the
@@ -1238,6 +1270,10 @@ class BcpGuiApplication:
                 )
                 entry.configure(state="disabled")
                 self._control_schema_entry = entry
+            elif name == "cdc_retention_minutes":
+                self._register_default_widget(
+                    entry, self.global_variables[name], "262800", "entry"
+                )
             elif default is not None:
                 self._register_default_widget(
                     entry, self.global_variables[name], default, "entry"
@@ -1353,6 +1389,10 @@ class BcpGuiApplication:
     def _update_byte_display(self, field: str) -> None:
         value = self.global_variables[field].get()
         self.byte_display_variables[field].set(format_bytes_summary(str(value)))
+
+    def _update_cdc_retention_days(self) -> None:
+        value = self.global_variables["cdc_retention_minutes"].get()
+        self.cdc_retention_days.set(format_minutes_as_days(value))
 
     def _select_directory(self, variable: tk.Variable) -> None:
         selected = filedialog.askdirectory(parent=self.root, title="Selecionar diretório")
@@ -1512,12 +1552,6 @@ class BcpGuiApplication:
             row=0, column=3, sticky="ew", padx=(8, 0), pady=5
         )
         _attach_help(username, "username")
-        self._register_default_widget(
-            username,
-            variables["username"],
-            self._current_username_default,
-            "entry",
-        )
         _help_label(auth, "Domínio (credencial Windows)", "domain").grid(
             row=1, column=0, sticky="w", pady=5
         )

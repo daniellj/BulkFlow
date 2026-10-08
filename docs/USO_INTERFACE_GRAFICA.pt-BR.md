@@ -95,8 +95,9 @@ não vincula as conexões: cada endpoint pode usar outro usuário e outra senha.
 - **Fator de segurança:** multiplica a estimativa de bytes; default `1.25`.
 - **Retenção do CDC (minutos):** prazo do job de cleanup na Origem; default
   `262800`, equivalente ao prazo de negócio de seis meses (aproximadamente
-  182,5 dias). Informe apenas dígitos, sem ponto separador de milhar; o intervalo
-  aceito é de `1` a `52494800` minutos.
+  182,5 dias). A caixa cinza ao lado recalcula essa equivalência em dias à
+  medida que o valor em minutos é alterado. Informe apenas dígitos, sem ponto
+  separador de milhar; o intervalo aceito é de `1` a `52494800` minutos.
 - **Esquema de controle:** valor obrigatório `dbo`. No destino de dados ativo,
   o contrato persistente usa `dbo.execucao`, `dbo.execucao_tabela`,
   `dbo.execucao_lote` e a tabela técnica `dbo.versao_esquema`.

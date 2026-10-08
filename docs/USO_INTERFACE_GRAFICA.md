@@ -94,8 +94,10 @@ username and password.
 - **Fator de segurança:** multiplies the byte estimate; default `1.25`.
 - **Retenção do CDC (minutos):** retention period of the Source cleanup job;
   default `262800`, equivalent to the six-month business period
-  (approximately 182.5 days). Enter digits only, without a thousands
-  separator; the accepted range is `1` through `52494800` minutes.
+  (approximately 182.5 days). The adjacent gray box recalculates this
+  equivalent in days whenever the minute value changes. Enter digits only,
+  without a thousands separator; the accepted range is `1` through `52494800`
+  minutes.
 - **Esquema de controle:** required value `dbo`. In the active data destination,
   the persistent contract uses `dbo.execucao`, `dbo.execucao_tabela`,
   `dbo.execucao_lote`, and the technical table `dbo.versao_esquema`.

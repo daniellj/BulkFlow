@@ -23,6 +23,7 @@ from bcp_engine.gui_model import (  # noqa: E402
     default_gui_config,
     default_username_for_perimeter,
     format_bytes_summary,
+    format_minutes_as_days,
     format_watermark,
     parse_optional_integer,
     parse_watermark,
@@ -125,6 +126,12 @@ class GuiModelTests(unittest.TestCase):
 
     def test_gui_exposes_only_metadata_row_count_projection(self):
         self.assertEqual(ROW_COUNT_LABELS, {"Metadados (aproximado)": "metadata"})
+
+    def test_cdc_retention_minutes_are_presented_as_days(self):
+        self.assertEqual(format_minutes_as_days(262_800), "182,50 dias")
+        self.assertEqual(format_minutes_as_days("1440"), "1,00 dia")
+        self.assertEqual(format_minutes_as_days("x"), "Valor inválido")
+        self.assertEqual(format_minutes_as_days(-1), "Valor inválido")
 
     def test_default_form_contract_is_infrastructure_neutral(self):
         config = default_gui_config(ROOT)
@@ -917,6 +924,10 @@ class GuiConstructionTests(unittest.TestCase):
                 application.global_variables["destination_sql_directory"].get(),
                 application.global_variables["executor_directory"].get(),
             )
+            self.assertEqual(application.cdc_retention_days.get(), "182,50 dias")
+            application.global_variables["cdc_retention_minutes"].set("1440")
+            self.assertEqual(application.cdc_retention_days.get(), "1,00 dia")
+            application.global_variables["cdc_retention_minutes"].set("262800")
             application.global_variables["executor_directory"].set(
                 r"C:\transferencia\exportacao-a"
             )
@@ -1061,16 +1072,20 @@ class GuiConstructionTests(unittest.TestCase):
                     id(application.global_variables[name]), highlighted_variables
                 )
             for name in (
-                "cdc_retention_minutes",
                 "executor_directory",
                 "destination_sql_directory",
             ):
                 self.assertNotIn(
                     id(application.global_variables[name]), highlighted_variables
                 )
+            self.assertIn(
+                id(application.global_variables["cdc_retention_minutes"]),
+                highlighted_variables,
+            )
             for endpoint in application.endpoint_variables.values():
                 self.assertIn(id(endpoint["role"]), highlighted_variables)
                 self.assertIn(id(endpoint["odbc_dsn"]), highlighted_variables)
+                self.assertNotIn(id(endpoint["username"]), highlighted_variables)
                 for name in ("instance", "port", "database", "schema"):
                     self.assertNotIn(id(endpoint[name]), highlighted_variables)
         finally:
