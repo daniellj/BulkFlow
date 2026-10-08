@@ -217,7 +217,8 @@ Para adicionar ou editar uma tabela, informe:
   por vírgula, por exemplo `data_referencia, sequencial`; a direção do cursor
   é sempre ascendente;
 - lote opcional por tabela, inicialmente igual ao valor global;
-- flag **Ativar CDC nesta tabela**;
+- flag **Ativar CDC na tabela de origem**; o tooltip informa que a ativação
+  ocorre em `banco_origem.esquema_origem.tabela_origem`;
 - perfil de estrutura opcional, inicialmente herdado do destino;
 - particionamento opcional, habilitado por padrão com `dh_carga` ao adicionar
   uma tabela.

@@ -1078,10 +1078,11 @@ class GuiConstructionTests(unittest.TestCase):
 
     def test_product_name_and_tooltip_inventory(self):
         try:
-            from bcp_engine.gui import FIELD_HELP, PRODUCT_NAME
+            from bcp_engine.gui import FIELD_HELP, PRODUCT_NAME, TABLE_CDC_LABEL
         except ImportError as error:  # pragma: no cover
             self.skipTest(f"Dependência gráfica indisponível: {error}")
         self.assertEqual(PRODUCT_NAME, "BulkFlow - SQL Server Data Export & Load")
+        self.assertEqual(TABLE_CDC_LABEL, "Ativar CDC na tabela de origem")
         required = {
             "perimeter",
             "create_structure_if_needed",
@@ -1117,6 +1118,11 @@ class GuiConstructionTests(unittest.TestCase):
             FIELD_HELP["create_structure_if_needed"],
         )
         self.assertIn("Aplicar DDL", FIELD_HELP["create_structure_if_needed"])
+        self.assertEqual(
+            FIELD_HELP["enable_cdc"],
+            "Ativa e confirma o CDC em "
+            "banco_origem.esquema_origem.tabela_origem antes da exportação.",
+        )
 
 
 if __name__ == "__main__":

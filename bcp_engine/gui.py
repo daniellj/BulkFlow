@@ -72,6 +72,7 @@ RUNTIME_DDL_DIRECTORY = runtime_ddl_directory()
 RUNTIME_CONFIG_DIRECTORY = runtime_config_directory()
 PRODUCT_NAME = "BulkFlow - SQL Server Data Export & Load"
 WINDOW_TITLE = PRODUCT_NAME
+TABLE_CDC_LABEL = "Ativar CDC na tabela de origem"
 DEFAULT_VALUE_COLOR = "#e8f3ff"
 _NO_DEFAULT = object()
 
@@ -189,7 +190,10 @@ FIELD_HELP: dict[str, str] = {
         "A ordem é sempre ascendente; não informe ASC ou DESC."
     ),
     "watermark_validation_script": WATERMARK_VALIDATION_GUIDANCE_PT_BR,
-    "enable_cdc": "Solicita ativação e confirmação do CDC antes de exportar esta tabela.",
+    "enable_cdc": (
+        "Ativa e confirma o CDC em banco_origem.esquema_origem.tabela_origem "
+        "antes da exportação."
+    ),
     "partition_enabled": "Habilita particionamento da tabela de destino pela coluna informada.",
     "partition_column": "Coluna datetime2 usada no particionamento mensal; sugestão: dh_carga.",
     "ddl_area": "Seleciona quais destinos recebem os scripts de estrutura.",
@@ -423,7 +427,7 @@ class TableDialog:
         cdc_container.grid(row=row, column=0, columnspan=3, sticky="w", pady=8)
         cdc = ttk.Checkbutton(
             cdc_container,
-            text="Ativar CDC nesta tabela",
+            text=TABLE_CDC_LABEL,
             variable=self.variables["enable_cdc"],
             bootstyle="round-toggle",
         )

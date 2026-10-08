@@ -218,7 +218,8 @@ To add or edit a table, provide:
 - optional watermark, containing only comma-separated column names, for
   example `data_referencia, sequencial`; cursor direction is always ascending;
 - optional per-table batch size, initially equal to the global value;
-- **Ativar CDC nesta tabela** flag;
+- **Ativar CDC na tabela de origem** flag; its tooltip states that activation
+  occurs on `banco_origem.esquema_origem.tabela_origem`;
 - optional structure profile, initially inherited from the destination;
 - optional partitioning, enabled with `dh_carga` by default when adding a
   table.
