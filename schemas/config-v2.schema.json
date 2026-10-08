@@ -1,0 +1,369 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.example/bcp/config-v2.schema.json",
+  "title": "BulkFlow - SQL Server Data Export & Load - configuração V2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "config_version",
+    "source",
+    "executor_directory",
+    "local_control_directory",
+    "tables"
+  ],
+  "properties": {
+    "config_version": {"const": 2},
+    "scope": {"type": "string", "minLength": 1},
+    "perimeter": {
+      "enum": ["DREADS", "HOMOLOGAÇÃO", "CAPGV"],
+      "default": "DREADS",
+      "description": "Perímetro operacional global. Define apenas o usuário SQL sugerido; cada endpoint permanece editável e independente."
+    },
+    "source": {"$ref": "#/$defs/sourceEndpoint"},
+    "bronze_destination": {"$ref": "#/$defs/destinationEndpoint"},
+    "landing_destination": {"$ref": "#/$defs/destinationEndpoint"},
+    "active_destination": {
+      "const": "bronze",
+      "default": "bronze",
+      "description": "Dados são carregados exclusivamente na Bronze. Landing é destino somente de DDL/evolução."
+    },
+    "execute_import": {"type": "boolean", "default": true},
+    "create_structure_if_needed": {
+      "type": "boolean",
+      "default": true,
+      "description": "Quando true, cria as estruturas de destino ausentes. Quando false, exige que elas j\u00e1 existam."
+    },
+    "allow_schema_evolution": {
+      "type": "boolean",
+      "default": false,
+      "description": "Autoriza apenas ALTER TABLE ADD de colunas de negócio presentes no contrato de origem e ausentes no destino. Nunca remove, renomeia ou altera colunas existentes."
+    },
+    "artifact_reader_sids": {
+      "type": "array",
+      "default": [],
+      "uniqueItems": true,
+      "description": "SIDs Windows específicos que recebem somente leitura/travessia nos artefatos. Executor, SYSTEM e Administradores são implícitos; grupos amplos são rejeitados.",
+      "items": {
+        "type": "string",
+        "pattern": "^[Ss]-1-[0-9]+(?:-[0-9]+)+$",
+        "not": {
+          "enum": ["S-1-1-0", "S-1-5-7", "S-1-5-11", "S-1-5-32-545"]
+        }
+      }
+    },
+    "artifact_writer_sids": {
+      "type": "array",
+      "default": [],
+      "uniqueItems": true,
+      "description": "SIDs Windows específicos que recebem controle total nos artefatos quando a identidade SMB efetiva difere do SID local do executor. Use somente para uma identidade de escrita confiável.",
+      "items": {
+        "type": "string",
+        "pattern": "^[Ss]-1-[0-9]+(?:-[0-9]+)+$",
+        "not": {
+          "enum": ["S-1-1-0", "S-1-5-7", "S-1-5-11", "S-1-5-32-545"]
+        }
+      }
+    },
+    "executor_directory": {"$ref": "#/$defs/executorPath"},
+    "destination_sql_directory": {"$ref": "#/$defs/sqlVisiblePath"},
+    "local_control_directory": {"$ref": "#/$defs/localControlPath"},
+    "rows_per_block": {"type": "integer", "minimum": 1, "maximum": 5000000, "default": 200000},
+    "keyless_direct_load_max_rows": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9223372036854775807,
+      "default": 5000000,
+      "description": "Limite global para copiar em bloco único uma tabela sem PK, UNIQUE ou marca d'água comprovada. A admissão usa contagem aproximada por metadados, sem COUNT_BIG; a quantidade real do BCP é validada antes da importação. Zero desabilita o modo."
+    },
+    "max_file_bytes": {"type": "integer", "minimum": 1, "default": 157286400},
+    "minimum_free_space_bytes": {"type": "integer", "minimum": 0, "default": 10737418240},
+    "delete_confirmed_files": {"type": "boolean", "default": true},
+    "continue_after_table_error": {"type": "boolean", "default": true},
+    "odbc_driver": {"type": "string", "minLength": 1, "default": "ODBC Driver 18 for SQL Server"},
+    "bcp_executable": {"type": "string", "minLength": 1, "default": "bcp"},
+    "connection_timeout_seconds": {"type": "integer", "minimum": 0, "default": 30},
+    "sql_timeout_seconds": {"type": "integer", "minimum": 0, "default": 0},
+    "bcp_timeout_seconds": {"type": "integer", "minimum": 0, "default": 0},
+    "cdc_retention_minutes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 52494800,
+      "default": 262800,
+      "description": "Retenção do job de limpeza do CDC, em minutos. O padrão de 262.800 minutos corresponde a aproximadamente 182,5 dias (seis meses). Só é aplicado quando pelo menos uma tabela solicita CDC. O máximo aceito pelo SQL Server é 52.494.800 minutos."
+    },
+    "control_schema": {"type": "string", "const": "dbo", "default": "dbo"},
+    "tls": {"$ref": "#/$defs/tls"},
+    "estimates": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "row_count_method": {"const": "metadata", "default": "metadata"},
+        "maximum_sample_rows": {"type": "integer", "minimum": 1, "maximum": 1000000, "default": 10000},
+        "safety_factor": {"type": "number", "minimum": 1, "default": 1.25},
+        "on_unavailable": {"enum": ["stop", "warn"], "default": "stop"}
+      }
+    },
+    "batching": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "null_policy": {"const": "reject_table"},
+        "tie_policy": {"const": "complete_group"},
+        "upper_bound_policy": {"const": "capture_at_table_start"},
+        "require_watermark_index": {"type": "boolean", "default": false}
+      }
+    },
+    "structure": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "secondary_indexes_phase": {
+          "enum": ["before_load", "after_table_load"],
+          "default": "before_load"
+        }
+      }
+    },
+    "bronze_event_id": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["strategy"],
+          "properties": {
+            "strategy": {"const": "sequence"},
+            "sequence_name": {"type": "string", "pattern": "\\{destination_table\\}"},
+            "source_column": {"type": "null"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["strategy", "source_column"],
+          "properties": {
+            "strategy": {"const": "source_column"},
+            "sequence_name": {"type": "null"},
+            "source_column": {"$ref": "#/$defs/identifier"}
+          }
+        }
+      ]
+    },
+    "tables": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/table"}
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["execute_import"],
+        "properties": {"execute_import": {"const": false}}
+      },
+      "then": {},
+      "else": {"required": ["destination_sql_directory", "bronze_destination"]}
+    }
+  ],
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[^\\u0000]+$"
+    },
+    "executorPath": {
+      "type": "string",
+      "minLength": 1,
+      "anyOf": [
+        {"pattern": "^(?:[A-Za-z]:\\\\|\\\\\\\\[^\\\\]+\\\\[^\\\\]+)"},
+        {"pattern": "^/"}
+      ]
+    },
+    "sqlVisiblePath": {
+      "type": "string",
+      "minLength": 1,
+      "anyOf": [
+        {"pattern": "^(?:[A-Za-z]:\\\\|\\\\\\\\[^\\\\]+\\\\[^\\\\]+)"},
+        {"pattern": "^/"}
+      ]
+    },
+    "localControlPath": {
+      "type": "string",
+      "minLength": 1,
+      "anyOf": [
+        {"pattern": "^[A-Za-z]:\\\\"},
+        {"pattern": "^/"}
+      ]
+    },
+    "tls": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "encrypt": {"type": "boolean", "default": true},
+        "trust_server_certificate": {"type": "boolean", "default": false},
+        "hostname_in_certificate": {"type": "string", "minLength": 1},
+        "bcp_switch": {"enum": ["-Ys", "-Ym", "-Yo"], "default": "-Ym"}
+      }
+    },
+    "secret": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["provider"],
+          "properties": {
+            "provider": {"const": "prompt"},
+            "reference": {"type": "null"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["provider", "reference"],
+          "properties": {
+            "provider": {"enum": ["env", "windows_credential_manager"]},
+            "reference": {"type": "string", "minLength": 1}
+          }
+        }
+      ]
+    },
+    "authentication": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": {"type": {"const": "windows_integrated"}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "password"],
+          "properties": {
+            "type": {"const": "sql"},
+            "username": {"type": "string"},
+            "password": {"$ref": "#/$defs/secret"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "domain", "username", "password"],
+          "properties": {
+            "type": {"const": "windows_credentials"},
+            "domain": {"type": "string", "minLength": 1},
+            "username": {"type": "string", "minLength": 1},
+            "password": {"$ref": "#/$defs/secret"}
+          }
+        }
+      ]
+    },
+    "sourceEndpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["instance", "port", "database", "schema", "authentication"],
+      "properties": {
+        "instance": {"type": "string", "minLength": 1},
+        "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "database": {"$ref": "#/$defs/identifier"},
+        "read_database": {"$ref": "#/$defs/identifier"},
+        "schema": {"$ref": "#/$defs/identifier"},
+        "authentication": {"$ref": "#/$defs/authentication"},
+        "odbc_driver": {"type": "string", "minLength": 1},
+        "odbc_dsn": {"type": "string", "minLength": 1, "maxLength": 32, "pattern": "^[^;{}]+$"},
+        "connection_timeout_seconds": {"type": "integer", "minimum": 0},
+        "sql_timeout_seconds": {"type": "integer", "minimum": 0},
+        "tls": {"$ref": "#/$defs/tls"}
+      }
+    },
+    "destinationEndpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["instance", "port", "database", "schema", "structure_profile", "authentication"],
+      "properties": {
+        "instance": {"type": "string", "minLength": 1},
+        "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "database": {"$ref": "#/$defs/identifier"},
+        "schema": {"$ref": "#/$defs/identifier"},
+        "structure_profile": {"type": "string", "minLength": 1},
+        "authentication": {"$ref": "#/$defs/authentication"},
+        "odbc_driver": {"type": "string", "minLength": 1},
+        "odbc_dsn": {"type": "string", "minLength": 1, "maxLength": 32, "pattern": "^[^;{}]+$"},
+        "connection_timeout_seconds": {"type": "integer", "minimum": 0},
+        "sql_timeout_seconds": {"type": "integer", "minimum": 0},
+        "tls": {"$ref": "#/$defs/tls"}
+      }
+    },
+    "watermark": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["columns"],
+      "properties": {
+        "columns": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "name": {"$ref": "#/$defs/identifier"},
+              "direction": {"const": "ASC", "default": "ASC"}
+            }
+          }
+        }
+      }
+    },
+    "metadataValue": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source_column"],
+          "properties": {"source_column": {"$ref": "#/$defs/identifier"}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["constant"],
+          "properties": {
+            "constant": {"type": ["string", "number", "integer", "boolean", "null"]},
+            "sql_type": {"type": "string", "minLength": 1}
+          }
+        }
+      ]
+    },
+    "table": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_table"],
+      "properties": {
+        "source_database": {
+          "$ref": "#/$defs/identifier",
+          "description": "Banco de origem exibido por tabela. Nesta vers\u00e3o deve corresponder a source.database; n\u00e3o cria uma conex\u00e3o independente."
+        },
+        "source_table": {"$ref": "#/$defs/identifier"},
+        "destination_database": {
+          "$ref": "#/$defs/identifier",
+          "description": "Banco de destino exibido por tabela. Nesta vers\u00e3o deve corresponder a bronze_destination.database; n\u00e3o cria uma conex\u00e3o independente."
+        },
+        "destination_table": {"$ref": "#/$defs/identifier"},
+        "source_schema": {"$ref": "#/$defs/identifier"},
+        "destination_schema": {"$ref": "#/$defs/identifier"},
+        "partition_column": {
+          "$ref": "#/$defs/identifier",
+          "description": "Coluna DATETIME2(7) usada no particionamento mensal do destino. Ausente desabilita o particionamento."
+        },
+        "enable_cdc": {
+          "type": "boolean",
+          "default": false,
+          "description": "Quando true, exige CDC confirmado no banco de origem e nesta tabela antes da exportação."
+        },
+        "watermark": {"$ref": "#/$defs/watermark"},
+        "rows_per_block": {"type": "integer", "minimum": 1, "maximum": 5000000},
+        "structure_profile": {"type": "string", "minLength": 1},
+        "destination_area": {"const": "bronze"},
+        "metadata_mapping": false
+      }
+    }
+  }
+}

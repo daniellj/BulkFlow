@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <!--
+    ProductCode is fixed for the immutable 2.0.0 release and is also passed as
+    APPGUID to the two Microsoft prerequisite MSIs by Bundle.wxs. For the next
+    major/minor release, generate a new ProductCode and retain UpgradeCode.
+  -->
+  <Product
+      Id="$(var.AppProductCode)"
+      Name="BulkFlow - SQL Server Data Export &amp; Load"
+      Language="1046"
+      Codepage="1252"
+      Version="$(var.AppVersion)"
+      Manufacturer="BulkFlow"
+      UpgradeCode="{C391D478-887C-4E8D-A864-CB0C30AB8F8A}">
+
+    <Package
+        Id="*"
+        InstallerVersion="500"
+        Compressed="yes"
+        InstallScope="perMachine"
+        InstallPrivileges="elevated"
+        Platform="x64"
+        SummaryCodepage="1252"
+        Description="BulkFlow - SQL Server Data Export &amp; Load"
+        Comments="Aplicação autônoma; dados e configurações do usuário não são removidos na desinstalação." />
+
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <MajorUpgrade
+        Schedule="afterInstallInitialize"
+        DowngradeErrorMessage="Já existe uma versão mais recente do BulkFlow instalada." />
+
+    <Property Id="ARPNOMODIFY" Value="1" Secure="yes" />
+    <Condition Message="Este produto requer uma edição de 64 bits do Windows.">
+      VersionNT64
+    </Condition>
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLFOLDER" Name="BulkFlow">
+          <Directory Id="DOCUMENTATIONFOLDER" Name="docs" />
+        </Directory>
+      </Directory>
+      <Directory Id="CommonProgramsFolder">
+        <Directory Id="PROGRAMMENUDIR" Name="BulkFlow" />
+      </Directory>
+    </Directory>
+
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="GuiExecutableComponent" Guid="{FF9A55F3-FE26-4B17-8C8B-4C2AAB29AECA}" Win64="yes">
+        <File
+            Id="GuiExecutable"
+            Source="$(var.ReleaseRoot)\BulkFlowGUI.exe"
+            Name="BulkFlowGUI.exe"
+            KeyPath="yes"
+            Vital="yes">
+          <Shortcut
+              Id="GuiStartMenuShortcut"
+              Directory="PROGRAMMENUDIR"
+              Name="BulkFlow"
+              Description="Abre a interface gráfica do BulkFlow"
+              Advertise="yes"
+              WorkingDirectory="INSTALLFOLDER" />
+        </File>
+      </Component>
+
+      <Component Id="CliExecutableComponent" Guid="{7D2B6694-3A47-4196-8D31-001E786A2D5E}" Win64="yes">
+        <File
+            Id="CliExecutable"
+            Source="$(var.ReleaseRoot)\BulkFlowCLI.exe"
+            Name="BulkFlowCLI.exe"
+            KeyPath="yes"
+            Vital="yes">
+          <Shortcut
+              Id="CliStartMenuShortcut"
+              Directory="PROGRAMMENUDIR"
+              Name="BulkFlow - CLI"
+              Description="Abre o modo de linha de comando do BulkFlow"
+              Advertise="yes"
+              WorkingDirectory="INSTALLFOLDER" />
+        </File>
+      </Component>
+
+      <Component Id="ReadmeComponent" Guid="{24E9388C-34F6-4A6C-AEA3-6A2B6B7C70CB}" Win64="yes">
+        <File Id="ReadmeFile" Source="$(var.ProjectRoot)\README.md" Name="README.md" KeyPath="yes" />
+      </Component>
+
+      <Component Id="ControlQueryComponent" Guid="{754E8EB9-5DEC-4014-BD84-DB418EE8584B}" Win64="yes">
+        <File Id="ControlQueryFile" Source="$(var.ProjectRoot)\query_control.sql" Name="query_control.sql" KeyPath="yes" />
+      </Component>
+
+      <Component Id="PayloadManifestComponent" Guid="{D4BCC7E9-568A-445A-9A3A-22EEE7CE16E8}" Win64="yes">
+        <File Id="PayloadManifestFile" Source="$(var.PayloadManifest)" Name="payload-manifest.json" KeyPath="yes" />
+      </Component>
+
+      <Component Id="ThirdPartyNoticesComponent" Guid="{FB1B815E-32C6-49A6-878B-BC0197C675E7}" Win64="yes">
+        <File Id="ThirdPartyNoticesFile" Source="$(var.ThirdPartyNotices)" Name="THIRD-PARTY-NOTICES.txt" KeyPath="yes" />
+      </Component>
+
+      <Component Id="ProductRegistryComponent" Guid="{05893DF8-22BA-4507-BBF0-03DA7BDF77E2}" Win64="yes">
+        <RegistryKey Root="HKLM" Key="SOFTWARE\BulkFlow">
+          <RegistryValue Name="InstallLocation" Type="string" Value="[INSTALLFOLDER]" />
+          <RegistryValue
+              Name="BcpExecutable"
+              Type="string"
+              Value="[ProgramFiles64Folder]Microsoft SQL Server\Client SDK\ODBC\180\Tools\Binn\bcp.exe" />
+          <RegistryValue Name="Version" Type="string" Value="$(var.AppVersion)" KeyPath="yes" />
+        </RegistryKey>
+      </Component>
+    </DirectoryRef>
+
+    <DirectoryRef Id="DOCUMENTATIONFOLDER">
+      <Component Id="OfflineInstallerDocumentComponent" Guid="{35CFD056-F30E-4C2B-99EA-D8B7C1700CC2}" Win64="yes">
+        <File Id="OfflineInstallerDocument" Source="$(var.ProjectRoot)\docs\INSTALADOR_OFFLINE.md" Name="INSTALADOR_OFFLINE.md" KeyPath="yes" />
+      </Component>
+      <Component Id="CombinedLicensesComponent" Guid="{2EFD09A7-1971-4D1D-82DE-29ADEEDA2B5B}" Win64="yes">
+        <File Id="CombinedLicensesDocument" Source="$(var.LicenseRtfPath)" Name="LICENCAS_COMPONENTES.rtf" KeyPath="yes" />
+      </Component>
+      <Component Id="PrerequisitesDocumentComponent" Guid="{6FDF9543-D55B-4F10-BDB9-5D1F9E52CB19}" Win64="yes">
+        <File Id="PrerequisitesDocument" Source="$(var.ProjectRoot)\docs\PRE_REQUISITOS.md" Name="PRE_REQUISITOS.md" KeyPath="yes" />
+      </Component>
+      <Component Id="GuiDocumentComponent" Guid="{14E25433-D3C7-4989-AE4D-8C5A8DDFFC55}" Win64="yes">
+        <File Id="GuiDocument" Source="$(var.ProjectRoot)\docs\USO_INTERFACE_GRAFICA.md" Name="USO_INTERFACE_GRAFICA.md" KeyPath="yes" />
+      </Component>
+      <Component Id="CliDocumentComponent" Guid="{6F1447C4-58B7-4A6B-A932-F17295C44F14}" Win64="yes">
+        <File Id="CliDocument" Source="$(var.ProjectRoot)\docs\USO_CLI_POWERSHELL_LINUX.md" Name="USO_CLI_POWERSHELL_LINUX.md" KeyPath="yes" />
+      </Component>
+      <Component Id="ProcessOrderDocumentComponent" Guid="{DD6192FE-81D8-470B-AAC1-888E029C0DE4}" Win64="yes">
+        <File Id="ProcessOrderDocument" Source="$(var.ProjectRoot)\docs\ORDEM_PROCESSAMENTO.md" Name="ORDEM_PROCESSAMENTO.md" KeyPath="yes" />
+      </Component>
+      <Component Id="RecoveryDocumentComponent" Guid="{1220E744-3823-4229-ABEC-4E44FAEA8FA1}" Win64="yes">
+        <File Id="RecoveryDocument" Source="$(var.ProjectRoot)\docs\FALHAS_E_RETOMADA.md" Name="FALHAS_E_RETOMADA.md" KeyPath="yes" />
+      </Component>
+      <Component Id="ConfigurationMigrationDocumentComponent" Guid="{FACCC86D-A81E-4C0F-BFEF-5B83DF0986A7}" Win64="yes">
+        <File Id="ConfigurationMigrationDocument" Source="$(var.ProjectRoot)\docs\MIGRACAO_CONFIGURACAO_V2.md" Name="MIGRACAO_CONFIGURACAO_V2.md" KeyPath="yes" />
+      </Component>
+      <Component Id="ControlMigrationDocumentComponent" Guid="{B6812BAF-2DB1-4946-95CC-4B9F3750D882}" Win64="yes">
+        <File Id="ControlMigrationDocument" Source="$(var.ProjectRoot)\docs\MIGRACAO_CONTROLE_SQLITE.md" Name="MIGRACAO_CONTROLE_SQLITE.md" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <DirectoryRef Id="PROGRAMMENUDIR">
+      <Component Id="StartMenuShortcutsComponent" Guid="{EEB930A6-A377-4850-925F-C7678F0B8876}" Win64="yes">
+        <RemoveFolder Id="RemoveProgramMenuDirectory" Directory="PROGRAMMENUDIR" On="uninstall" />
+        <RegistryValue
+            Root="HKLM"
+            Key="SOFTWARE\BulkFlow"
+            Name="StartMenuShortcuts"
+            Type="integer"
+            Value="1"
+            KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <Feature Id="CompleteFeature" Title="BulkFlow" Level="1" Absent="disallow">
+      <ComponentRef Id="GuiExecutableComponent" />
+      <ComponentRef Id="CliExecutableComponent" />
+      <ComponentRef Id="ReadmeComponent" />
+      <ComponentRef Id="ControlQueryComponent" />
+      <ComponentRef Id="PayloadManifestComponent" />
+      <ComponentRef Id="ThirdPartyNoticesComponent" />
+      <ComponentRef Id="ProductRegistryComponent" />
+      <ComponentRef Id="OfflineInstallerDocumentComponent" />
+      <ComponentRef Id="CombinedLicensesComponent" />
+      <ComponentRef Id="PrerequisitesDocumentComponent" />
+      <ComponentRef Id="GuiDocumentComponent" />
+      <ComponentRef Id="CliDocumentComponent" />
+      <ComponentRef Id="ProcessOrderDocumentComponent" />
+      <ComponentRef Id="RecoveryDocumentComponent" />
+      <ComponentRef Id="ConfigurationMigrationDocumentComponent" />
+      <ComponentRef Id="ControlMigrationDocumentComponent" />
+      <ComponentRef Id="StartMenuShortcutsComponent" />
+    </Feature>
+  </Product>
+</Wix>

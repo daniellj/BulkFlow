@@ -1,0 +1,42 @@
+{
+  "config_version": 2,
+  "perimeter": "DREADS",
+  "scope": "Exemplo de marca composta e overrides",
+  "source": {
+    "instance": "SQL-ORIGEM\\INST01",
+    "port": 1433,
+    "database": "BD_ORIGEM",
+    "schema": "ESQUEMA_ORIGEM",
+    "authentication": {"type": "windows_integrated"}
+  },
+  "bronze_destination": {
+    "instance": "SQL-BRONZE\\INST01",
+    "port": 1433,
+    "database": "DBRO684",
+    "schema": "s344",
+    "structure_profile": "bronze",
+    "authentication": {"type": "windows_integrated"}
+  },
+  "active_destination": "bronze",
+  "execute_import": true,
+  "cdc_retention_minutes": 262800,
+  "executor_directory": "C:\\CAMINHO_DO_PROJETO\\Local\\MotorDados\\bcp-data",
+  "destination_sql_directory": "C:\\CAMINHO_DO_PROJETO\\Local\\MotorDados\\bcp-data",
+  "local_control_directory": "C:\\CAMINHO_DO_PROJETO\\Local\\MotorDados\\.bcp-control",
+  "tables": [
+    {
+      "source_table": "TABELA_ORIGEM_01",
+      "destination_table": "bd_origem_tabela_origem_01",
+      "source_schema": "ESQUEMA_ORIGEM",
+      "destination_schema": "s344",
+      "rows_per_block": 100000,
+      "structure_profile": "bronze",
+      "watermark": {
+        "columns": [
+          {"name": "COLUNA_MARCA_DAGUA_01", "direction": "ASC"},
+          {"name": "COLUNA_MARCA_DAGUA_02", "direction": "ASC"}
+        ]
+      }
+    }
+  ]
+}

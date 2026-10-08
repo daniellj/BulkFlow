@@ -1,0 +1,33 @@
+{
+  "config_version": 2,
+  "perimeter": "DREADS",
+  "scope": "Exemplo de criação e evolução estrutural da Landing, sem carga de dados",
+  "source": {
+    "instance": "SQL-ORIGEM\\INST01",
+    "port": 1433,
+    "database": "BD_ORIGEM",
+    "schema": "ESQUEMA_ORIGEM",
+    "authentication": {"type": "windows_integrated"}
+  },
+  "landing_destination": {
+    "instance": "SQL-LANDING\\INST01",
+    "port": 1433,
+    "database": "DLAN684",
+    "schema": "s344",
+    "structure_profile": "../templates/landing.json",
+    "authentication": {"type": "windows_integrated"}
+  },
+  "active_destination": "bronze",
+  "execute_import": false,
+  "cdc_retention_minutes": 262800,
+  "executor_directory": "C:\\CAMINHO_DO_PROJETO\\Local\\MotorDados\\bcp-data",
+  "local_control_directory": "C:\\CAMINHO_DO_PROJETO\\Local\\MotorDados\\.bcp-control",
+  "tables": [
+    {
+      "source_table": "TABELA_ORIGEM_01",
+      "destination_table": "bd_origem_tabela_origem_01",
+      "structure_profile": "../templates/landing.json",
+      "watermark": null
+    }
+  ]
+}

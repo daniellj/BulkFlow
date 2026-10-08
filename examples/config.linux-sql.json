@@ -1,0 +1,57 @@
+{
+  "config_version": 2,
+  "perimeter": "DREADS",
+  "scope": "Exemplo de executor Linux com autenticação SQL",
+  "source": {
+    "instance": "sql-source.example.internal",
+    "port": 1433,
+    "database": "BD_ORIGEM",
+    "schema": "ESQUEMA_ORIGEM",
+    "authentication": {
+      "type": "sql",
+      "username": "login_leitura",
+      "password": {"provider": "env", "reference": "BCP_SOURCE_SQL_PASSWORD"}
+    }
+  },
+  "bronze_destination": {
+    "instance": "sql-target.example.internal",
+    "port": 1433,
+    "database": "BASE_BRONZE",
+    "schema": "fonte_a",
+    "structure_profile": "bronze",
+    "authentication": {
+      "type": "sql",
+      "username": "login_carga",
+      "password": {"provider": "env", "reference": "BCP_BRONZE_SQL_PASSWORD"}
+    }
+  },
+  "landing_destination": {
+    "instance": "sql-landing.example.internal",
+    "port": 1433,
+    "database": "BASE_LANDING",
+    "schema": "fonte_a",
+    "structure_profile": "landing",
+    "authentication": {
+      "type": "sql",
+      "username": "login_estrutura",
+      "password": {"provider": "env", "reference": "BCP_LANDING_SQL_PASSWORD"}
+    }
+  },
+  "active_destination": "bronze",
+  "execute_import": true,
+  "cdc_retention_minutes": 262800,
+  "create_structure_if_needed": true,
+  "executor_directory": "/var/lib/bcp-engine/artifacts",
+  "destination_sql_directory": "/var/opt/mssql/bcp",
+  "local_control_directory": "/var/lib/bcp-engine/control",
+  "bcp_executable": "/opt/mssql-tools18/bin/bcp",
+  "delete_confirmed_files": false,
+  "tables": [
+    {
+      "source_table": "TABELA_ORIGEM_01",
+      "destination_table": "bd_origem_tabela_origem_01",
+      "enable_cdc": false,
+      "watermark": null
+    }
+  ]
+}

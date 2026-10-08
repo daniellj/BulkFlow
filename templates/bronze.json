@@ -1,0 +1,132 @@
+{
+  "profile_version": 1,
+  "name": "bronze",
+  "table_name": "{destination_table}",
+  "technical_column": {
+    "name": "id_{destination_table}",
+    "sql_type": "BIGINT",
+    "nullable": false,
+    "identity": false,
+    "generation": "sequence"
+  },
+  "business_columns": {
+    "mode": "auto_discovery",
+    "preserve_order": true,
+    "materialize_identity": true,
+    "materialize_computed": true
+  },
+  "additional_columns": [
+    {
+      "name": "bi_lsn_evento",
+      "sql_type": "BINARY(10)",
+      "nullable": false,
+      "fill": "CONVERT(BINARY(10),0)"
+    },
+    {
+      "name": "bi_sequencia_evento",
+      "sql_type": "BINARY(10)",
+      "nullable": false,
+      "fill": "CONVERT(BINARY(10),0)"
+    },
+    {
+      "name": "cd_operacao",
+      "sql_type": "INT",
+      "nullable": false,
+      "fill": "2"
+    },
+    {
+      "name": "de_operacao",
+      "result_sql_type": "VARCHAR(18)",
+      "nullable": false,
+      "computed": "CASE [cd_operacao] WHEN 1 THEN 'delete' WHEN 2 THEN 'insert' WHEN 3 THEN 'update (old value)' WHEN 4 THEN 'update (new value)' ELSE 'undefined' END",
+      "persisted": true,
+      "fill": "destination_computed"
+    },
+    {
+      "name": "dh_carga",
+      "sql_type": "DATETIME2(7)",
+      "nullable": false,
+      "fill": "CONVERT(DATETIME2(7), ((SYSUTCDATETIME() AT TIME ZONE 'UTC') AT TIME ZONE 'E. South America Standard Time'))"
+    },
+    {
+      "name": "dh_atualizacao",
+      "sql_type": "DATETIME2(7)",
+      "nullable": true,
+      "fill": "NULL"
+    }
+  ],
+  "sequence": {
+    "name": "seq_{destination_table}",
+    "sql_type": "BIGINT",
+    "start": 1,
+    "increment": 1,
+    "cycle": false
+  },
+  "partitioning": {
+    "sql_type": "DATETIME2(7)",
+    "range_direction": "RIGHT",
+    "interval": "month",
+    "future_years": 6,
+    "filegroup": "PRIMARY",
+    "function_name": "pf_{partition_column}_{partition_descriptor}",
+    "scheme_name": "ps_{partition_column}_{partition_descriptor}",
+    "clustered_index_name": "ix_{destination_table}_{partition_column}_clustered"
+  },
+  "primary_key": {
+    "name": "pk_{destination_table}",
+    "clustered": true,
+    "columns": [
+      {"name": "id_{destination_table}", "direction": "ASC"}
+    ]
+  },
+  "indexes": [
+    {
+      "name": "ix_{destination_table}_01",
+      "clustered": false,
+      "unique": false,
+      "phase": "secondary",
+      "columns": [
+        {"name": "bi_lsn_evento", "direction": "ASC"},
+        {"name": "bi_sequencia_evento", "direction": "ASC"}
+      ]
+    },
+    {
+      "name": "ix_{destination_table}_02",
+      "clustered": false,
+      "unique": false,
+      "phase": "secondary",
+      "columns": [
+        {"name": "dh_carga", "direction": "DESC"}
+      ]
+    },
+    {
+      "name": "ix_{destination_table}_03",
+      "clustered": false,
+      "unique": false,
+      "phase": "secondary",
+      "columns": [
+        {"name": "dh_atualizacao", "direction": "DESC"}
+      ]
+    },
+    {
+      "name": "ix_{destination_table}_04",
+      "clustered": false,
+      "unique": false,
+      "phase": "secondary",
+      "columns": [
+        {"name": "cd_operacao", "direction": "ASC"}
+      ]
+    },
+    {
+      "name": "ix_{destination_table}_05",
+      "clustered": false,
+      "unique": false,
+      "phase": "secondary",
+      "columns": [
+        {"name": "bi_lsn_evento", "direction": "ASC"},
+        {"name": "bi_sequencia_evento", "direction": "ASC"},
+        {"name": "cd_operacao", "direction": "ASC"}
+      ]
+    }
+  ]
+}

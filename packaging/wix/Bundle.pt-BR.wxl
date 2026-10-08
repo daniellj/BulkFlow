@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<WixLocalization Culture="pt-BR" Language="1046" xmlns="http://schemas.microsoft.com/wix/2006/localization">
+  <String Id="Caption">Instalação de [WixBundleName]</String>
+  <String Id="Title">[WixBundleName]</String>
+  <String Id="InstallVersion">Versão [WixBundleVersion]</String>
+  <String Id="ConfirmCancelMessage">Tem certeza de que deseja cancelar?</String>
+  <String Id="ExecuteUpgradeRelatedBundleMessage">Versão anterior</String>
+  <String Id="HelpHeader">Ajuda da instalação</String>
+  <String Id="HelpText">/install | /repair | /uninstall | /layout [diretório] - instala, repara, desinstala ou cria uma cópia local completa do pacote no diretório. A instalação é a ação padrão.
+
+/passive | /quiet - exibe uma interface mínima sem perguntas ou não exibe interface nem perguntas. Por padrão, a interface e todas as perguntas são exibidas.
+
+/norestart - impede tentativas de reinicialização. Por padrão, a interface solicita confirmação antes de reiniciar.
+/log arquivo.log - grava o log no arquivo indicado. Por padrão, um log é criado em %TEMP%.</String>
+  <String Id="HelpCloseButton">&amp;Fechar</String>
+  <String Id="InstallAcceptCheckbox">&amp;Li e aceito os termos de licença</String>
+  <String Id="InstallOptionsButton">&amp;Opções</String>
+  <String Id="InstallInstallButton">&amp;Instalar</String>
+  <String Id="InstallCloseButton">&amp;Fechar</String>
+  <String Id="OptionsHeader">Opções de instalação</String>
+  <String Id="OptionsLocationLabel">Local de instalação:</String>
+  <String Id="OptionsBrowseButton">&amp;Procurar</String>
+  <String Id="OptionsOkButton">&amp;OK</String>
+  <String Id="OptionsCancelButton">&amp;Cancelar</String>
+  <String Id="ProgressHeader">Progresso da instalação</String>
+  <String Id="ProgressLabel">Processando:</String>
+  <String Id="OverallProgressPackageText">Inicializando...</String>
+  <String Id="ProgressCancelButton">&amp;Cancelar</String>
+  <String Id="ModifyHeader">Modificar instalação</String>
+  <String Id="ModifyRepairButton">&amp;Reparar</String>
+  <String Id="ModifyUninstallButton">&amp;Desinstalar</String>
+  <String Id="ModifyCloseButton">&amp;Fechar</String>
+  <String Id="SuccessRepairHeader">Reparo concluído com sucesso</String>
+  <String Id="SuccessUninstallHeader">Desinstalação concluída com sucesso</String>
+  <String Id="SuccessInstallHeader">Instalação concluída com sucesso</String>
+  <String Id="SuccessHeader">Operação concluída com sucesso</String>
+  <String Id="SuccessLaunchButton">&amp;Abrir</String>
+  <String Id="SuccessRestartText">É necessário reiniciar o computador antes de usar o software.</String>
+  <String Id="SuccessRestartButton">&amp;Reiniciar</String>
+  <String Id="SuccessCloseButton">&amp;Fechar</String>
+  <String Id="FailureHeader">Falha na instalação</String>
+  <String Id="FailureInstallHeader">Falha na instalação</String>
+  <String Id="FailureUninstallHeader">Falha na desinstalação</String>
+  <String Id="FailureRepairHeader">Falha no reparo</String>
+  <String Id="FailureHyperlinkLogText">Um ou mais problemas causaram a falha da operação. Corrija-os e tente novamente. Para obter detalhes, consulte o &lt;a href=&quot;#&quot;&gt;arquivo de log&lt;/a&gt;.</String>
+  <String Id="FailureRestartText">É necessário reiniciar o computador para concluir a reversão.</String>
+  <String Id="FailureRestartButton">&amp;Reiniciar</String>
+  <String Id="FailureCloseButton">&amp;Fechar</String>
+  <String Id="FilesInUseHeader">Arquivos em uso</String>
+  <String Id="FilesInUseLabel">Os aplicativos abaixo estão usando arquivos que precisam ser atualizados:</String>
+  <String Id="FilesInUseCloseRadioButton">Fechar os &amp;aplicativos e tentar reiniciá-los.</String>
+  <String Id="FilesInUseDontCloseRadioButton">&amp;Não fechar os aplicativos. Será necessário reiniciar o computador.</String>
+  <String Id="FilesInUseOkButton">&amp;OK</String>
+  <String Id="FilesInUseCancelButton">&amp;Cancelar</String>
+  <String Id="ErrorFailNoActionReboot">Nenhuma ação foi executada porque é necessário reiniciar o sistema.</String>
+</WixLocalization>

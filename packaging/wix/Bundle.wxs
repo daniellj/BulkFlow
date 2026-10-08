@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix
+    xmlns="http://schemas.microsoft.com/wix/2006/wi"
+    xmlns:bal="http://schemas.microsoft.com/wix/BalExtension"
+    xmlns:util="http://schemas.microsoft.com/wix/UtilExtension">
+
+  <Bundle
+      Name="BulkFlow - SQL Server Data Export &amp; Load"
+      Version="$(var.BundleVersion)"
+      Manufacturer="BulkFlow"
+      UpgradeCode="{05D7D472-6DD3-4308-BA49-7C651EE2C1FE}"
+      Compressed="yes"
+      DisableModify="no"
+      DisableRemove="no"
+      AboutUrl="https://learn.microsoft.com/sql/tools/bcp/bcp-download-install">
+
+    <bal:Condition Message="Este instalador requer uma edição de 64 bits do Windows.">
+      VersionNT64
+    </bal:Condition>
+
+    <Variable Name="InstallFolder" Type="string" Value="[ProgramFiles64Folder]BulkFlow" />
+    <Variable Name="OdbcDriverInstalledVersion" Type="version" Value="0.0.0.0" />
+    <Variable Name="CommandLineUtilitiesInstalledVersion" Type="version" Value="0.0.0.0" />
+
+    <!--
+      Searches by UpgradeCode prevent installing the bundled prerequisite over
+      an equal or newer compatible version. The official MSIs also carry their
+      own Upgrade-table safeguards; this bundle does not rely solely on a
+      single ProductCode for version detection.
+    -->
+    <util:ProductSearch
+        Id="OdbcDriverProductSearch"
+        Variable="OdbcDriverInstalledVersion"
+        UpgradeCode="{ADA68B65-BFF8-4E6A-B082-CC6682D425B8}"
+        Result="version" />
+    <util:ProductSearch
+        Id="CommandLineUtilitiesProductSearch"
+        Variable="CommandLineUtilitiesInstalledVersion"
+        UpgradeCode="{0DAB50C8-811C-4D77-873C-C63A8DFDDC02}"
+        Result="version" />
+
+    <BootstrapperApplicationRef Id="WixStandardBootstrapperApplication.RtfLargeLicense">
+      <bal:WixStandardBootstrapperApplication
+          LicenseFile="$(var.LicenseRtfPath)"
+          LocalizationFile="$(var.LocalizationFile)"
+          LaunchTarget="[InstallFolder]\BulkFlowGUI.exe"
+          LaunchWorkingFolder="[InstallFolder]"
+          LaunchHidden="no"
+          SuppressOptionsUI="yes"
+          SuppressDowngradeFailure="no"
+          SuppressRepair="no"
+          ShowFilesInUse="yes"
+          ShowVersion="yes" />
+    </BootstrapperApplicationRef>
+
+    <Chain>
+      <MsiPackage
+          Id="MicrosoftOdbcDriver18"
+          SourceFile="$(var.OdbcMsiPath)"
+          Compressed="yes"
+          DisplayInternalUI="no"
+          ForcePerMachine="yes"
+          Permanent="yes"
+          Vital="yes"
+          InstallCondition="OdbcDriverInstalledVersion = v0.0.0.0 OR OdbcDriverInstalledVersion &lt; v18.7.1.1">
+        <MsiProperty Name="IACCEPTMSODBCSQLLICENSETERMS" Value="YES" />
+        <MsiProperty Name="APPGUID" Value="$(var.AppProductCode)" />
+      </MsiPackage>
+
+      <MsiPackage
+          Id="MicrosoftSqlCommandLineUtilities"
+          SourceFile="$(var.BcpMsiPath)"
+          Compressed="yes"
+          DisplayInternalUI="no"
+          ForcePerMachine="yes"
+          Permanent="yes"
+          Vital="yes"
+          InstallCondition="CommandLineUtilitiesInstalledVersion = v0.0.0.0 OR CommandLineUtilitiesInstalledVersion &lt; v17.0.4055.5">
+        <MsiProperty Name="IACCEPTMSSQLCMDLNUTILSLICENSETERMS" Value="YES" />
+        <MsiProperty Name="APPGUID" Value="$(var.AppProductCode)" />
+      </MsiPackage>
+
+      <MsiPackage
+          Id="BulkFlowApplication"
+          SourceFile="$(var.AppMsiPath)"
+          Compressed="yes"
+          DisplayInternalUI="no"
+          ForcePerMachine="yes"
+          Vital="yes">
+        <MsiProperty Name="INSTALLFOLDER" Value="[InstallFolder]" />
+      </MsiPackage>
+    </Chain>
+  </Bundle>
+</Wix>

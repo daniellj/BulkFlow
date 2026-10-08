@@ -1,0 +1,84 @@
+{
+  "config_version": 2,
+  "perimeter": "DREADS",
+  "scope": "Exemplo de configuração completa",
+  "source": {
+    "instance": "SERVIDOR_ORIGEM",
+    "port": 1433,
+    "database": "BD_ORIGEM",
+    "read_database": "BD_ORIGEM",
+    "schema": "ESQUEMA_ORIGEM",
+    "authentication": {"type": "windows_integrated"}
+  },
+  "bronze_destination": {
+    "instance": "SERVIDOR_BRONZE",
+    "port": 1433,
+    "database": "DBRO684",
+    "schema": "s344",
+    "structure_profile": "templates/bronze.json",
+    "authentication": {"type": "windows_integrated"}
+  },
+  "landing_destination": {
+    "instance": "SERVIDOR_LANDING",
+    "port": 1433,
+    "database": "DLAN684",
+    "schema": "s344",
+    "structure_profile": "templates/landing.json",
+    "authentication": {"type": "windows_integrated"}
+  },
+  "active_destination": "bronze",
+  "execute_import": true,
+  "create_structure_if_needed": true,
+  "executor_directory": "C:\\CAMINHO_DO_PROJETO\\Local\\MotorDados\\bcp-data",
+  "destination_sql_directory": "C:\\CAMINHO_DO_PROJETO\\Local\\MotorDados\\bcp-data",
+  "local_control_directory": "C:\\CAMINHO_DO_PROJETO\\Local\\MotorDados\\.bcp-control",
+  "rows_per_block": 1500,
+  "keyless_direct_load_max_rows": 5000000,
+  "allow_schema_evolution": false,
+  "cdc_retention_minutes": 262800,
+  "max_file_bytes": 2147483648,
+  "minimum_free_space_bytes": 10737418240,
+  "delete_confirmed_files": true,
+  "continue_after_table_error": true,
+  "odbc_driver": "ODBC Driver 18 for SQL Server",
+  "bcp_executable": "bcp",
+  "connection_timeout_seconds": 30,
+  "sql_timeout_seconds": 0,
+  "bcp_timeout_seconds": 0,
+  "control_schema": "dbo",
+  "tls": {
+    "encrypt": true,
+    "trust_server_certificate": false,
+    "bcp_switch": "-Ym"
+  },
+  "estimates": {
+    "row_count_method": "metadata",
+    "maximum_sample_rows": 10000,
+    "safety_factor": 1.25,
+    "on_unavailable": "stop"
+  },
+  "batching": {
+    "null_policy": "reject_table",
+    "tie_policy": "complete_group",
+    "upper_bound_policy": "capture_at_table_start",
+    "require_watermark_index": false
+  },
+  "structure": {"secondary_indexes_phase": "after_table_load"},
+  "bronze_event_id": {
+    "strategy": "sequence",
+    "sequence_name": "seq_{destination_table}",
+    "source_column": null
+  },
+  "tables": [
+    {"source_table": "TABELA_ORIGEM_01", "destination_table": "bd_origem_tabela_origem_01", "enable_cdc": true, "watermark": null},
+    {"source_table": "TABELA_ORIGEM_02", "destination_table": "bd_origem_tabela_origem_02", "enable_cdc": true, "watermark": null},
+    {
+      "source_table": "TABELA_ORIGEM_03",
+      "destination_table": "bd_origem_tabela_origem_03",
+      "enable_cdc": true,
+      "watermark": {
+        "columns": [{"name": "COLUNA_MARCA_DAGUA", "direction": "ASC"}]
+      }
+    }
+  ]
+}

@@ -1,0 +1,149 @@
+{
+  "profile_version": 1,
+  "name": "landing",
+  "table_name": "{destination_table}",
+  "technical_column": {
+    "name": "id_{source_table}",
+    "sql_type": "BIGINT",
+    "nullable": false,
+    "identity": true,
+    "identity_seed": 1,
+    "identity_increment": 1,
+    "generation": "destination_identity"
+  },
+  "business_columns": {
+    "mode": "auto_discovery",
+    "preserve_order": true,
+    "materialize_identity": true,
+    "materialize_computed": true
+  },
+  "additional_columns": [
+    {
+      "name": "aud_ccid",
+      "sql_type": "BIGINT",
+      "nullable": false,
+      "fill": "required_mapping"
+    },
+    {
+      "name": "aud_cntrrn",
+      "sql_type": "INT",
+      "nullable": false,
+      "fill": "required_mapping"
+    },
+    {
+      "name": "aud_enttyp",
+      "sql_type": "VARCHAR(30)",
+      "nullable": false,
+      "fill": "required_mapping"
+    },
+    {
+      "name": "bi_lsn_evento",
+      "result_sql_type": "BINARY(10)",
+      "nullable": false,
+      "computed": "CAST([aud_ccid] AS BINARY(10))",
+      "persisted": true,
+      "fill": "destination_computed"
+    },
+    {
+      "name": "bi_sequencia_evento",
+      "result_sql_type": "BINARY(10)",
+      "nullable": false,
+      "computed": "CAST([aud_cntrrn] AS BINARY(10))",
+      "persisted": true,
+      "fill": "destination_computed"
+    },
+    {
+      "name": "cd_operacao",
+      "result_sql_type": "INT",
+      "nullable": false,
+      "computed": "CASE [aud_enttyp] WHEN 'DL' THEN 1 WHEN 'PT' THEN 2 WHEN 'RS' THEN 2 WHEN 'RR' THEN 2 WHEN 'UB' THEN 3 WHEN 'UP' THEN 4 ELSE 0 END",
+      "persisted": true,
+      "fill": "destination_computed"
+    },
+    {
+      "name": "dh_carga",
+      "sql_type": "DATETIME2(7)",
+      "nullable": false,
+      "default": "(CONVERT(DATETIME2(7), ((SYSUTCDATETIME() AT TIME ZONE 'UTC') AT TIME ZONE 'E. South America Standard Time')))",
+      "default_name": "df_{destination_table}_dh_carga",
+      "fill": "destination_default"
+    },
+    {
+      "name": "dh_atualizacao",
+      "sql_type": "DATETIME2(7)",
+      "nullable": true,
+      "fill": "NULL"
+    }
+  ],
+  "sequence": null,
+  "partitioning": {
+    "sql_type": "DATETIME2(7)",
+    "range_direction": "RIGHT",
+    "interval": "month",
+    "future_years": 6,
+    "filegroup": "PRIMARY",
+    "function_name": "pf_{partition_column}_{partition_descriptor}",
+    "scheme_name": "ps_{partition_column}_{partition_descriptor}",
+    "clustered_index_name": "ix_{destination_table}_{partition_column}_clustered"
+  },
+  "primary_key": {
+    "name": "pk_{destination_table}",
+    "clustered": false,
+    "columns": [
+      {"name": "id_{source_table}", "direction": "ASC"}
+    ]
+  },
+  "indexes": [
+    {
+      "name": "ix_{source_table}_01",
+      "clustered": true,
+      "unique": false,
+      "phase": "base",
+      "columns": [
+        {"name": "bi_lsn_evento", "direction": "ASC"},
+        {"name": "bi_sequencia_evento", "direction": "ASC"},
+        {"name": "cd_operacao", "direction": "ASC"}
+      ]
+    },
+    {
+      "name": "ix_{source_table}_02",
+      "clustered": false,
+      "unique": false,
+      "phase": "secondary",
+      "columns": [
+        {"name": "aud_ccid", "direction": "ASC"},
+        {"name": "aud_cntrrn", "direction": "ASC"}
+      ]
+    },
+    {
+      "name": "ix_{source_table}_03",
+      "clustered": false,
+      "unique": false,
+      "phase": "secondary",
+      "columns": [
+        {"name": "aud_ccid", "direction": "ASC"},
+        {"name": "aud_cntrrn", "direction": "ASC"},
+        {"name": "aud_enttyp", "direction": "ASC"}
+      ]
+    },
+    {
+      "name": "ix_{source_table}_04",
+      "clustered": false,
+      "unique": false,
+      "phase": "secondary",
+      "columns": [
+        {"name": "bi_lsn_evento", "direction": "ASC"},
+        {"name": "bi_sequencia_evento", "direction": "ASC"}
+      ]
+    },
+    {
+      "name": "ix_{source_table}_05",
+      "clustered": false,
+      "unique": false,
+      "phase": "secondary",
+      "columns": [
+        {"name": "dh_carga", "direction": "DESC"}
+      ]
+    }
+  ]
+}

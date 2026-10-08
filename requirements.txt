@@ -1,0 +1,6 @@
+# ODBC Driver 18 e BCP compatível são nativos; prefira BCP 18+ (17 exige -Y/-u).
+pyodbc>=5.2.0,<6
+# Pseudoconsole privado para o prompt mascarado do BCP em autenticação SQL.
+pywinpty>=2.0.15,<3; platform_system == "Windows"
+# Optional visual adapter; engine and CLI remain independent from the GUI.
+ttkbootstrap>=1.10,<2
