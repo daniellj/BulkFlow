@@ -75,22 +75,46 @@ WINDOW_TITLE = PRODUCT_NAME
 DEFAULT_VALUE_COLOR = "#e8f3ff"
 _NO_DEFAULT = object()
 
+CONNECTION_TAB_TITLES: dict[str, str] = {
+    "source": "Origem",
+    "bronze_destination": "Destino 01",
+    "landing_destination": "Destino 02",
+}
+SOURCE_ROLE_LABELS: dict[str, str] = {
+    "provedor de dados": "data_provider",
+}
+DESTINATION_ROLE_LABELS: dict[str, str] = {
+    "estrutura e dados": "structure_and_data",
+    "somente estrutura": "structure_only",
+    "somente dados (premissa: já existir a estrutura)": "data_only",
+}
+DEFAULT_ENDPOINT_ROLES: dict[str, str] = {
+    "source": "data_provider",
+    "bronze_destination": "structure_and_data",
+    "landing_destination": "structure_only",
+}
+DESTINATION_ENDPOINT_KEYS: dict[str, str] = {
+    "bronze": "bronze_destination",
+    "landing": "landing_destination",
+}
+DATA_DESTINATION_ROLES = frozenset({"structure_and_data", "data_only"})
+
 
 FIELD_HELP: dict[str, str] = {
     "perimeter": "Perímetro operacional. Sugere o usuário SQL, mas cada conexão continua independente.",
-    "execute_import": "Quando habilitado, exporta da Origem e importa os arquivos confirmados na Bronze.",
+    "execute_import": "Quando habilitado, exporta da Origem e importa os arquivos confirmados no destino de dados.",
     "create_structure_if_needed": (
-        "Controla o provisionamento automático da Bronze durante executar, retomar "
+        "Controla o provisionamento automático do destino com função Estrutura e dados durante executar, retomar "
         "ou importar manifestos. Desmarcado, exige estrutura compatível já existente. "
-        "O botão explícito Aplicar DDL continua aplicando Bronze e Landing "
-        "independentemente desta opção. O padrão é habilitado."
+        "O botão explícito Aplicar DDL respeita a função de cada destino. "
+        "O padrão é habilitado."
     ),
     "allow_schema_evolution": "Permite somente a adição segura de novas colunas encontradas na Origem.",
     "delete_confirmed_files": "Remove arquivos exportados apenas depois da confirmação durável da importação.",
     "continue_after_table_error": "Registra a falha da tabela e continua o processamento das tabelas seguintes.",
     "require_watermark_index": "Exige índice compatível com a marca d'água antes de autorizar a extração.",
     "executor_directory": "Diretório local ou compartilhado em que o programa exporta os arquivos BCP.",
-    "destination_sql_directory": "Diretório pelo qual o SQL Server da Bronze acessa os arquivos durante a importação.",
+    "destination_sql_directory": "Diretório pelo qual o SQL Server do destino de dados acessa os arquivos durante a importação.",
     "artifact_reader_sids": "SIDs Windows específicos que precisam ler os artefatos; separe por vírgula.",
     "artifact_writer_sids": "SIDs Windows excepcionais autorizados a escrever no compartilhamento SMB.",
     "local_control_directory": "Diretório local do controle SQLite e dos checkpoints de retomada.",
@@ -117,10 +141,15 @@ FIELD_HELP: dict[str, str] = {
         "aplicado quando ao menos uma tabela solicita CDC."
     ),
     "control_schema": (
-        "Esquema fixo dbo da Bronze que armazena o controle persistente das "
+        "Esquema fixo dbo do destino de dados que armazena o controle persistente das "
         "execuções. Este valor não pode ser alterado."
     ),
     "endpoint_enabled": "Inclui este destino na configuração e nas operações estruturais.",
+    "role": (
+        "Define a função da conexão no fluxo. A Origem fornece os dados. Cada "
+        "destino pode receber estrutura e dados, somente estrutura ou somente dados; "
+        "neste último caso, a estrutura compatível deve existir previamente."
+    ),
     "instance": "Nome DNS, host ou instância SQL Server, sem o número da porta.",
     "port": "Porta TCP obrigatória do serviço SQL Server, entre 1 e 65535.",
     "database": "Banco de dados usado por esta conexão.",
@@ -128,7 +157,7 @@ FIELD_HELP: dict[str, str] = {
     "odbc_dsn": "DSN ODBC opcional. Quando preenchido, ele define a rota efetiva da conexão.",
     "structure_profile": "Perfil JSON que define metadados, índices e estrutura técnica do destino.",
     "authentication_type": "Método de autenticação usado exclusivamente por este ambiente.",
-    "username": "Usuário da conexão. Pode ser diferente em Origem, Landing e Bronze.",
+    "username": "Usuário da conexão. Pode ser diferente na Origem, no Destino 01 e no Destino 02.",
     "domain": "Domínio Windows; editável somente para o tipo Credencial Windows.",
     "encrypt": "Solicita conexão criptografada ao SQL Server.",
     "trust_server_certificate": "Aceita o certificado apresentado sem validar sua cadeia de confiança.",
@@ -138,21 +167,21 @@ FIELD_HELP: dict[str, str] = {
     ),
     "source_table": "Nome da tabela existente no banco de Origem.",
     "destination_database": (
-        "Banco de dados da tabela na Bronze. Nesta versão, deve coincidir com o "
-        "banco configurado na conexão Bronze; altere primeiro a aba Conexões."
+        "Banco de dados da tabela no destino de dados. Deve coincidir com o "
+        "banco configurado nessa conexão; altere primeiro a aba Conexões."
     ),
     "destination_table": (
         "Nome da tabela nos destinos. O padrão é banco_origem_tabela_origem em "
         "minúsculas e acompanha a origem enquanto não for personalizado."
     ),
     "source_schema": "Esquema obrigatório da tabela na Origem.",
-    "destination_schema": "Esquema obrigatório da tabela na Bronze e na Landing.",
+    "destination_schema": "Esquema obrigatório da tabela no destino de dados.",
     "table_rows_per_block": (
         "Exibe o tamanho global do lote. O valor só é salvo como override desta "
         "tabela quando for diferente do valor global."
     ),
     "table_structure_profile": (
-        "Exibe o perfil da Bronze. O valor só é salvo como override desta tabela "
+        "Exibe o perfil do destino de dados. O valor só é salvo como override desta tabela "
         "quando for diferente do perfil do destino."
     ),
     "watermark": (
@@ -166,7 +195,7 @@ FIELD_HELP: dict[str, str] = {
     "ddl_area": "Seleciona quais destinos recebem os scripts de estrutura.",
     "ddl_output": "Diretório em que os scripts DDL gerados serão gravados.",
     "execution_id": "UUID usado para consultar ou retomar uma execução existente.",
-    "manifest_path": "Manifesto, índice ou diretório para uma importação independente na Bronze.",
+    "manifest_path": "Manifesto, índice ou diretório para uma importação independente no destino de dados.",
 }
 
 
@@ -448,7 +477,7 @@ class TableDialog:
         if destination_area == "landing":
             landing = ttk.Labelframe(
                 body,
-                text="Mapeamento Landing (obrigatório)",
+                text="Mapeamento do Destino 02 (obrigatório)",
                 padding=12,
             )
             landing.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(12, 8))
@@ -775,6 +804,7 @@ class BcpGuiApplication:
             tuple[tk.Misc, tk.Variable, Any | Callable[[], Any], str, bool]
         ] = []
         self._domain_entries: dict[str, ttk.Entry] = {}
+        self._role_comboboxes: dict[str, ttk.Combobox] = {}
         self._suspend_schema_sync = False
         self._previous_bronze_schema = ""
         self._suspend_directory_sync = False
@@ -828,6 +858,7 @@ class BcpGuiApplication:
         self.endpoint_variables: dict[str, dict[str, tk.Variable]] = {}
         for key in self.endpoint_enabled:
             self.endpoint_variables[key] = {
+                "role": tk.StringVar(),
                 "instance": tk.StringVar(),
                 "port": tk.StringVar(),
                 "database": tk.StringVar(),
@@ -894,6 +925,7 @@ class BcpGuiApplication:
         )
         for endpoint in self.endpoint_variables.values():
             for name in (
+                "role",
                 "instance",
                 "port",
                 "database",
@@ -1007,7 +1039,7 @@ class BcpGuiApplication:
         ttk.Label(flow, text="Fluxo de dados").grid(row=row, column=0, sticky="w", pady=5)
         ttk.Label(
             flow,
-            text="Origem → Bronze (Landing recebe somente DDL/evolução)",
+            text="Origem → destino com função de dados; os demais recebem somente as operações permitidas por sua função",
             bootstyle="secondary",
             wraplength=360,
         ).grid(row=row, column=1, sticky="w", pady=5)
@@ -1326,13 +1358,14 @@ class BcpGuiApplication:
     def _build_connections_tab(self) -> None:
         notebook = ttk.Notebook(self.connections_tab)
         notebook.pack(fill="both", expand=True)
-        for key, title, source in (
-            ("source", "Origem (obrigatória)", True),
-            ("bronze_destination", "Destino Bronze (dados e estrutura)", False),
-            ("landing_destination", "Destino Landing (somente estrutura)", False),
+        self._connections_notebook = notebook
+        for key, source in (
+            ("source", True),
+            ("bronze_destination", False),
+            ("landing_destination", False),
         ):
             frame = ttk.Frame(notebook, padding=14)
-            notebook.add(frame, text=title)
+            notebook.add(frame, text=CONNECTION_TAB_TITLES[key])
             self._build_endpoint_frame(frame, key=key, source=source)
 
     def _build_endpoint_frame(self, frame: ttk.Frame, *, key: str, source: bool) -> None:
@@ -1359,6 +1392,35 @@ class BcpGuiApplication:
             enabled_help.pack(side="left", padx=(3, 0))
             _attach_help(enabled_help, "endpoint_enabled")
             row += 1
+
+        role_labels = SOURCE_ROLE_LABELS if source else DESTINATION_ROLE_LABELS
+        default_role = DEFAULT_ENDPOINT_ROLES[key]
+        default_role_label = label_for_code(role_labels, default_role)
+        _help_label(frame, "Função *", "role").grid(
+            row=row, column=0, sticky="w", pady=6
+        )
+        role = ttk.Combobox(
+            frame,
+            textvariable=variables["role"],
+            values=list(role_labels),
+            state="readonly",
+        )
+        role.grid(
+            row=row,
+            column=1,
+            sticky="ew",
+            padx=(8, 20),
+            pady=6,
+        )
+        _attach_help(role, "role")
+        self._role_comboboxes[key] = role
+        self._register_default_widget(
+            role,
+            variables["role"],
+            default_role_label,
+            "combobox",
+        )
+        row += 1
 
         defaults = {
             "source": {
@@ -1525,7 +1587,7 @@ class BcpGuiApplication:
         headings = {
             "order": "Ordem",
             "source": "Origem (banco.esquema.tabela)",
-            "destination": "Destino Bronze (banco.esquema.tabela)",
+            "destination": "Destino de dados (banco.esquema.tabela)",
             "cdc": "CDC",
             "watermark": "Marca d'água",
             "batch": "Linhas/bloco",
@@ -1584,7 +1646,31 @@ class BcpGuiApplication:
         ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(10, 0))
 
     def _current_destination_area(self) -> str:
-        return "bronze"
+        areas = self._selected_data_destination_areas()
+        if len(areas) == 1:
+            return areas[0]
+        configured = str(self.base_config.get("active_destination", "bronze"))
+        return configured if configured in DESTINATION_ENDPOINT_KEYS else "bronze"
+
+    def _selected_data_destination_areas(self) -> list[str]:
+        areas: list[str] = []
+        for area, key in DESTINATION_ENDPOINT_KEYS.items():
+            if not bool(self.endpoint_enabled[key].get()):
+                continue
+            displayed = str(self.endpoint_variables[key]["role"].get())
+            role = DESTINATION_ROLE_LABELS.get(displayed)
+            if role in DATA_DESTINATION_ROLES:
+                areas.append(area)
+        return areas
+
+    def _required_data_destination_area(self) -> str:
+        areas = self._selected_data_destination_areas()
+        if len(areas) != 1:
+            raise ValueError(
+                "Configure exatamente um destino com função 'estrutura e dados' "
+                "ou 'somente dados'."
+            )
+        return areas[0]
 
     def _on_perimeter_selected(self, _event: object | None = None) -> None:
         perimeter = str(self.global_variables["perimeter"].get())
@@ -1637,6 +1723,7 @@ class BcpGuiApplication:
         self._invalidate_disk_projection()
 
     def _table_dialog_defaults(self) -> dict[str, str]:
+        destination_key = DESTINATION_ENDPOINT_KEYS[self._current_destination_area()]
         return {
             "default_source_database": str(
                 self.endpoint_variables["source"]["database"].get()
@@ -1645,16 +1732,16 @@ class BcpGuiApplication:
                 self.endpoint_variables["source"]["schema"].get()
             ),
             "default_destination_database": str(
-                self.endpoint_variables["bronze_destination"]["database"].get()
+                self.endpoint_variables[destination_key]["database"].get()
             ),
             "default_destination_schema": str(
-                self.endpoint_variables["bronze_destination"]["schema"].get()
+                self.endpoint_variables[destination_key]["schema"].get()
             ),
             "default_rows_per_block": str(
                 self.global_variables["rows_per_block"].get()
             ),
             "default_structure_profile": str(
-                self.endpoint_variables["bronze_destination"][
+                self.endpoint_variables[destination_key][
                     "structure_profile"
                 ].get()
             ),
@@ -1882,7 +1969,7 @@ class BcpGuiApplication:
             planning,
             text=(
                 "Senhas necessárias serão solicitadas separadamente e mascaradas "
-                "para Origem, Landing e Bronze."
+                "para Origem, Destino 01 e Destino 02."
             ),
             bootstyle="secondary",
         ).grid(row=0, column=1, sticky="w", padx=8)
@@ -1927,7 +2014,7 @@ class BcpGuiApplication:
         ddl_area = ttk.Combobox(
             ddl,
             textvariable=self.ddl_area,
-            values=["Bronze", "Landing", "Ambos"],
+            values=["Destino 01", "Destino 02", "Ambos"],
             state="readonly",
             width=12,
         )
@@ -1957,7 +2044,7 @@ class BcpGuiApplication:
         )
 
         transfer = ttk.Labelframe(
-            tab, text="4. Exportar da Origem e importar na Bronze", padding=10
+            tab, text="4. Exportar da Origem e importar no destino de dados", padding=10
         )
         transfer.grid(row=3, column=0, sticky="ew", pady=(0, 8))
         transfer.columnconfigure(3, weight=1)
@@ -2250,6 +2337,14 @@ class BcpGuiApplication:
     def _endpoint_form_values(self, key: str) -> dict[str, Any]:
         variables = self.endpoint_variables[key]
         result = {name: variable.get() for name, variable in variables.items()}
+        role_labels = (
+            SOURCE_ROLE_LABELS if key == "source" else DESTINATION_ROLE_LABELS
+        )
+        result["role"] = code_for_label(
+            role_labels,
+            str(result["role"]),
+            "Função da conexão",
+        )
         result["authentication_type"] = code_for_label(
             AUTHENTICATION_LABELS,
             str(result["authentication_type"]),
@@ -2266,8 +2361,6 @@ class BcpGuiApplication:
         candidate = deepcopy(self.base_config)
         candidate["config_version"] = 2
         candidate["perimeter"] = str(self.global_variables["perimeter"].get())
-        destination_area = "bronze"
-        candidate["active_destination"] = "bronze"
         for name in (
             "execute_import",
             "create_structure_if_needed",
@@ -2318,7 +2411,7 @@ class BcpGuiApplication:
             "bcp_executable",
         ):
             candidate[name] = str(self.global_variables[name].get()).strip()
-        # O controle SQL é um contrato físico fixo da Bronze. Reafirmar o
+        # O controle SQL usa o schema dbo no destino de dados. Reafirmar o
         # valor aqui impede que uma alteração programática da StringVar gere
         # uma configuração que a própria interface não permite editar.
         self.global_variables["control_schema"].set("dbo")
@@ -2370,6 +2463,22 @@ class BcpGuiApplication:
                 )
             else:
                 candidate.pop(key, None)
+        data_areas = self._selected_data_destination_areas()
+        if candidate["execute_import"]:
+            destination_area = self._required_data_destination_area()
+        elif len(data_areas) > 1:
+            raise ValueError(
+                "Configure no máximo um destino com função 'estrutura e dados' "
+                "ou 'somente dados'."
+            )
+        elif data_areas:
+            destination_area = data_areas[0]
+        else:
+            # Exportações sem destino continuam precisando de uma área lógica
+            # para resolver o perfil do artefato. Nenhuma conexão de destino é
+            # aberta nesse fluxo.
+            destination_area = self._current_destination_area()
+        candidate["active_destination"] = destination_area
         if not self.table_forms:
             raise ValueError("Informe pelo menos uma tabela")
         table_defaults = self._table_dialog_defaults()
@@ -2474,16 +2583,19 @@ class BcpGuiApplication:
             self._previous_bronze_schema = ""
         else:
             source_endpoint = normalized["source"]
-            bronze_endpoint = normalized.get("bronze_destination", {})
+            destination_area = str(normalized["active_destination"])
+            destination_endpoint = normalized.get(
+                DESTINATION_ENDPOINT_KEYS[destination_area], {}
+            )
             for index, table in enumerate(normalized["tables"]):
                 form = table_to_form(
                     table,
                     default_source_database=source_endpoint["database"],
                     default_source_schema=source_endpoint["schema"],
-                    default_destination_database=bronze_endpoint.get("database", ""),
-                    default_destination_schema=bronze_endpoint.get("schema", ""),
+                    default_destination_database=destination_endpoint.get("database", ""),
+                    default_destination_schema=destination_endpoint.get("schema", ""),
                     default_rows_per_block=normalized["rows_per_block"],
-                    default_structure_profile=bronze_endpoint.get(
+                    default_structure_profile=destination_endpoint.get(
                         "structure_profile", ""
                     ),
                 )
@@ -2510,6 +2622,10 @@ class BcpGuiApplication:
             str(data.get("instance", "")), data.get("port", "")
         )
         values: dict[str, Any] = {
+            "role": label_for_code(
+                SOURCE_ROLE_LABELS if source else DESTINATION_ROLE_LABELS,
+                str(data.get("role", DEFAULT_ENDPOINT_ROLES[key])),
+            ),
             "instance": instance,
             "port": port,
             "database": data.get("database", ""),
@@ -2707,8 +2823,8 @@ class BcpGuiApplication:
             return
         area_label = self.ddl_area.get()
         areas = {
-            "Bronze": ("bronze",),
-            "Landing": ("landing",),
+            "Destino 01": ("bronze",),
+            "Destino 02": ("landing",),
             "Ambos": ("bronze", "landing"),
         }[area_label]
         output_directory = Path(self.ddl_output.get()).expanduser().resolve()
@@ -2795,7 +2911,7 @@ class BcpGuiApplication:
             return
         if not messagebox.askyesno(
             "Confirmar importação",
-            "Importar os manifestos validados na Bronze? A origem não será consultada.",
+            "Importar os manifestos validados no destino de dados? A origem não será consultada.",
             icon="warning",
             parent=self.root,
         ):
@@ -2852,8 +2968,8 @@ class BcpGuiApplication:
         localized_label = label
         for internal_name, displayed_name in (
             ("source", "Origem"),
-            ("landing_destination", "Landing"),
-            ("bronze_destination", "Bronze"),
+            ("landing_destination", "Destino 02"),
+            ("bronze_destination", "Destino 01"),
         ):
             localized_label = localized_label.replace(
                 f" para {internal_name}: ", f" para {displayed_name}: "

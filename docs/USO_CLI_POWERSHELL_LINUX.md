@@ -10,18 +10,20 @@ On Windows, `BulkFlowCLI.exe` exposes exactly the same subcommands and already
 includes Python and the project's packages. It does not include the ODBC Driver
 or BCP; those components remain installed on the executor.
 
-The current contract has a single data route: configured source → Bronze
-endpoint. The Landing endpoint is structure-only and is used by `ddl --area
-landing` or `ddl --area both`; `run`, `resume`, and `import` never insert rows
-into it. `BD_ORIGEM`, `DBRO684`, `DLAN684`, Docker, and the ports documented in
-the integration guide are only the local test fixture, not CLI requirements.
+The current contract has one Source with role `data_provider` and at most one
+data-capable destination. Exactly one is required when importing; an
+export-only configuration may have none. Destination roles are `structure_and_data`,
+`structure_only`, and `data_only`; defaults are `structure_and_data` for
+`BD_DESTINO_01` and `structure_only` for `BD_DESTINO_02`. Docker and fixed lab
+ports are not CLI requirements.
 
 The global `perimeter` parameter accepts exactly `DESENVOLVIMENTO`, `HOMOLOGAÇÃO`, or
 `PRODUÇÃO`; its default is `DESENVOLVIMENTO`. These values suggest `u684`,
 `h684`, and `s684`, respectively, as the SQL username, but `source`,
-`bronze_destination`, and `landing_destination` retain
-independent, editable instance, port, database, schema, username, and secret
-settings.
+`bronze_destination`, and `landing_destination` retain independent, editable
+role, instance, port, database, schema, username, and secret settings. Those
+destination keys and the `bronze`/`landing` CLI areas are compatible internal
+IDs; roles determine operational behavior.
 
 The global `cdc_retention_minutes` parameter defines the retention period for
 the CDC cleanup job on the Source. Its default is `262800` minutes (six months,
@@ -50,8 +52,8 @@ is no conversion or additional export step.
 The optional `tables[].source_database` and
 `tables[].destination_database` fields make the mapping saved by the GUI
 explicit, but do not open independent per-table connections in this version.
-When present, they must match `source.database` and
-`bronze_destination.database`. The engine rejects a configuration when they
+When present, they must match `source.database` and the endpoint selected by
+`active_destination`. The engine rejects a configuration when they
 differ. To process another database, use another configuration file and a
 separate execution.
 
@@ -102,8 +104,8 @@ the lab uses the same value:
 
 ```powershell
 $sourceSecure = Read-Host 'Senha SQL da origem' -AsSecureString
-$bronzeSecure = Read-Host 'Senha SQL da Bronze' -AsSecureString
-$landingSecure = Read-Host 'Senha SQL da Landing estrutural' -AsSecureString
+$bronzeSecure = Read-Host 'Senha SQL da BD_DESTINO_01' -AsSecureString
+$landingSecure = Read-Host 'Senha SQL da BD_DESTINO_02' -AsSecureString
 $env:BCP_SOURCE_SQL_PASSWORD = [Net.NetworkCredential]::new('', $sourceSecure).Password
 $env:BCP_BRONZE_SQL_PASSWORD = [Net.NetworkCredential]::new('', $bronzeSecure).Password
 $env:BCP_LANDING_SQL_PASSWORD = [Net.NetworkCredential]::new('', $landingSecure).Password
@@ -188,9 +190,9 @@ one option that keeps the value out of shell history is:
 ```bash
 read -r -s -p 'Senha SQL da origem: ' BCP_SOURCE_SQL_PASSWORD; printf '\n'
 export BCP_SOURCE_SQL_PASSWORD
-read -r -s -p 'Senha SQL da Bronze: ' BCP_BRONZE_SQL_PASSWORD; printf '\n'
+read -r -s -p 'Senha SQL da BD_DESTINO_01: ' BCP_BRONZE_SQL_PASSWORD; printf '\n'
 export BCP_BRONZE_SQL_PASSWORD
-read -r -s -p 'Senha SQL da Landing estrutural: ' BCP_LANDING_SQL_PASSWORD; printf '\n'
+read -r -s -p 'Senha SQL da BD_DESTINO_02: ' BCP_LANDING_SQL_PASSWORD; printf '\n'
 export BCP_LANDING_SQL_PASSWORD
 ./scripts/launchers/invoke-bcp.sh plan --config ./examples/config.linux-sql.json
 unset BCP_SOURCE_SQL_PASSWORD BCP_BRONZE_SQL_PASSWORD BCP_LANDING_SQL_PASSWORD
@@ -222,10 +224,9 @@ launcher for the main list and `<command> --help` for each operation's
 parameters. When used, the global `--verbose` option must appear before the
 command.
 
-Bronze SQL control is not temporary: in the lab, the exclusive contract is
-`DBRO684.dbo.execucao`, `DBRO684.dbo.execucao_tabela`,
-`DBRO684.dbo.execucao_lote`, and the technical table
-`DBRO684.dbo.versao_esquema`. Local state uses
+SQL control in the active data destination is not temporary: the contract uses
+`dbo.execucao`, `dbo.execucao_tabela`, `dbo.execucao_lote`, and the technical
+table `dbo.versao_esquema`. Local state uses
 `controle_transferencia.sqlite3`, `PRAGMA user_version=5`, and the tables
 `metadados`, `execucao`, `execucao_tabela`, `execucao_lote`, and
 `tentativa_lote`.
@@ -275,18 +276,20 @@ open a SQL Server connection.
 ## Operational sequence
 
 1. Run `prerequisites`.
-2. Run `plan` and review the effective Source, Landing, and Bronze username,
-   instance, port, and database, as well as each table's strategy.
-3. Generate and review `ddl`; apply it with `--apply --confirm` for `both` when
-   Landing also requires the structure.
+2. Run `plan` and review the effective Source, `BD_DESTINO_01`, and
+   `BD_DESTINO_02` role, username, instance, port, and database, as well as each
+   table's strategy and active destination.
+3. Generate and review `ddl`; apply it with `--apply --confirm` only to areas
+   whose destination role includes structure.
 4. Run `run --confirm-load` and retain the printed `execution_id`.
 5. After a disruption, use `resume` with the same UUID.
 
-With `create_structure_if_needed=true`—the default—the Bronze structure is
-created or completed idempotently during `run`; with `false`, the engine only
-validates the existing structure and fails/skips the table when objects are
-missing. The explicit DDL step is recommended for review and is responsible
-for the Landing structure. The full sequence is documented in
+With `create_structure_if_needed=true`—the default—a `structure_and_data`
+destination is created or completed idempotently during `run`; with `false`,
+the engine only validates the existing structure. `data_only` always requires
+a compatible existing layout and prohibits creation, evolution, and indexes.
+The explicit DDL step is recommended for every structure-capable destination.
+The full sequence is documented in
 [Processing sequence](ORDEM_PROCESSAMENTO.md).
 
 ## Automation-relevant behavior
@@ -310,9 +313,9 @@ for the Landing structure. The full sequence is documented in
   table.
 - `partition_column` is optional per table. The GUI suggests `dh_carga` and
   enables the option when adding a table. When present, it generates the
-  monthly partitioning contract in the Bronze and Landing DDL; when absent, no
+  monthly partitioning contract in structure-capable destination DDL; when absent, no
   partitioning object is created.
-- In the standard Bronze and Landing profiles, `dh_carga` explicitly uses
+- In the standard destination profiles, `dh_carga` explicitly uses
   Brasília civil time (`E. South America Standard Time`), derived from UTC and
   converted to `DATETIME2(7)`, independently of the SQL Server time zone. A
   custom profile may define another expression and remains time-zone agnostic.
@@ -322,20 +325,21 @@ for the Landing structure. The full sequence is documented in
 - `DIRECT_KEYLESS` uses an approximate metadata row count for pre-admission,
   without `COUNT_BIG` on the Source. The actual BCP count is checked against
   the global limit before import.
-- Before loading each table, the engine checks Bronze volumes individually;
+- Before loading each table, the engine checks active-destination volumes individually;
   data and log capacity are not added together. The least available volume is
   the constraint, and every volume must satisfy the requirement. Confirmed
   insufficiency records the table as skipped and proceeds to the next one.
   This also applies to `import --manifest`: only the actual bytes of blocks not
   yet confirmed, plus the safety factor, are checked before creating SQL
   control, applying DDL, or executing `OPENROWSET`.
-- `run`, `resume`, and `import` never load Landing.
+- `run`, `resume`, and `import` load only the destination selected by
+  `active_destination`; a `structure_only` endpoint never reads BCP files.
 
 ## Failure and resume
 
 After a `run` failure, do not run another `run`: preserve SQLite, the
 artifacts, and SQL control, then use `resume` with the same UUID. `status`
-queries local control; `query_control.sql` proves the commits in Bronze.
+queries local control; `query_control.sql` proves commits in the active destination.
 
 ```powershell
 & .\scripts\launchers\invoke-bcp.ps1 status --config .\config.v2.json --execution-id UUID

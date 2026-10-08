@@ -1,8 +1,9 @@
 {
   "config_version": 2,
   "perimeter": "DESENVOLVIMENTO",
-  "scope": "Exemplo de criação e evolução estrutural da Landing, sem carga de dados",
+  "scope": "Exemplo de criação e evolução estrutural do BD_DESTINO_02, sem carga de dados",
   "source": {
+    "role": "data_provider",
     "instance": "SQL-ORIGEM\\INST01",
     "port": 1433,
     "database": "BD_ORIGEM",
@@ -10,10 +11,11 @@
     "authentication": {"type": "windows_integrated"}
   },
   "landing_destination": {
-    "instance": "SQL-LANDING\\INST01",
+    "role": "structure_only",
+    "instance": "SQL-DESTINO-02\\INST01",
     "port": 1433,
-    "database": "DLAN684",
-    "schema": "s344",
+    "database": "BD_DESTINO_02",
+    "schema": "esquema_destino",
     "structure_profile": "../templates/landing.json",
     "authentication": {"type": "windows_integrated"}
   },

@@ -3,6 +3,7 @@
   "perimeter": "DESENVOLVIMENTO",
   "scope": "Exemplo completo com lote de homologação de 1.500 linhas; o default do produto é 200.000",
   "source": {
+    "role": "data_provider",
     "instance": "SQL-ORIGEM\\INST01",
     "port": 1433,
     "database": "BD_ORIGEM",
@@ -11,18 +12,20 @@
     "authentication": {"type": "windows_integrated"}
   },
   "bronze_destination": {
-    "instance": "SQL-BRONZE\\INST01",
+    "role": "structure_and_data",
+    "instance": "SQL-DESTINO-01\\INST01",
     "port": 1433,
-    "database": "DBRO684",
-    "schema": "s344",
+    "database": "BD_DESTINO_01",
+    "schema": "esquema_destino",
     "structure_profile": "bronze",
     "authentication": {"type": "windows_integrated"}
   },
   "landing_destination": {
-    "instance": "SQL-LANDING\\INST01",
+    "role": "structure_only",
+    "instance": "SQL-DESTINO-02\\INST01",
     "port": 1433,
-    "database": "DLAN684",
-    "schema": "s344",
+    "database": "BD_DESTINO_02",
+    "schema": "esquema_destino",
     "structure_profile": "landing",
     "authentication": {"type": "windows_integrated"}
   },

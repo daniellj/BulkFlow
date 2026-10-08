@@ -44,10 +44,16 @@ from .catalog import (
 )
 from .cdc import CdcCoordinator, DEFAULT_CDC_RETENTION_MINUTES, TableCdcResult
 from .config import (
+    DESTINATION_ROLE_DATA_ONLY,
+    DESTINATION_ROLE_STRUCTURE_AND_DATA,
+    DESTINATION_ROLES,
     active_destination,
+    data_destination_areas,
     effective_delete_confirmed_files,
     effective_tables,
+    endpoint_role,
     operational_fingerprint,
+    role_includes_structure,
     structural_fingerprint,
 )
 from .connections import ConnectionFactory
@@ -306,26 +312,73 @@ class BcpEngine:
         )
         return payload
 
-    def _assert_bronze_data_route(self) -> None:
+    def _destination_role(self, area: str) -> str:
+        """Resolve and validate a destination role at the service boundary."""
+
+        if area not in {"bronze", "landing"}:
+            raise RuntimeError(f"Área de destino inválida: {area}")
+        endpoint_key = area + "_destination"
+        if not isinstance(self.config.get(endpoint_key), Mapping):
+            raise RuntimeError(f"Destino {area} não configurado")
+        role = endpoint_role(self.config, endpoint_key)
+        if role not in DESTINATION_ROLES:
+            raise RuntimeError(
+                f"Função inválida para {endpoint_key}: {role!r}"
+            )
+        return role
+
+    def _prepare_destination_control(
+        self,
+        importer: DestinationImporter,
+        area: str,
+    ) -> None:
+        """Create control only where structure is authorized; otherwise validate."""
+
+        if self._destination_role(area) == DESTINATION_ROLE_DATA_ONLY:
+            importer.validate_control()
+        else:
+            importer.ensure_control()
+
+    def _assert_data_route(self, *, required: bool = False) -> None:
         """Fail closed before artifacts, state, connections, DDL, or DML.
 
-        DLAN684 is a structure-only endpoint.  Keeping this guard in the
-        service layer protects callers that construct ``BcpEngine`` directly
-        instead of going through the validated CLI/GUI configuration path.
+        Configuration validation establishes the same invariant for normal
+        CLI/GUI callers. This service-layer check also protects adapters that
+        instantiate ``BcpEngine`` directly with an unvalidated mapping.
         """
 
-        # ``bronze`` is also the V2 contract default.  Accepting an omitted
-        # value keeps direct service-layer test/adaptor callers compatible;
-        # any explicit non-Bronze route is rejected.
-        if self.config.get("active_destination", "bronze") != "bronze":
+        if not required and not self.config.get("execute_import", True):
+            return
+
+        active_area = str(self.config.get("active_destination", "bronze"))
+        active_role = self._destination_role(active_area)
+        if active_role not in {
+            DESTINATION_ROLE_STRUCTURE_AND_DATA,
+            DESTINATION_ROLE_DATA_ONLY,
+        }:
             raise RuntimeError(
-                "Carga de dados permitida somente para Bronze; Landing é somente estrutura"
+                f"Destino ativo {active_area} não possui função que autorize dados"
             )
+
+        # Validate every configured destination, including the inactive one,
+        # so an invalid or second data route cannot be hidden from a direct
+        # service-layer caller.
+        for area in ("bronze", "landing"):
+            if self.config.get(area + "_destination") is not None:
+                self._destination_role(area)
+        data_areas = data_destination_areas(self.config)
+        if data_areas != (active_area,):
+            raise RuntimeError(
+                "A camada de serviço exige exatamente um destino de dados, "
+                f"igual a active_destination; encontrados: {', '.join(data_areas) or 'nenhum'}"
+            )
+
         for index, table in enumerate(self.config.get("tables", [])):
-            if table.get("destination_area", "bronze") != "bronze":
+            table_area = table.get("destination_area", active_area)
+            if table_area != active_area:
                 raise RuntimeError(
-                    f"tables[{index}].destination_area deve ser bronze; "
-                    "Landing é somente estrutura"
+                    f"tables[{index}].destination_area deve corresponder a "
+                    f"active_destination ({active_area})"
                 )
 
     def _configured_table_for_manifest(self, manifest: BlockManifest) -> dict[str, Any]:
@@ -608,8 +661,9 @@ class BcpEngine:
                 ),
             )
             destination_connections: dict[str, Any] = {}
-            # Planning is the explicit credential/connectivity checkpoint for
-            # every configured environment, including structure-only Landing.
+            # Planning is the explicit credential/connectivity and read-only
+            # catalog checkpoint for every configured destination, including
+            # data-only endpoints whose structure must already be compatible.
             for area in ("landing", "bronze"):
                 endpoint = self.config.get(area + "_destination")
                 if endpoint is None:
@@ -836,6 +890,19 @@ class BcpEngine:
         output_directory: Path,
         apply: bool = False,
     ) -> list[Path]:
+        requested_areas = tuple(areas)
+        # Validate the complete request before creating files or opening any
+        # connection. A data-only endpoint must never receive generated or
+        # applied DDL, even through a direct service-layer call.
+        for area in requested_areas:
+            if area not in {"bronze", "landing"}:
+                raise ValueError(f"Área inválida: {area}")
+            role = self._destination_role(area)
+            if not role_includes_structure(role):
+                raise RuntimeError(
+                    f"Destino {area} com função {role} não autoriza operações de estrutura"
+                )
+
         source = None
         destinations: dict[str, Any] = {}
         output_directory.mkdir(parents=True, exist_ok=True)
@@ -843,11 +910,7 @@ class BcpEngine:
         try:
             source, _ = self._connect_source()
             db = database_identity(source)
-            for area in areas:
-                if area not in {"bronze", "landing"}:
-                    raise ValueError(f"Área inválida: {area}")
-                if self.config.get(area + "_destination") is None:
-                    raise RuntimeError(f"{area}_destination não configurado")
+            for area in requested_areas:
                 if apply:
                     destinations[area], _ = self._connect_destination(area)
                 area_scripts: list[str] = []
@@ -920,6 +983,24 @@ class BcpEngine:
     ) -> None:
         from .inspection import inspect_layout_catalog
         target_area = area or layout.profile_name.casefold()
+        role = self._destination_role(target_area)
+        if role == DESTINATION_ROLE_DATA_ONLY:
+            # ``data_only`` is an immutable structure contract: it neither
+            # creates/evolves columns nor completes indexes. Import is admitted
+            # only when the entire physical layout already matches.
+            comparison = compare_catalog(
+                layout,
+                inspect_layout_catalog(destination, layout),
+                include_secondary=True,
+            )
+            if comparison.state is not CatalogState.COMPATIBLE:
+                raise RuntimeError(
+                    "Destino somente dados exige estrutura previamente completa e "
+                    "compatível, incluindo índices: "
+                    + "; ".join(comparison.errors + comparison.missing_objects)
+                )
+            return
+
         include_secondary = (
             self.config["structure"]["secondary_indexes_phase"] == "before_load"
         )
@@ -958,11 +1039,24 @@ class BcpEngine:
                 + "; ".join(after.errors + after.missing_objects)
             )
 
-    def _finish_indexes(self, destination: Any, layout: TableLayout) -> None:
+    def _finish_indexes(
+        self,
+        destination: Any,
+        layout: TableLayout,
+        *,
+        area: str | None = None,
+    ) -> None:
         from .inspection import inspect_layout_catalog
+        target_area = area or layout.profile_name.casefold()
         comparison = compare_catalog(layout, inspect_layout_catalog(destination, layout), data_completed=True)
         if comparison.state is CatalogState.COMPATIBLE:
             return
+        if self._destination_role(target_area) == DESTINATION_ROLE_DATA_ONLY:
+            raise RuntimeError(
+                "Destino somente dados não permite criar índices; o layout deve estar "
+                "previamente completo: "
+                + "; ".join(comparison.errors + comparison.missing_objects)
+            )
         if comparison.state not in {CatalogState.INDEXES_PENDING, CatalogState.DATA_COMPLETE_INDEXES_PENDING}:
             raise RuntimeError("Layout final incompatível: " + "; ".join(comparison.errors + comparison.missing_objects))
         if not self.config["create_structure_if_needed"]:
@@ -1031,6 +1125,13 @@ class BcpEngine:
             projection_hash=projection_hash,
             final_limit_json=final_limit_json,
         )
+        if self._destination_role(area) == DESTINATION_ROLE_DATA_ONLY:
+            # Validate the complete table contract before even registering the
+            # table in SQL control. No target DDL/evolution is legal here.
+            self._provision_initial(destination, layout, area=area)
+            register()
+            return
+
         if self._destination_table_exists(destination, layout):
             from .inspection import inspect_layout_catalog
 
@@ -1186,7 +1287,7 @@ class BcpEngine:
             raise StructuralResumeError("Snapshot físico do manifesto diverge do layout planejado")
 
     def run(self, *, execution_id: str | None = None, resume: bool = False) -> ExecutionReport:
-        self._assert_bronze_data_route()
+        self._assert_data_route()
         if resume and not execution_id:
             raise ValueError("resume exige execution_id existente; uma nova identidade nao sera gerada")
         execution_id = execution_id or str(uuid.uuid4())
@@ -1237,7 +1338,9 @@ class BcpEngine:
                 destination, destination_identity = self._connect_destination()
                 importer = DestinationImporter(destination, self.config["control_schema"])
                 self._sql_path_probe(destination, store)
-                importer.ensure_control()
+                self._prepare_destination_control(
+                    importer, str(self.config["active_destination"])
+                )
             tables = effective_tables(self.config)
             cdc = CdcCoordinator(
                 retention_minutes=self.config.get(
@@ -1479,7 +1582,11 @@ class BcpEngine:
                     indexes_completed = True
                     if destination is not None:
                         try:
-                            self._finish_indexes(destination, prepared.layout)
+                            self._finish_indexes(
+                                destination,
+                                prepared.layout,
+                                area=table["destination"]["area"],
+                            )
                             result.index_state = "COMPLETED"
                         except Exception as exc:
                             indexes_completed = False
@@ -1542,10 +1649,10 @@ class BcpEngine:
                     result.status = TableStatus.SKIPPED_DESTINATION_SPACE.value
                     result.reason = str(exc)
                     result.warnings.append(
-                        "Carga Bronze nao iniciada; nenhuma linha desta tabela foi importada."
+                        "Carga no destino nao iniciada; nenhuma linha desta tabela foi importada."
                     )
                     result.next_action = (
-                        "Libere ou amplie o espaco dos volumes do banco Bronze e retome "
+                        "Libere ou amplie o espaco dos volumes do banco de destino e retome "
                         "a mesma execucao."
                     )
                 except DirectKeylessLimitExceededError as exc:
@@ -2261,7 +2368,7 @@ class BcpEngine:
     def import_manifests(self, manifest_path: Path) -> ExecutionReport:
         """Importa artefatos sem abrir ou consultar a origem."""
 
-        self._assert_bronze_data_route()
+        self._assert_data_route(required=True)
 
         if manifest_path.is_dir():
             paths = sorted(manifest_path.rglob("*.manifest.json"))
@@ -2344,7 +2451,7 @@ class BcpEngine:
                 try:
                     # Materialize o checkpoint local antes de qualquer DDL/DML no
                     # destino. Assim, uma recusa por capacidade continua
-                    # auditavel sem criar objetos no controle SQL da Bronze.
+                    # auditavel sem criar objetos no controle SQL do destino.
                     if state.table(manifest.execution_id, table_id) is None:
                         state.register_table(
                             manifest.execution_id,
@@ -2429,7 +2536,7 @@ class BcpEngine:
                     # exista ao menos uma tabela apta a importar. Tabelas
                     # recusadas por espaco nao deixam DDL nem linhas de controle.
                     if not destination_prepared:
-                        importer.ensure_control()
+                        self._prepare_destination_control(importer, area)
                         self._sql_path_probe(destination, store)
                         destination_prepared = True
 
@@ -2517,7 +2624,7 @@ class BcpEngine:
                             target_table=layout.table,
                         )
                         try:
-                            self._finish_indexes(destination, layout)
+                            self._finish_indexes(destination, layout, area=area)
                         except Exception as exc:
                             result.status = TableStatus.DATA_COMPLETE_INDEXES_PENDING.value
                             result.index_state = "PENDING"
@@ -2544,10 +2651,10 @@ class BcpEngine:
                     result.status = TableStatus.SKIPPED_DESTINATION_SPACE.value
                     result.reason = str(exc)
                     result.warnings.append(
-                        "Carga Bronze nao iniciada; nenhuma linha desta tabela foi importada."
+                        "Carga no destino nao iniciada; nenhuma linha desta tabela foi importada."
                     )
                     result.next_action = (
-                        "Libere ou amplie o espaco dos volumes do banco Bronze e retome "
+                        "Libere ou amplie o espaco dos volumes do banco de destino e retome "
                         "a mesma execucao."
                     )
                 except SchemaEvolutionRequiredError as exc:

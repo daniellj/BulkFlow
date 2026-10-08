@@ -3,6 +3,7 @@
   "perimeter": "DESENVOLVIMENTO",
   "scope": "Exemplo de configuração completa",
   "source": {
+    "role": "data_provider",
     "instance": "SERVIDOR_ORIGEM",
     "port": 1433,
     "database": "BD_ORIGEM",
@@ -11,18 +12,20 @@
     "authentication": {"type": "windows_integrated"}
   },
   "bronze_destination": {
-    "instance": "SERVIDOR_BRONZE",
+    "role": "structure_and_data",
+    "instance": "SERVIDOR_DESTINO_01",
     "port": 1433,
-    "database": "DBRO684",
-    "schema": "s344",
+    "database": "BD_DESTINO_01",
+    "schema": "esquema_destino",
     "structure_profile": "templates/bronze.json",
     "authentication": {"type": "windows_integrated"}
   },
   "landing_destination": {
-    "instance": "SERVIDOR_LANDING",
+    "role": "structure_only",
+    "instance": "SERVIDOR_DESTINO_02",
     "port": 1433,
-    "database": "DLAN684",
-    "schema": "s344",
+    "database": "BD_DESTINO_02",
+    "schema": "esquema_destino",
     "structure_profile": "templates/landing.json",
     "authentication": {"type": "windows_integrated"}
   },

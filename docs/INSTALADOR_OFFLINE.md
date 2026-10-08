@@ -58,8 +58,8 @@ Official sources:
 7. Before the first planning operation, select **Check prerequisites** in the
    GUI or run the CLI `prerequisites` command.
 
-The installer does not request or store database passwords. Source, Bronze,
-and Landing credentials continue to be requested at operation time, with an
+The installer does not request or store database passwords. Source,
+`BD_DESTINO_01`, and `BD_DESTINO_02` credentials continue to be requested at operation time, with an
 independent masked password for each connection.
 
 ## Silent installation
@@ -114,8 +114,8 @@ installed executable from attempting to write under `Program Files`.
 
 This separation allows the application to run without write access to its
 program directory. Configuration may still point operational directories to
-another authorized location, including the share required by the Bronze SQL
-Server.
+another authorized location, including the share required by the active data
+destination SQL Server.
 
 Repair, upgrade, and uninstall operations preserve operational artifacts under
 `%LOCALAPPDATA%\BulkFlow`, including configurations, manifests, BCP files, and
@@ -196,7 +196,9 @@ disconnected. Record evidence for every item.
 - [ ] Open the GUI and CLI with no Python on `PATH`.
 - [ ] Confirm `ODBC Driver 18 for SQL Server` and run `bcp -v`/`bcp -?`.
 - [ ] Run `prerequisites`, `plan`, DDL generation/application, and a test load
-      with Source, Landing, and Bronze configured.
+      with Source, `BD_DESTINO_01`, and `BD_DESTINO_02` configured; verify that
+      at most one destination role includes data, and exactly one does so when
+      the test imports data.
 - [ ] Confirm that mutable files are created under `%LOCALAPPDATA%` or the
       configured paths, never under `Program Files`.
 - [ ] Run setup again with the same versions and prove idempotency/repair.

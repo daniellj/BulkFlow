@@ -93,11 +93,11 @@ física, não apenas pelo nome do arquivo.
 O comando migra somente o estado SQLite local. Ele não converte arquivos JSON
 de configuração nem os objetos SQL persistentes do destino. Recrie
 configurações anteriores a partir dos exemplos atuais e valide-as com `plan`.
-No SQL Server Bronze, o contrato vigente usa exclusivamente
-`DBRO684.dbo.execucao`, `DBRO684.dbo.execucao_tabela`,
-`DBRO684.dbo.execucao_lote` e a tabela técnica
-`DBRO684.dbo.versao_esquema`. A remoção de um schema SQL legado deve ocorrer
+No destino de dados ativo, o contrato vigente usa exclusivamente
+`dbo.execucao`, `dbo.execucao_tabela`, `dbo.execucao_lote` e a tabela técnica
+`dbo.versao_esquema`. A remoção de um schema SQL legado deve ocorrer
 somente em uma migração administrativa explícita; o motor não apaga histórico
 automaticamente. A regra de preservação desta página continua valendo para os
-arquivos SQLite, inclusive para o legado `bcp_control_v2.sqlite3`. A Landing não
-recebe tabelas de controle.
+arquivos SQLite, inclusive para o legado `bcp_control_v2.sqlite3`. Um destino
+com função `structure_only` não recebe tabelas de controle da carga;
+`data_only` exige que o layout de controle compatível já exista.

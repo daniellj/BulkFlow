@@ -6,8 +6,8 @@ The `ttkbootstrap` interface uses the same V2 contract and engine as the CLI.
 There is no second load implementation: its actions call the planning, DDL,
 execution, resume, import, and status services.
 
-The application is infrastructure-agnostic. Docker, fixed ports, and the
-`BD_ORIGEM`, `DBRO684`, and `DLAN684` databases belong only to the local lab.
+The application is infrastructure-agnostic. Docker and fixed ports belong only
+to the local lab.
 
 ## Opening the interface
 
@@ -67,16 +67,17 @@ validation: `*` and the field text determine whether a value is required.
 This tab groups the perimeter, execution mode, directories, files, limits,
 timeouts, and tools. Fields marked with `*` are required.
 
-The data flow is fixed: Source → Bronze. Landing is structure-only. The former
-scope field is not displayed. **Criar estrutura se necessário** is available
+Source is always the data provider. At most one configured destination is
+data-capable, and exactly one is required when import is enabled. The former scope field is not displayed. **Criar estrutura se necessário** is available
 again and selected by default. When selected, it allows `run`, `resume`, and
-manifest import to create or complete missing Bronze objects automatically.
+manifest import to create or complete missing objects when the active
+destination uses `structure_and_data`.
 When cleared, these operations only validate the existing structure and report
 missing/incomplete structures without creating them. **Gerar DDL** is always
 non-mutating, and explicitly selecting **Aplicar DDL** remains a separate
-authorization to apply Bronze/Landing scripts regardless of this checkbox.
+authorization to apply scripts to structure-capable destinations regardless of this checkbox.
 The field's tooltip explains this behavior. **Apagar arquivos exportados após
-confirmação** removes a data file only after the Bronze commit has been proven.
+confirmação** removes a data file only after the active-destination commit has been proven.
 
 ### Perimeter and suggested users
 
@@ -95,10 +96,9 @@ username and password.
   default `262800`, equivalent to the six-month business period
   (approximately 182.5 days). Enter digits only, without a thousands
   separator; the accepted range is `1` through `52494800` minutes.
-- **Esquema de controle:** required value `dbo`. In the lab's Bronze database,
-  the persistent contract uses `DBRO684.dbo.execucao`,
-  `DBRO684.dbo.execucao_tabela`, `DBRO684.dbo.execucao_lote`, and the technical
-  table `DBRO684.dbo.versao_esquema`.
+- **Esquema de controle:** required value `dbo`. In the active data destination,
+  the persistent contract uses `dbo.execucao`, `dbo.execucao_tabela`,
+  `dbo.execucao_lote`, and the technical table `dbo.versao_esquema`.
 - **Índices secundários:** defaults to **Antes da carga**, persisted as
   `before_load`.
 
@@ -117,7 +117,7 @@ support for the `-Y` and `-u` TLS options.
 - **Diretório de exportação dos arquivos:** writable path used by the
   executor/BCP. When running from source, the default is
   `<project root>\Local\BulkFlow\bcp-data`.
-- **Diretório de importação dos arquivos:** the Bronze SQL Server's view of the
+- **Diretório de importação dos arquivos:** the active data destination SQL Server's view of the
   same bytes. It initially matches the export directory but may be changed to
   an equivalent share or mount path.
 - **Diretório de controle local:** stores SQLite and checkpoints. When running
@@ -134,13 +134,19 @@ approximate metadata for pre-admission, without `COUNT_BIG` on the Source. The
 actual number of rows copied by BCP is checked against the limit before
 publication/import.
 
-The executor-visible path and Bronze SQL Server-visible path may use different
+The executor-visible path and active-destination SQL Server-visible path may use different
 syntax, but they must point to the same bytes. SQLite control must remain on
 local storage, not UNC.
 
 ## Connections tab
 
-Source, Bronze, and Landing have independent parameters:
+The three subtabs are named **Origem**, **Destino 01**, and **Destino 02**.
+Their persisted compatible keys remain `source`, `bronze_destination`, and
+`landing_destination`; the area IDs used by the CLI remain `bronze` and
+`landing`. These are stable technical identifiers, not fixed operational
+roles.
+
+Source, `BD_DESTINO_01`, and `BD_DESTINO_02` have independent parameters:
 
 - instance;
 - required port, separate from the instance;
@@ -148,16 +154,35 @@ Source, Bronze, and Landing have independent parameters:
 - schema;
 - optional DSN;
 - authentication and username;
-- TLS.
+- TLS;
+- **Função**.
 
-This separation naturally supports both a perimeter in which Landing and
-Bronze share an instance and one in which all three endpoints use different
-instances and ports.
+The Source role has the single value **data provider**, persisted as
+`data_provider`. Both destinations offer:
+
+- **structure and data** (`structure_and_data`): permits manual/automatic DDL,
+  additive evolution, index creation, and data loading;
+- **structure only** (`structure_only`): permits manual DDL and additive
+  evolution, but never reads BCP files or receives rows;
+- **data only (premise: the structure must already exist)** (`data_only`): loads into
+  a previously compatible layout and prohibits creation, evolution, and index
+  creation.
+
+The defaults are `data_provider` for Source, `structure_and_data` for
+`BD_DESTINO_01`, and `structure_only` for `BD_DESTINO_02`. The role comboboxes
+use the blue default-value background while their current value equals the
+default and remain editable where more than one choice exists. At most one
+configured destination may include data. When import is enabled, exactly one
+must do so: its area becomes `active_destination`, it receives SQL control
+under `dbo`, and it is the only destination that reads BCP files. Export-only
+configurations may have no data-capable destination.
+
+This separation naturally supports shared or different instances and ports.
 
 For Source, **Banco de dados** is the database being read; there is no second
-**Banco para leitura** field. The Bronze schema starts blank and must be
-provided. The Landing schema inherits the current Bronze value when
-appropriate, but remains editable and required.
+**Banco para leitura** field. The `BD_DESTINO_01` schema starts blank and must
+be provided. The `BD_DESTINO_02` schema inherits the current `BD_DESTINO_01`
+value when appropriate, but remains editable and required.
 
 The TLS option is displayed as **Confiar no certificado do servidor**.
 
@@ -186,8 +211,8 @@ To add or edit a table, provide:
 - required source database, inherited from the Source connection;
 - required source schema, inherited from the Source connection;
 - source table;
-- required destination database, inherited from the Bronze connection;
-- required destination schema, inherited from the Bronze connection;
+- required destination database, inherited from the active data destination;
+- required destination schema, inherited from the active data destination;
 - destination table, automatically suggested as
   `<source_database>_<source_table>` in lowercase;
 - optional watermark, containing only comma-separated column names, for
@@ -202,8 +227,8 @@ Inherited databases and schemas, the generated destination table, per-table
 batch size, profile, and partitioning use the default-value background. In this
 version, editing the database fields does not create a separate per-table
 connection: **Banco de dado de origem** must remain equal to
-`source.database`, and **Banco de dado de destino** must remain equal to
-`bronze_destination.database`, case-insensitively. Validation/save rejects a
+`source.database`, and **Banco de dado de destino** must remain equal to the
+endpoint selected by `active_destination`, case-insensitively. Validation/save rejects a
 mismatch so that the interface does not promise a route the engine cannot
 execute. Save and run a separate configuration for another database pair.
 
@@ -290,7 +315,7 @@ created only while this optional parameter remains enabled and populated; the
 operator may disable it or provide another column. The column must exist at the
 destination and have type `DATETIME2(7)`.
 
-Bronze and Landing receive a `RANGE RIGHT` function and scheme, with monthly
+A structure-capable destination profile receives a `RANGE RIGHT` function and scheme, with monthly
 boundaries from the current month through December of the current year plus
 six years, all on `PRIMARY`. For `dh_carga`, names use the `mensal` descriptor;
 other columns use `attr`. The technical ID remains the `NONCLUSTERED` PK, and
@@ -301,7 +326,7 @@ Without the parameter, no partitioning object is created. The engine does not
 silently repartition an incompatible existing table; that case requires an
 explicit migration.
 
-In the standard Bronze and Landing profiles, `dh_carga` records Brasília civil
+In the standard destination profiles, `dh_carga` records Brasília civil
 time. The expression starts from UTC, explicitly applies the SQL Server
 `E. South America Standard Time` time zone, and converts the result to
 `DATETIME2(7)`; it therefore does not depend on the server time zone. Custom
@@ -351,7 +376,7 @@ Both paths normally represent the same files through different names or
 mounts. Capacities are therefore compared separately, and the engine does not
 double the projection. When the import path exists only on the SQL Server
 host, the executor cannot measure its volume and displays **indisponível**.
-This does not mean zero free bytes. Later proof that Bronze sees the same bytes
+This does not mean zero free bytes. Later proof that the active destination sees the same bytes
 and validation of the database data/log volumes remain separate controls.
 
 #### Projection cost
@@ -382,33 +407,35 @@ execution.
 
 Select **Planejar** and, when requested, enter the masked password for each
 environment. Planning is read-only. In addition to per-table results, the
-screen shows the effective Source, Landing, and Bronze username, instance,
-port, and database.
+screen shows the effective Source, `BD_DESTINO_01`, and `BD_DESTINO_02`
+username, instance, port, database, and role. It also identifies the single
+active data destination.
 
 ### 3. DDL
 
-**Gerar DDL** writes scripts for Bronze, Landing, or both. **Aplicar DDL**
-requests confirmation and applies the idempotent scripts. Landing receives
-structure only, including evolution and partitioning when configured; it never
-receives rows. When running from source, **Diretório dos scripts** starts at
+**Gerar DDL** writes scripts for `BD_DESTINO_01`, `BD_DESTINO_02`, or both,
+using the compatible `bronze`, `landing`, and `both` area IDs. **Aplicar DDL**
+requests confirmation and applies idempotent scripts only where the role
+includes structure. A `data_only` destination is validation-only and rejects
+DDL, evolution, and index creation. When running from source, **Diretório dos scripts** starts at
 `<project root>\Local\BulkFlow\ddl`.
 
 ### 4. Data
 
 - **Executar nova carga:** creates a UUID, exports from Source, and imports only
-  into Bronze.
+  into the single data-capable destination.
 - **Retomar:** uses the same UUID and durable checkpoints.
 - **Consultar status:** reads local SQLite control.
 - **Importar manifestos:** imports published artifacts without querying Source.
 
 Long-running tasks execute outside the UI thread. The window prevents a second
 operation and does not offer forced cancellation. After a disruption, retain
-the UUID, SQLite, artifacts, and the four control tables under `DBRO684.dbo`;
+the UUID, SQLite, artifacts, and the four `dbo` control tables in the active destination;
 reopen the same configuration and select **Retomar**.
 
 Resume occurs by logical block, never by byte or row within a `.partial` file.
 A block with a proven SQL commit is not inserted again. If free space on the
-Bronze volumes is demonstrably insufficient, the table is marked and skipped
+active-destination volumes is demonstrably insufficient, the table is marked and skipped
 before import, and processing continues with the next table. Capacity is
 checked by volume: data and log space are not added together, and the smallest
 volume is the constraint. See

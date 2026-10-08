@@ -3,6 +3,7 @@
   "perimeter": "DESENVOLVIMENTO",
   "scope": "Exemplo SQL independente por endpoint",
   "source": {
+    "role": "data_provider",
     "instance": "SQL-ORIGEM\\INST01",
     "port": 1433,
     "database": "BD_ORIGEM",
@@ -14,21 +15,23 @@
     }
   },
   "bronze_destination": {
-    "instance": "SQL-DESTINO\\INST02",
+    "role": "structure_and_data",
+    "instance": "SQL-DESTINO-01\\INST01",
     "port": 1433,
-    "database": "BASE_BRONZE",
+    "database": "BD_DESTINO_01",
     "schema": "fonte_a",
     "structure_profile": "bronze",
     "authentication": {
       "type": "sql",
       "username": "login_carga",
-      "password": {"provider": "windows_credential_manager", "reference": "BCP/bronze-destination"}
+      "password": {"provider": "windows_credential_manager", "reference": "BCP/destination-01"}
     }
   },
   "landing_destination": {
-    "instance": "SQL-LANDING\\INST03",
+    "role": "structure_only",
+    "instance": "SQL-DESTINO-02\\INST03",
     "port": 1433,
-    "database": "BASE_LANDING",
+    "database": "BD_DESTINO_02",
     "schema": "fonte_a",
     "structure_profile": "landing",
     "authentication": {

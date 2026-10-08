@@ -94,11 +94,12 @@ physical signatures, not only by filenames.
 
 The command migrates only local SQLite state. It does not convert JSON
 configuration files or persistent destination SQL objects. Recreate older
-configurations from the current examples and validate them with `plan`. In
-Bronze SQL Server, the current contract uses only `DBRO684.dbo.execucao`,
-`DBRO684.dbo.execucao_tabela`, `DBRO684.dbo.execucao_lote`, and the technical
-table `DBRO684.dbo.versao_esquema`. A legacy SQL schema may be removed only
+configurations from the current examples and validate them with `plan`. In the
+active data destination, the current contract uses only `dbo.execucao`,
+`dbo.execucao_tabela`, `dbo.execucao_lote`, and the technical table
+`dbo.versao_esquema`. A legacy SQL schema may be removed only
 during an explicit administrative migration; the engine never deletes history
 automatically. The preservation rule on this page continues to apply to SQLite
-files, including legacy `bcp_control_v2.sqlite3`. Landing does not receive
-control tables.
+files, including legacy `bcp_control_v2.sqlite3`. A destination with role
+`structure_only` does not receive load-control tables; `data_only` requires the
+compatible control layout to exist already.

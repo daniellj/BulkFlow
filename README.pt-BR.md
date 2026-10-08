@@ -2,28 +2,30 @@
 
 # BulkFlow — Exportação/Importação de Dados para SQL Server
 
-Motor configurável para exportar dados com `bcp queryout` e carregá-los de
-forma transacional no endpoint Bronze. O endpoint Landing recebe somente DDL
-no padrão Landing — criação e evolução aditiva de tabelas — e nunca recebe
-linhas. O processo é sequencial por tabela e bloco; as linhas não passam por
-listas, DataFrames ou transformação linha a linha em Python.
+Motor configurável para exportar dados com `bcp queryout` e, quando a
+importação está habilitada, carregá-los de forma transacional em um destino
+capaz de receber dados. A GUI
+denomina as conexões **Origem**, **Destino 01** e **Destino 02**; esta
+documentação referencia os bancos de destino como `BD_DESTINO_01` e
+`BD_DESTINO_02`. O processo é sequencial por tabela e bloco; as linhas não
+passam por listas, DataFrames ou transformação linha a linha em Python.
 
 O motor, a GUI e a CLI são agnósticos de ambiente e infraestrutura. Docker,
-Compose, SQL Server em contêiner, portas fixas, `BD_ORIGEM`, `DBRO684` e
-`DLAN684` pertencem exclusivamente ao laboratório opcional de testes locais;
-não são requisitos de instalação ou operação do produto.
+Compose, SQL Server em contêiner e portas fixas pertencem exclusivamente ao
+laboratório opcional de testes locais; não são requisitos de instalação ou
+operação do produto.
 
 Esta entrega inclui:
 
 - CLI reutilizável em PowerShell e shell Linux;
 - interface desktop simples em `ttkbootstrap`;
-- perfis exatos Bronze e Landing;
+- perfis versionados de estrutura dos destinos;
 - PK, UNIQUE, marca d'água explícita comprovada e carga direta limitada;
 - CDC opcional por tabela;
 - retenção global do cleanup CDC configurável, com default de 262.800 minutos;
 - evolução aditiva de esquema opcional;
 - particionamento mensal opcional nos destinos;
-- verificação de espaço no executor e nos volumes do banco Bronze;
+- verificação de espaço no executor e nos volumes do destino de dados ativo;
 - manifestos, SHA-256, controles SQLite/SQL e retomada idempotente;
 - executáveis Windows autocontidos para GUI e CLI.
 
@@ -160,9 +162,9 @@ manifesto contra o perfil local confiável.
 ## Fluxo
 
 ```text
-Origem configurada
-  ├─ linhas via BCP ───────────────> Bronze + controle persistente
-  └─ metadados para criação/evolução ─> Landing (somente estrutura)
+Origem configurada (função: data_provider)
+  ├─ linhas via BCP ───────────────> um destino capaz de receber dados quando houver importação
+  └─ metadados para DDL/evolução ─────> destinos cuja função inclua estrutura
 ```
 
 ```text
@@ -174,8 +176,8 @@ configuração V2 + perfil versionado
   -> retenção do cleanup agora, ou pendente até o job existir
   -> CDC da tabela; se pendente, confirmar a retenção antes do primeiro BCP
   -> seleção/prova da chave e captura do teto
-  -> estimativa e verificação de espaço no executor e na Bronze
-  -> criação/evolução obrigatória da estrutura Bronze
+  -> estimativa e verificação de espaço no executor e no destino de dados ativo
+  -> criação/evolução do destino ativo somente quando sua função permitir
   -> bcp queryout para arquivo .partial
   -> contagem real + SHA-256 + publicação atômica
   -> OPENROWSET(BULK...) com INSERT, controle e checkpoint no mesmo commit
@@ -193,11 +195,12 @@ não é reenviado. O procedimento completo e as matrizes de falha estão em
 [Falhas, checkpoints e retomada](docs/FALHAS_E_RETOMADA.pt-BR.md).
 
 A ordem operacional recomendada é: validar pré-requisitos, planejar e informar
-as credenciais independentes, gerar/revisar/aplicar o DDL de Bronze e Landing,
+as credenciais independentes, gerar/revisar/aplicar o DDL aplicável aos destinos,
 e somente então executar a exportação/importação. Com
 `create_structure_if_needed=true` — valor padrão — o `run` também cria ou
-completa de forma idempotente a estrutura Bronze. Com `false`, o motor apenas
-valida a estrutura existente e não cria os objetos ausentes. A sequência
+completa de forma idempotente o destino ativo quando sua função é
+`structure_and_data`. Com `false`, ou na função `data_only`, o motor valida a
+estrutura existente e não cria os objetos ausentes. A sequência
 detalhada está em
 [Ordem completa do processamento](docs/ORDEM_PROCESSAMENTO.pt-BR.md).
 
@@ -223,21 +226,39 @@ Parâmetros centrais:
 | `allow_schema_evolution` | `false` por padrão |
 | `create_structure_if_needed` | `true` por padrão; pode ser desmarcado na GUI para somente validar estruturas já existentes |
 | `execute_import` | `false` produz somente artefatos |
+| `source.role` | valor obrigatório `data_provider` |
+| `role` dos destinos | `structure_and_data`, `structure_only` ou `data_only` |
+| `active_destination` | ID de área compatível (`bronze` ou `landing`); opcional na entrada, pois o único destino de dados é derivado das funções, e um valor explícito é validado |
 | `enable_cdc` | flag independente em cada tabela |
 | `cdc_retention_minutes` | retenção global do cleanup CDC; default `262800` (seis meses, aproximadamente 182,5 dias) |
 | `watermark` | `null` ou lista explícita de colunas; a direção é sempre `ASC` |
 | `partition_column` | opcional por tabela; ausente desabilita particionamento |
 | `estimates.safety_factor` | `1.25` por padrão |
-| `control_schema` | valor obrigatório `dbo`; o controle SQL existe exclusivamente em `DBRO684.dbo` no laboratório |
+| `control_schema` | valor obrigatório `dbo`; o controle SQL existe no destino de dados ativo |
 | `structure.secondary_indexes_phase` | `before_load` por padrão |
 | `continue_after_table_error` | controla continuação entre tabelas |
 | `artifact_reader_sids` | SIDs Windows específicos com leitura/travessia nos artefatos; default `[]` |
 | `artifact_writer_sids` | SIDs Windows confiáveis com escrita, somente para identidade SMB efetiva diferente; default `[]` |
 
-Origem, Bronze e Landing têm `instance`, `port`, `database`, schema,
-autenticação e segredo independentes. Por isso, a mesma configuração atende
-tanto ambientes em que Landing e Bronze compartilham uma instância quanto
-ambientes em que cada endpoint reside em uma instância distinta. Os usuários
+Origem, `BD_DESTINO_01` e `BD_DESTINO_02` têm `instance`, `port`, `database`,
+schema, autenticação, segredo e função independentes. A Origem usa sempre
+`data_provider`. As funções dos destinos são:
+
+- `structure_and_data`: permite DDL manual/automático e carga de dados;
+- `structure_only`: permite DDL manual e evolução aditiva, mas nunca lê
+  arquivos BCP nem recebe linhas;
+- `data_only`: carrega dados em layout já compatível e proíbe criação,
+  evolução e criação de índices.
+
+No máximo um destino configurado pode ter função que inclua dados. Com
+`execute_import=true`, exatamente um é obrigatório e seu ID de área compatível
+torna-se `active_destination`; com `execute_import=false`, são permitidos zero
+ou um. Os defaults são
+`structure_and_data` para `BD_DESTINO_01` e `structure_only` para
+`BD_DESTINO_02`. Os nomes persistidos `bronze_destination`,
+`landing_destination` e as áreas `bronze`/`landing` são IDs internos legados e
+compatíveis, não funções operacionais fixas. A mesma configuração atende instâncias compartilhadas ou
+separadas. Os usuários
 sugeridos pelo perímetro são
 `u684` para `DESENVOLVIMENTO`, `h684` para `HOMOLOGAÇÃO` e `s684` para `PRODUÇÃO`; cada um
 pode ser alterado no endpoint. São suportados:
@@ -255,10 +276,10 @@ resolvam para o mesmo valor de teste.
 
 Cada item de `tables` também pode persistir `source_database` e
 `destination_database`. Na GUI, esses campos herdam, respectivamente, os
-bancos dos endpoints Origem e Bronze. Nesta versão eles tornam o mapeamento
+bancos da Origem e do destino de dados ativo. Nesta versão eles tornam o mapeamento
 explícito, mas **não criam rotas independentes por tabela**: quando informados,
 devem coincidir, sem diferenciar maiúsculas de minúsculas, com
-`source.database` e `bronze_destination.database`. Uma divergência é rejeitada
+`source.database` e o endpoint selecionado por `active_destination`. Uma divergência é rejeitada
 na validação, em vez de carregar silenciosamente no banco errado. O nome de
 destino sugerido continua sendo `<source_database>_<source_table>` em
 minúsculas.
@@ -346,13 +367,13 @@ de negócio atuais da origem.
 - coluna `NOT NULL` nova em tabela povoada/contagem desconhecida é recusada sem
   backfill explícito.
 
-A regra vale igualmente para os endpoints Bronze e Landing configurados
-(`DBRO684` e `DLAN684` somente no laboratório).
+A regra vale para todo destino cuja função inclua estrutura. `data_only`
+proíbe explicitamente evolução de schema.
 
 ## Particionamento opcional
 
 Quando `tables[].partition_column` é informado, a coluna deve existir no layout
-de destino e ser `DATETIME2(7)`. O perfil cria, em Bronze e Landing:
+de destino e ser `DATETIME2(7)`. Um perfil de destino com estrutura cria:
 
 - `pf_<coluna>_mensal` e `ps_<coluna>_mensal` quando a coluna é `dh_carga`;
 - sufixo `_attr` para qualquer outra coluna;
@@ -374,11 +395,12 @@ migração explícita.
 
 Nos destinos, schemas, tabelas, colunas, constraints, índices e sequences são
 materializados em minúsculas. O nome de cada banco é preservado como
-configurado; no laboratório, `DBRO684` e `DLAN684` permanecem em maiúsculas.
+configurado.
 
-### Bronze
+### BD_DESTINO_01
 
-O perfil `templates/bronze.json` cria:
+Por default, `BD_DESTINO_01` usa a área interna compatível `bronze` e o perfil
+`templates/bronze.json`, que cria:
 
 - `id_{destination_table}` `BIGINT`, gerado por sequence, sem `IDENTITY`;
 - todas as colunas de negócio da origem em minúsculas;
@@ -407,7 +429,7 @@ SELECT TOP (10)
     CASE WHEN bi_sequencia_evento IS NULL THEN 1 ELSE 0 END AS bi_sequencia_evento_nulo,
     CONVERT(varchar(22), bi_sequencia_evento, 1) AS bi_sequencia_evento_hex,
     DATALENGTH(bi_sequencia_evento) AS bi_sequencia_evento_bytes
-FROM DBRO684.<schema_name>.<table_name>;
+FROM BD_DESTINO_01.<schema_name>.<table_name>;
 ```
 
 Para cada linha, os indicadores `*_nulo` devem retornar `0`. Se o valor fosse
@@ -416,9 +438,10 @@ tamanho retornariam `NULL`; uma célula visualmente vazia, portanto, não é usa
 como prova. O verificador da homologação repete essa validação sobre todas as
 linhas e também confirma no catálogo `BINARY(10) NOT NULL`.
 
-### Landing
+### BD_DESTINO_02
 
-O perfil `templates/landing.json` é usado exclusivamente por `ddl --area
+Por default, `BD_DESTINO_02` usa a área interna compatível `landing` e o perfil
+`templates/landing.json`. Ele pode ser selecionado por `ddl --area
 landing|both` e cria:
 
 - `id_{source_table}` `BIGINT IDENTITY(1,1)`;
@@ -432,11 +455,15 @@ landing|both` e cria:
   o índice simples da coluna escolhida é removido quando redundante e a
   organização clustered passa para essa coluna.
 
-Não existe carga ou encadeamento de dados pela Landing. `run`, `resume` e
-`import` transportam dados exclusivamente da origem configurada para a Bronze;
-a Landing permanece vazia e contém somente estruturas. Em um cenário genérico,
-isso corresponde a `BD_ORIGEM` → `DBRO684`, com `DLAN684` estrutural. O comando `ddl
---area both` cria/evolui, de forma independente, ambos os destinos.
+As funções, e não os nomes internos das áreas, determinam o comportamento.
+No máximo um entre `BD_DESTINO_01` e `BD_DESTINO_02` pode usar
+`structure_and_data` ou `data_only`. Quando a importação está habilitada,
+exatamente um deve fazê-lo; esse endpoint torna-se `active_destination` e
+recebe linhas e controle SQL. Um endpoint
+`structure_only` pode receber DDL/evolução manual, mas nunca lê arquivos BCP.
+Um endpoint `data_only` recebe linhas somente após validação estrita do layout
+e nunca cria/evolui objetos ou índices. O comando `ddl --area both` continua
+usando os IDs de área compatíveis para endereçar ambos os destinos.
 
 Essas regras de fuso pertencem somente aos perfis padrão
 `templates/bronze.json` e `templates/landing.json`. Um perfil customizado
@@ -464,17 +491,15 @@ remove escrita de grupo/terceiros e confia somente no mesmo UID executor/root.
 O SQLite local usa `controle_transferencia.sqlite3`, com as tabelas persistentes
 `metadados`, `execucao`, `execucao_tabela`, `execucao_lote` e
 `tentativa_lote` e `PRAGMA user_version=5`. Esse nome de arquivo local não é um
-schema do SQL Server. O controle SQL do endpoint Bronze é persistente
-exclusivamente em `DBRO684.dbo.execucao`, `DBRO684.dbo.execucao_tabela` e
-`DBRO684.dbo.execucao_lote`; a versão física fica em
-`DBRO684.dbo.versao_esquema`. O motor valida a
+schema do SQL Server. O controle SQL é persistido no destino de dados ativo em
+`dbo.execucao`, `dbo.execucao_tabela` e `dbo.execucao_lote`; a versão física
+fica em `dbo.versao_esquema`. O motor valida a
 assinatura completa, incluindo colunas, defaults, PK/FK, índices e objetos
 inesperados; estrutura parcial, adulterada ou incompatível falha fechada.
 O schema SQL Server legado `controle_transferencia` não faz parte do contrato e
 não deve coexistir com essas tabelas. Essa regra não renomeia nem remove o
 arquivo SQLite local `controle_transferencia.sqlite3`.
-O endpoint Landing recebe somente as tabelas do perfil Landing, não as tabelas
-de controle da carga.
+Um destino `structure_only` não recebe tabelas de controle da carga.
 
 Na GUI, `executor_directory` é apresentado como **Diretório de exportação dos
 arquivos** e `destination_sql_directory` como **Diretório de importação dos
@@ -500,7 +525,7 @@ para essa projeção. Consulte
 [Interface gráfica](docs/USO_INTERFACE_GRAFICA.pt-BR.md#1-pré-requisitos) e
 [Pré-requisitos](docs/PRE_REQUISITOS.pt-BR.md#capacidade-dos-diretórios-e-projeção-bcp).
 
-Antes de provisionar e carregar uma tabela na Bronze, quando a estimativa de
+Antes de provisionar e carregar uma tabela no destino de dados ativo, quando a estimativa de
 bytes está disponível, o motor a multiplica pelo fator de segurança e compara
 separadamente com cada volume do banco retornado por `sys.dm_os_volume_stats`.
 Dados e log não são tratados como espaço intercambiável: a capacidade exibida é
@@ -511,7 +536,7 @@ indisponível.
 Insuficiência comprovada gera alerta, marca a tabela como
 `SKIPPED_DESTINATION_INSUFFICIENT_SPACE`, não inicia sua importação e segue para
 a próxima tabela. Estimativa indisponível obedece a
-`estimates.on_unavailable`; se apenas a consulta dos volumes da Bronze não
+`estimates.on_unavailable`; se apenas a consulta dos volumes do destino ativo não
 puder ser comprovada, o motor registra um aviso e prossegue, sem alegar
 capacidade que não foi medida.
 

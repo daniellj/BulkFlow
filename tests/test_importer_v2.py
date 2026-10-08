@@ -348,6 +348,18 @@ class ImportSqlTests(unittest.TestCase):
         self.assertIn("CREATE TABLE [dbo].[execucao_tabela]", ddl)
         self.assertIn("CREATE TABLE [dbo].[execucao_lote]", ddl)
 
+    def test_destination_importer_can_validate_existing_control_without_ddl(self):
+        importer = DestinationImporter(object())
+        with patch("bcp_engine.importer.execute") as execute_sql:
+            importer.validate_control()
+        sql = execute_sql.call_args.args[1]
+        self.assertIn("Controle SQL incompativel", sql)
+        self.assertIn("[dbo].[versao_esquema]", sql)
+        self.assertNotIn("CREATE TABLE", sql.upper())
+        self.assertNotIn("CREATE SCHEMA", sql.upper())
+        self.assertNotIn("ALTER TABLE", sql.upper())
+        self.assertNotIn("DROP ", sql.upper())
+
     def test_control_schema_is_fixed_to_dbo_at_every_importer_boundary(self):
         invalid_schemas = ("controle_transferencia", "DBO", "outro_schema")
         for schema in invalid_schemas:
@@ -763,6 +775,7 @@ class ImportWithoutSourceTests(unittest.TestCase):
         def __init__(self):
             self.imported = []
             self.ensure_control_calls = 0
+            self.validate_control_calls = 0
             self.registered = []
             self.confirmed = set()
             self.bindings = set()
@@ -771,6 +784,9 @@ class ImportWithoutSourceTests(unittest.TestCase):
 
         def ensure_control(self):
             self.ensure_control_calls += 1
+
+        def validate_control(self):
+            self.validate_control_calls += 1
 
         def register_execution_table(self, **kwargs):
             self.registered.append(kwargs)
@@ -903,6 +919,21 @@ class ImportWithoutSourceTests(unittest.TestCase):
             engine._finish_indexes.assert_called_once()
             self.assertTrue(destination.closed)
 
+    def test_manifest_data_only_validates_control_without_ensuring_it(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            path = self._published_manifest(root, destination_present=True)
+            engine, destination = self._engine(root)
+            engine.config["bronze_destination"]["role"] = "data_only"
+            fake_importer = self._Importer()
+            with patch("bcp_engine.engine.DestinationImporter", return_value=fake_importer):
+                report = engine.import_manifests(path)
+
+            self.assertEqual(report.exit_code(), 0)
+            self.assertEqual(fake_importer.ensure_control_calls, 0)
+            self.assertEqual(fake_importer.validate_control_calls, 1)
+            self.assertTrue(destination.closed)
+
     def test_manifest_import_materializes_fresh_local_control_idempotently(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
@@ -1001,7 +1032,7 @@ class ImportWithoutSourceTests(unittest.TestCase):
                 "SKIPPED_DESTINATION_INSUFFICIENT_SPACE",
             )
             self.assertIn(
-                "Carga Bronze nao iniciada; nenhuma linha desta tabela foi importada.",
+                "Carga no destino nao iniciada; nenhuma linha desta tabela foi importada.",
                 report.tables[0].warnings,
             )
             self.assertEqual(fake_importer.ensure_control_calls, 0)

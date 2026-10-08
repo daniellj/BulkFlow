@@ -481,25 +481,48 @@ class EngineBoundaryTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "não corresponde.*destino"):
             engine._resolve_layout(table, columns)
 
-    def test_service_layer_rejects_landing_as_a_data_route(self):
-        for operation in ("run", "import"):
-            with self.subTest(operation=operation):
-                engine = make_engine()
-                engine.config["active_destination"] = "landing"
-                with self.assertRaisesRegex(RuntimeError, "Landing é somente estrutura"):
-                    if operation == "run":
-                        engine.run(execution_id=FIXED_ID)
-                    else:
-                        engine.import_manifests(Path("manifesto-inexistente.json"))
-                engine._connect_source.assert_not_called()
-                engine._connect_destination.assert_not_called()
-
+    def test_service_layer_enforces_role_derived_data_route(self):
         engine = make_engine()
-        engine.config["tables"] = [{"destination_area": "landing"}]
-        with self.assertRaisesRegex(RuntimeError, "destination_area deve ser bronze"):
-            engine.run(execution_id=FIXED_ID)
+        engine.config.update(
+            {
+                "execute_import": True,
+                "active_destination": "landing",
+                "bronze_destination": {"role": "structure_only"},
+                "landing_destination": {"role": "data_only"},
+                "tables": [{"destination_area": "landing"}],
+            }
+        )
+        engine._assert_data_route(required=True)
+
+        engine.config["landing_destination"]["role"] = "structure_only"
+        with self.assertRaisesRegex(RuntimeError, "não possui função.*dados"):
+            engine._assert_data_route(required=True)
+
+        engine.config["landing_destination"]["role"] = "data_only"
+        engine.config["bronze_destination"]["role"] = "structure_and_data"
+        with self.assertRaisesRegex(RuntimeError, "exatamente um destino de dados"):
+            engine._assert_data_route(required=True)
+
+        engine.config["bronze_destination"]["role"] = "structure_only"
+        engine.config["tables"] = [{"destination_area": "bronze"}]
+        with self.assertRaisesRegex(RuntimeError, "destination_area deve corresponder"):
+            engine._assert_data_route(required=True)
+
         engine._connect_source.assert_not_called()
         engine._connect_destination.assert_not_called()
+
+    def test_service_layer_preserves_legacy_destination_role_defaults(self):
+        engine = make_engine()
+        engine.config.update(
+            {
+                "execute_import": True,
+                "active_destination": "bronze",
+                "bronze_destination": {},
+                "landing_destination": {},
+                "tables": [{"destination_area": "bronze"}],
+            }
+        )
+        engine._assert_data_route(required=True)
 
     def test_engine_run_generates_uuid_and_resume_preserves_supplied_uuid(self):
         engine = make_engine()

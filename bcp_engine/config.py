@@ -27,6 +27,23 @@ DEFAULT_CDC_RETENTION_MINUTES = 262_800
 MAX_CDC_RETENTION_MINUTES = 52_494_800
 DESTINATION_KEYS = {"bronze": "bronze_destination", "landing": "landing_destination"}
 DEFAULT_PROFILES = {"bronze": "templates/bronze.json", "landing": "templates/landing.json"}
+SOURCE_ROLE_DATA_PROVIDER = "data_provider"
+DESTINATION_ROLE_STRUCTURE_AND_DATA = "structure_and_data"
+DESTINATION_ROLE_STRUCTURE_ONLY = "structure_only"
+DESTINATION_ROLE_DATA_ONLY = "data_only"
+SOURCE_ROLES = frozenset({SOURCE_ROLE_DATA_PROVIDER})
+DESTINATION_ROLES = frozenset(
+    {
+        DESTINATION_ROLE_STRUCTURE_AND_DATA,
+        DESTINATION_ROLE_STRUCTURE_ONLY,
+        DESTINATION_ROLE_DATA_ONLY,
+    }
+)
+DEFAULT_ENDPOINT_ROLES = {
+    "source": SOURCE_ROLE_DATA_PROVIDER,
+    "bronze_destination": DESTINATION_ROLE_STRUCTURE_AND_DATA,
+    "landing_destination": DESTINATION_ROLE_STRUCTURE_ONLY,
+}
 PERIMETER_DEFAULT_USERNAMES = {
     "DESENVOLVIMENTO": "u684",
     "HOMOLOGAÇÃO": "h684",
@@ -46,7 +63,7 @@ ROOT_KEYS = {
     "artifact_reader_sids", "artifact_writer_sids",
 }
 ENDPOINT_KEYS = {
-    "instance", "port", "database", "read_database", "schema", "structure_profile",
+    "role", "instance", "port", "database", "read_database", "schema", "structure_profile",
     "authentication", "odbc_driver", "odbc_dsn", "connection_timeout_seconds",
     "sql_timeout_seconds", "tls",
 }
@@ -124,6 +141,47 @@ DEFAULTS: dict[str, Any] = {
 
 class ConfigError(ValueError):
     """Configuração V2 inválida, antes de qualquer conexão ou mutação."""
+
+
+def role_includes_data(role: Any) -> bool:
+    """Return whether an endpoint role authorizes receiving table data."""
+
+    return role in {
+        SOURCE_ROLE_DATA_PROVIDER,
+        DESTINATION_ROLE_STRUCTURE_AND_DATA,
+        DESTINATION_ROLE_DATA_ONLY,
+    }
+
+
+def role_includes_structure(role: Any) -> bool:
+    """Return whether a destination role authorizes structure operations."""
+
+    return role in {
+        DESTINATION_ROLE_STRUCTURE_AND_DATA,
+        DESTINATION_ROLE_STRUCTURE_ONLY,
+    }
+
+
+def endpoint_role(config: Mapping[str, Any], endpoint_key: str) -> str | None:
+    """Resolve a normalized role while remaining compatible with old V2 files."""
+
+    endpoint = config.get(endpoint_key)
+    if not isinstance(endpoint, Mapping):
+        return None
+    default = DEFAULT_ENDPOINT_ROLES.get(endpoint_key)
+    value = endpoint.get("role", default)
+    return str(value) if value is not None else None
+
+
+def data_destination_areas(config: Mapping[str, Any]) -> tuple[str, ...]:
+    """Return configured destination areas whose role includes data."""
+
+    result: list[str] = []
+    for area, key in DESTINATION_KEYS.items():
+        role = endpoint_role(config, key)
+        if role in DESTINATION_ROLES and role_includes_data(role):
+            result.append(area)
+    return tuple(result)
 
 
 def _mapping(value: Any, field: str) -> dict[str, Any]:
@@ -336,15 +394,22 @@ def _validate_endpoint(
     *,
     source: bool,
     default_sql_username: str,
+    default_role: str,
 ) -> dict[str, Any]:
     endpoint = _mapping(value, field)
     _unknown_keys(endpoint, ENDPOINT_KEYS, field)
+    role = _nonempty(endpoint.get("role", default_role), f"{field}.role")
+    allowed_roles = SOURCE_ROLES if source else DESTINATION_ROLES
+    if role not in allowed_roles:
+        expected = ", ".join(sorted(allowed_roles))
+        raise ConfigError(f"{field}.role deve ser um de: {expected}")
     schema = (
         _identifier(endpoint.get("schema"), f"{field}.schema")
         if source
         else _lower_identifier(endpoint.get("schema"), f"{field}.schema")
     )
     result: dict[str, Any] = {
+        "role": role,
         "instance": _nonempty(endpoint.get("instance"), f"{field}.instance"),
         # ``port`` is explicit in all newly generated configurations.  The
         # fallback preserves older V2 files and normalizes them immediately.
@@ -483,7 +548,9 @@ def _validate_table(value: Any, index: int, cfg: Mapping[str, Any]) -> dict[str,
             "o banco por tabela ainda nao define uma conexao independente"
         )
 
-    destination_endpoint = cfg.get("bronze_destination")
+    active_area = str(cfg["active_destination"])
+    destination_endpoint_key = DESTINATION_KEYS[active_area]
+    destination_endpoint = cfg.get(destination_endpoint_key)
     destination_database = item.get("destination_database")
     if destination_database is not None:
         destination_database = _identifier(
@@ -491,14 +558,14 @@ def _validate_table(value: Any, index: int, cfg: Mapping[str, Any]) -> dict[str,
         )
         if destination_endpoint is None:
             raise ConfigError(
-                f"{field}.destination_database exige bronze_destination configurado"
+                f"{field}.destination_database exige {destination_endpoint_key} configurado"
             )
         if destination_database.casefold() != str(
             destination_endpoint["database"]
         ).casefold():
             raise ConfigError(
                 f"{field}.destination_database deve corresponder a "
-                "bronze_destination.database; o banco por tabela ainda nao "
+                f"{destination_endpoint_key}.database; o banco por tabela ainda nao "
                 "define uma conexao independente"
             )
 
@@ -540,10 +607,11 @@ def _validate_table(value: Any, index: int, cfg: Mapping[str, Any]) -> dict[str,
         )
     area = item.get("destination_area", cfg["active_destination"])
     if area not in DESTINATION_KEYS:
-        raise ConfigError(f"{field}.destination_area deve ser bronze")
-    if area != "bronze":
+        raise ConfigError(f"{field}.destination_area deve ser bronze ou landing")
+    if area != cfg["active_destination"]:
         raise ConfigError(
-            f"{field}.destination_area deve ser bronze; Landing é somente estrutura"
+            f"{field}.destination_area deve corresponder a active_destination "
+            f"({cfg['active_destination']})"
         )
     if "destination_area" in item:
         result["destination_area"] = area
@@ -666,10 +734,8 @@ def validate_config(value: Any) -> dict[str, Any]:
             "perimeter deve ser exatamente DESENVOLVIMENTO, HOMOLOGAÇÃO ou PRODUÇÃO"
         )
     cfg["active_destination"] = cfg.get("active_destination")
-    if cfg["active_destination"] != "bronze":
-        raise ConfigError(
-            "active_destination deve ser bronze; Landing é somente estrutura"
-        )
+    if cfg["active_destination"] not in DESTINATION_KEYS:
+        raise ConfigError("active_destination deve ser bronze ou landing")
     for key in (
         "execute_import", "create_structure_if_needed",
         "delete_confirmed_files", "continue_after_table_error",
@@ -720,7 +786,7 @@ def validate_config(value: Any) -> dict[str, Any]:
     if cfg["control_schema"] != "dbo":
         raise ConfigError(
             "control_schema deve ser dbo; o controle SQL persistente possui "
-            "contrato fixo no schema dbo do destino Bronze"
+            "contrato fixo no schema dbo do destino de dados"
         )
     cfg["tls"] = _merge(DEFAULTS["tls"], _validate_tls(cfg["tls"], "tls"))
     default_username = PERIMETER_DEFAULT_USERNAMES[cfg["perimeter"]]
@@ -729,6 +795,7 @@ def validate_config(value: Any) -> dict[str, Any]:
         "source",
         source=True,
         default_sql_username=default_username,
+        default_role=DEFAULT_ENDPOINT_ROLES["source"],
     )
 
     for area, key in DESTINATION_KEYS.items():
@@ -738,13 +805,30 @@ def validate_config(value: Any) -> dict[str, Any]:
                 key,
                 source=False,
                 default_sql_username=default_username,
+                default_role=DEFAULT_ENDPOINT_ROLES[key],
             )
         else:
             cfg.pop(key, None)
-    active_key = DESTINATION_KEYS[cfg["active_destination"]]
-    if cfg["execute_import"] and active_key not in cfg:
+    data_areas = data_destination_areas(cfg)
+    if len(data_areas) > 1:
         raise ConfigError(
-            f"{active_key} é obrigatório quando execute_import=true"
+            "A configuração permite no máximo um destino com role "
+            "structure_and_data ou data_only"
+        )
+    if len(data_areas) == 1:
+        derived_area = data_areas[0]
+        if (
+            "active_destination" in supplied
+            and supplied["active_destination"] != derived_area
+        ):
+            raise ConfigError(
+                "active_destination diverge do único destino cuja role inclui dados"
+            )
+        cfg["active_destination"] = derived_area
+    elif cfg["execute_import"]:
+        raise ConfigError(
+            "execute_import=true exige exatamente um destino configurado "
+            "com role structure_and_data ou data_only"
         )
 
     cfg["executor_directory"] = _executor_path(
@@ -932,18 +1016,23 @@ def operational_fingerprint(config: Mapping[str, Any]) -> str:
     """Hash de parâmetros operacionais, sem qualquer segredo resolvido."""
 
     endpoint_view: dict[str, Any] = {}
-    # Landing is an independent DDL/evolution endpoint.  It must not affect a
-    # Bronze data execution or make a valid resume fail merely because its
-    # address or credential reference changed.
-    for key in ("source", "bronze_destination"):
+    # Structure-only endpoints do not affect a data execution or make a valid
+    # resume fail merely because their address or credential reference changed.
+    # Default roles are omitted to preserve fingerprints created by older V2
+    # configurations that did not yet persist ``role``.
+    active_key = DESTINATION_KEYS[config["active_destination"]]
+    for key in ("source", active_key):
         endpoint = config.get(key)
         if endpoint is None:
             continue
         endpoint_view[key] = {
             name: deep_copy_json(value)
             for name, value in endpoint.items()
-            if name != "structure_profile"
+            if name not in {"structure_profile", "role"}
         }
+        role = endpoint_role(config, key)
+        if role != DEFAULT_ENDPOINT_ROLES[key]:
+            endpoint_view[key]["role"] = role
     payload = {
         "perimeter": config["perimeter"],
         "active_destination": config["active_destination"],

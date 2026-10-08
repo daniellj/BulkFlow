@@ -4,8 +4,11 @@
 
 Este documento descreve o contrato operacional da implementação atual para
 falhas e retomadas. Ele se aplica tanto à execução pela CLI quanto pela
-interface gráfica e independe de Docker. A única rota de dados é da origem para
-o endpoint Bronze; o endpoint Landing recebe somente DDL.
+interface gráfica e independe de Docker. A Origem usa `data_provider`. No
+máximo um destino configurado usa `structure_and_data` ou `data_only`; quando a
+execução importa dados, exatamente um é obrigatório e torna-se
+`active_destination`. Um destino `structure_only` nunca lê arquivos
+BCP nem recebe linhas.
 
 Atalhos: [exportação BCP](#falhas-durante-a-exportação-bcp) ·
 [carga no destino](#falhas-durante-a-carga-no-destino) ·
@@ -63,11 +66,11 @@ Para retomar uma execução, preserve todos estes elementos:
 | UUID da execução | Identifica a execução existente; `resume` nunca cria outro UUID. |
 | `local_control_directory/controle_transferencia.sqlite3` | Guarda execução, tabelas, blocos, tentativas e cursores locais. |
 | Diretório da execução em `executor_directory` | Guarda manifesto, formato e dados ainda necessários. |
-| Controle SQL da Bronze, quando houve importação | Comprova quais blocos foram efetivamente confirmados no destino. |
+| Controle SQL do destino ativo, quando houve importação | Comprova quais blocos foram efetivamente confirmados no destino. |
 | Configuração estrutural compatível | Preserva origem lógica, marca d'água, loteamento, projeção e layout. |
-| Dados já gravados na Bronze, quando houve importação | Devem permanecer coerentes com o controle SQL. |
+| Dados já gravados no destino ativo, quando houve importação | Devem permanecer coerentes com o controle SQL. |
 
-Credenciais, `execute_import`, caminhos operacionais e o endereço da Bronze não
+Credenciais, `execute_import`, caminhos operacionais e o endereço do destino ativo não
 alteram, por si sós, o hash estrutural. Isso não significa que possam ser
 trocados arbitrariamente durante `resume`. Mantenha os mesmos caminhos
 canônicos do SQLite e dos artefatos: os caminhos de manifesto persistidos no
@@ -76,7 +79,7 @@ execução. `destination_sql_directory` só pode mudar se continuar representand
 exatamente os mesmos arquivos para o SQL Server.
 
 A instância lógica da origem faz parte do contrato estrutural. Uma alteração de
-endereço da Bronze em `resume` só é segura quando é um alias/rota para o mesmo
+endereço do destino ativo em `resume` só é segura quando é um alias/rota para o mesmo
 banco físico, as mesmas tabelas e o mesmo controle SQL; ela não migra a
 execução. Para outro destino vazio, use `import --manifest` com **todos** os
 manifestos e arquivos de dados necessários. Se os dados já confirmados foram
@@ -100,8 +103,8 @@ Há três níveis complementares de evidência:
 2. **Manifesto final** — um arquivo `block_*.manifest.json` completo, com
    identidade, limites, contagens e hashes válidos, comprova uma exportação
    publicada. Um `.partial` nunca comprova conclusão.
-3. **Controle SQL da Bronze** —
-   `DBRO684.dbo.execucao_lote` comprova o commit no destino. O
+3. **Controle SQL do destino ativo** —
+   `dbo.execucao_lote` comprova o commit no destino. O
    registro é criado na mesma transação dos dados e do checkpoint SQL.
 
 O arquivo [`query_control.sql`](../query_control.sql) consulta a fonte durável
@@ -119,8 +122,8 @@ linha.
 ```text
 capturar/reutilizar teto final da tabela
   -> planejar número e limites do bloco no SQLite
-  -> verificar espaço estimado no executor e nos volumes da Bronze
-  -> criar/revalidar/evoluir a estrutura Bronze
+  -> verificar espaço estimado no executor e nos volumes do destino ativo
+  -> criar/evoluir para structure_and_data, ou validar layout existente para data_only
   -> marcar bloco como EXPORTING e tentativa como RUNNING
   -> BCP queryout grava somente block_*.bcp.partial
   -> validar término, contagem e bytes; vincular os limites planejados
@@ -167,7 +170,7 @@ destino físico.
 
 | Ponto da falha | Resultado no destino | Comportamento na retomada |
 |---|---|---|
-| Espaço insuficiente comprovado nos volumes da Bronze, antes do provisionamento/carga | Nenhuma linha dessa tabela é inserida. A tabela recebe `SKIPPED_DESTINATION_INSUFFICIENT_SPACE`. | O motor registra o alerta e segue para a próxima tabela, mesmo quando a política geral encerraria após erro de tabela. Libere/amplie o espaço e retome o mesmo UUID. |
+| Espaço insuficiente comprovado nos volumes do destino ativo, antes do provisionamento/carga | Nenhuma linha dessa tabela é inserida. A tabela recebe `SKIPPED_DESTINATION_INSUFFICIENT_SPACE`. | O motor registra o alerta e segue para a próxima tabela, mesmo quando a política geral encerraria após erro de tabela. Libere/amplie o espaço e retome o mesmo UUID. |
 | Antes de iniciar a transação | Nenhuma linha nova e nenhum controle SQL novo. | Revalida o manifesto e tenta o mesmo bloco. |
 | Durante `OPENROWSET`, por erro SQL ou desconexão antes do commit | A transação é revertida; dados, `execucao_lote` e cursor SQL não ficam parcialmente confirmados. | Reimporta o mesmo bloco inteiro. |
 | `ROWCOUNT_BIG` difere de `rows_exported` do manifesto | Rollback integral do bloco. | Mantém o arquivo e falha; a causa precisa ser corrigida antes da retomada. |
@@ -178,7 +181,7 @@ destino físico.
 | O `.bcp` já foi apagado pela política após confirmação | Manifesto e format file permanecem; SQL confirma exatamente o bloco. | A ausência do dado é aceita somente porque o controle SQL prova o commit. |
 | Dados terminaram, mas a criação de índices falhou | Tabela fica `DATA_COMPLETE_INDEXES_PENDING`. | Após os preflights e revalidações normais, tenta os índices faltantes; não reexporta nem reinsere os dados. |
 
-Quando a estimativa de bytes está disponível, a checagem da Bronze consulta os
+Quando a estimativa de bytes está disponível, a checagem do destino ativo consulta os
 volumes associados aos arquivos de dados e log por `sys.dm_os_volume_stats` e
 compara cada volume separadamente com a estimativa multiplicada pelo fator de
 segurança. Espaço de dados e de log não é somado: `available_bytes` representa
@@ -186,7 +189,7 @@ o menor valor entre os pontos de montagem distintos e todos precisam ser
 suficientes. Pontos repetidos usam a menor observação; qualquer observação
 `NULL` torna a medição indisponível. Estimativa indisponível obedece a
 `estimates.on_unavailable`. Se
-apenas a consulta dos volumes da Bronze não puder ser comprovada, o motor
+apenas a consulta dos volumes do destino ativo não puder ser comprovada, o motor
 registra aviso e prossegue; ele não declara capacidade inexistente nem confunde
 ausência de evidência com insuficiência comprovada.
 
@@ -305,7 +308,7 @@ uma chave reproduzível e pode bloquear escritores por toda a exportação. Sem
 chave, não é possível provar alterações de conteúdo que preservem a contagem;
 essa é uma limitação explícita. As próximas tabelas param ou continuam conforme
 `continue_after_table_error`, exceto os skips especiais de CDC e espaço da
-Bronze, que sempre seguem para a próxima.
+destino ativo, que sempre seguem para a próxima.
 
 ### Exportação sem carga imediata
 
@@ -332,9 +335,9 @@ sob o diretório daquele UUID em `executor_directory`.
 
 ### 1. Preserve o estado
 
-Não trunque a Bronze, não apague `DBRO684.dbo.execucao`,
-`DBRO684.dbo.execucao_tabela`, `DBRO684.dbo.execucao_lote` nem
-`DBRO684.dbo.versao_esquema`, não remova o SQLite e não edite ou exclua
+Não trunque o destino ativo, não apague `dbo.execucao`,
+`dbo.execucao_tabela`, `dbo.execucao_lote` nem
+`dbo.versao_esquema`, não remova o SQLite e não edite ou exclua
 artefatos. Não
 inicie outro `run` para tentar
 continuar: isso cria um UUID novo.
@@ -363,7 +366,7 @@ engine_exit_code=$?
 ```
 
 O `status` é local. Para verificar commits no destino, execute
-[`query_control.sql`](../query_control.sql) no banco Bronze, preenchendo
+[`query_control.sql`](../query_control.sql) no banco destino ativo, preenchendo
 `@ExecutionId`.
 
 ### 3. Corrija somente a causa externa
@@ -428,12 +431,12 @@ Todos os manifestos são pré-validados antes de abrir e alterar o destino.
 - código `2`: há tabela pulada, erro parcial ou trabalho pendente;
 - código `1`: houve falha global ou interrupção;
 - `status`: confira estados, cursores e contagens locais;
-- `query_control.sql`: confira os blocos e linhas confirmados na Bronze;
+- `query_control.sql`: confira os blocos e linhas confirmados no destino ativo;
 - ao concluir cada tabela importada (`execute_import=true`), o motor exige que
   a cardinalidade física do destino seja igual à soma dos blocos confirmados.
 
 Em uma origem estabilizada, a validação de homologação também deve comparar a
-quantidade da origem com a Bronze. Em uma origem em escrita, compare com o teto
+quantidade da origem com o destino ativo. Em uma origem em escrita, compare com o teto
 e o recorte capturados pela execução, não necessariamente com o `COUNT_BIG`
 atual da origem.
 
@@ -453,14 +456,14 @@ atual da origem.
   com teto, bloco ou checkpoint durável bloqueia `resume`. Uma tabela ainda sem
   qualquer progresso, em estado provisório ou de erro, pode ser redescoberta e
   revalidada conforme o contrato; isso nunca reinterpreta blocos existentes.
-- **Alteração externa na tabela Bronze:** a verificação de cardinalidade pode
+- **Alteração externa na tabelo destino ativo:** a verificação de cardinalidade pode
   detectar a divergência, mas o motor não corrige ou trunca dados externos.
 
 ## Ações proibidas durante uma recuperação
 
 - executar `run` esperando que ele reconheça a execução anterior;
 - reutilizar o UUID com uma configuração estrutural diferente;
-- truncar tabelas da Bronze ou tabelas de controle;
+- truncar tabelas do destino ativo ou tabelas de controle;
 - apagar `controle_transferencia.sqlite3`;
 - apagar um `.bcp`, XML ou manifesto de bloco ainda não confirmado;
 - editar manifesto, hash, limites ou contagens;

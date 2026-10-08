@@ -7,13 +7,18 @@ import unittest
 
 from bcp_engine.config import (
     CONFIG_VERSION,
+    DEFAULT_ENDPOINT_ROLES,
     ConfigError,
     active_destination,
+    data_destination_areas,
+    endpoint_role,
     effective_delete_confirmed_files,
     effective_tables,
     fingerprints,
     operational_fingerprint,
     read_config,
+    role_includes_data,
+    role_includes_structure,
     structural_fingerprint,
     validate_config,
 )
@@ -49,18 +54,26 @@ class ConfigExamplesTests(unittest.TestCase):
             [{"name": "COLUNA_MARCA_DAGUA", "direction": "ASC"}],
         )
         self.assertEqual(config["source"]["schema"], "ESQUEMA_ORIGEM")
-        self.assertEqual(config["bronze_destination"]["schema"], "s344")
-        self.assertEqual(config["landing_destination"]["schema"], "s344")
+        self.assertEqual(config["bronze_destination"]["schema"], "esquema_destino")
+        self.assertEqual(config["landing_destination"]["schema"], "esquema_destino")
         self.assertIsNot(
             config["source"]["authentication"],
             config["bronze_destination"]["authentication"],
         )
-        self.assertEqual(active_destination(config)["database"], "DBRO684")
+        self.assertEqual(active_destination(config)["database"], "BD_DESTINO_01")
         self.assertEqual(config["connection_timeout_seconds"], 30)
         self.assertEqual(config["cdc_retention_minutes"], 262_800)
         self.assertEqual(config["source"]["port"], 1433)
         self.assertEqual(config["bronze_destination"]["port"], 1433)
         self.assertEqual(config["control_schema"], "dbo")
+        self.assertEqual(config["source"]["role"], "data_provider")
+        self.assertEqual(
+            config["bronze_destination"]["role"], "structure_and_data"
+        )
+        self.assertEqual(
+            config["landing_destination"]["role"], "structure_only"
+        )
+        self.assertEqual(data_destination_areas(config), ("bronze",))
         self.assertFalse(config["allow_schema_evolution"])
         self.assertEqual(config["artifact_reader_sids"], [])
         self.assertEqual(config["artifact_writer_sids"], [])
@@ -71,7 +84,7 @@ class ConfigExamplesTests(unittest.TestCase):
         config = read_config(EXAMPLES / "config.landing.json")
         self.assertFalse(config["execute_import"])
         self.assertNotIn("bronze_destination", config)
-        self.assertEqual(config["landing_destination"]["database"], "DLAN684")
+        self.assertEqual(config["landing_destination"]["database"], "BD_DESTINO_02")
         self.assertEqual(
             config["landing_destination"]["structure_profile"],
             "../templates/landing.json",
@@ -116,7 +129,7 @@ class ConfigExamplesTests(unittest.TestCase):
         config = read_config(EXAMPLES / "config.watermark-composite.json")
         table = effective_tables(config)[0]
         self.assertEqual(table["source"]["schema"], "ESQUEMA_ORIGEM")
-        self.assertEqual(table["destination"]["schema"], "s344")
+        self.assertEqual(table["destination"]["schema"], "esquema_destino")
         self.assertEqual(table["rows_per_block"], 100_000)
         self.assertEqual(
             table["destination"]["structure_profile"], "bronze"
@@ -213,6 +226,22 @@ class ConfigExamplesTests(unittest.TestCase):
         self.assertIn("source_database", table_properties)
         self.assertIn("destination_database", table_properties)
         self.assertIn("port", schema["$defs"]["sourceEndpoint"]["required"])
+        self.assertEqual(
+            schema["$defs"]["sourceEndpoint"]["properties"]["role"]["const"],
+            "data_provider",
+        )
+        self.assertEqual(
+            schema["properties"]["bronze_destination"]["properties"]["role"]["default"],
+            "structure_and_data",
+        )
+        self.assertEqual(
+            schema["properties"]["landing_destination"]["properties"]["role"]["default"],
+            "structure_only",
+        )
+        self.assertEqual(
+            schema["properties"]["active_destination"]["enum"],
+            ["bronze", "landing"],
+        )
         self.assertFalse(schema["$defs"]["table"]["properties"]["enable_cdc"]["default"])
 
 
@@ -496,10 +525,10 @@ class ConfigValidationTests(unittest.TestCase):
         effective = effective_tables(normalized)[0]
 
         self.assertEqual(normalized_table["source_database"], "bd_origem")
-        self.assertEqual(normalized_table["destination_database"], "dbro684")
+        self.assertEqual(normalized_table["destination_database"], "bd_destino_01")
         self.assertEqual(normalized_table["destination_table"], "bd_origem_tabela_origem_01")
         self.assertEqual(effective["source"]["database"], "bd_origem")
-        self.assertEqual(effective["destination"]["database"], "dbro684")
+        self.assertEqual(effective["destination"]["database"], "bd_destino_01")
 
     def test_automatic_destination_name_uses_source_database_and_table(self):
         value = copy.deepcopy(self.full)
@@ -544,7 +573,7 @@ class ConfigValidationTests(unittest.TestCase):
     def test_import_requires_active_destination_and_sql_path(self):
         export_only = read_config(EXAMPLES / "config.export-only.json")
         export_only["execute_import"] = True
-        with self.assertRaisesRegex(ConfigError, "bronze_destination"):
+        with self.assertRaisesRegex(ConfigError, "exatamente um destino"):
             validate_config(export_only)
 
         without_path = copy.deepcopy(self.full)
@@ -564,15 +593,106 @@ class ConfigValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(ConfigError, "disco local"):
             validate_config(value)
 
-    def test_data_destination_and_table_area_are_bronze_only(self):
-        value = copy.deepcopy(self.full)
-        value["active_destination"] = "landing"
-        with self.assertRaisesRegex(ConfigError, "active_destination deve ser bronze"):
-            validate_config(value)
+    def test_endpoint_roles_default_for_legacy_v2_and_helpers_are_explicit(self):
+        raw = json.loads(
+            (EXAMPLES / "config.full.json").read_text(encoding="utf-8")
+        )
+        for key in ("source", "bronze_destination", "landing_destination"):
+            raw[key].pop("role", None)
 
+        normalized = validate_config(raw)
+
+        for key, expected in DEFAULT_ENDPOINT_ROLES.items():
+            self.assertEqual(normalized[key]["role"], expected)
+            self.assertEqual(endpoint_role(normalized, key), expected)
+        self.assertTrue(role_includes_data("data_provider"))
+        self.assertTrue(role_includes_data("structure_and_data"))
+        self.assertTrue(role_includes_data("data_only"))
+        self.assertFalse(role_includes_data("structure_only"))
+        self.assertTrue(role_includes_structure("structure_and_data"))
+        self.assertTrue(role_includes_structure("structure_only"))
+        self.assertFalse(role_includes_structure("data_only"))
+
+    def test_endpoint_roles_reject_unknown_or_inapplicable_values(self):
+        invalid_source = copy.deepcopy(self.full)
+        invalid_source["source"]["role"] = "structure_and_data"
+        with self.assertRaisesRegex(ConfigError, r"source\.role"):
+            validate_config(invalid_source)
+
+        invalid_destination = copy.deepcopy(self.full)
+        invalid_destination["bronze_destination"]["role"] = "data_provider"
+        with self.assertRaisesRegex(ConfigError, r"bronze_destination\.role"):
+            validate_config(invalid_destination)
+
+    def test_import_requires_exactly_one_data_destination(self):
+        none = copy.deepcopy(self.full)
+        none["bronze_destination"]["role"] = "structure_only"
+        with self.assertRaisesRegex(ConfigError, "exatamente um destino"):
+            validate_config(none)
+
+        two = copy.deepcopy(self.full)
+        two["landing_destination"]["role"] = "data_only"
+        with self.assertRaisesRegex(ConfigError, "no máximo um destino"):
+            validate_config(two)
+
+        export_only = copy.deepcopy(self.full)
+        export_only["execute_import"] = False
+        export_only["landing_destination"]["role"] = "data_only"
+        with self.assertRaisesRegex(ConfigError, "no máximo um destino"):
+            validate_config(export_only)
+
+    def test_landing_can_be_the_single_data_destination(self):
+        value = copy.deepcopy(self.full)
+        value["bronze_destination"]["role"] = "structure_only"
+        value["landing_destination"]["role"] = "structure_and_data"
+        value["active_destination"] = "landing"
+        for table in value["tables"]:
+            table["destination_area"] = "landing"
+            table["destination_database"] = value["landing_destination"]["database"]
+            table["metadata_mapping"] = {
+                "aud_ccid": {"constant": 0},
+                "aud_cntrrn": {"constant": 0},
+                "aud_enttyp": {"constant": "PT"},
+            }
+
+        normalized = validate_config(value)
+        effective = effective_tables(normalized)
+
+        self.assertEqual(normalized["active_destination"], "landing")
+        self.assertEqual(data_destination_areas(normalized), ("landing",))
+        self.assertTrue(all(row["destination"]["area"] == "landing" for row in effective))
+        self.assertTrue(
+            all(
+                row["destination"]["database"]
+                == normalized["landing_destination"]["database"]
+                for row in effective
+            )
+        )
+
+    def test_active_destination_is_derived_or_validated_from_roles(self):
+        derived = copy.deepcopy(self.full)
+        derived["bronze_destination"]["role"] = "structure_only"
+        derived["landing_destination"]["role"] = "data_only"
+        derived.pop("active_destination")
+        for table in derived["tables"]:
+            table["destination_area"] = "landing"
+            table["destination_database"] = derived["landing_destination"]["database"]
+            table["metadata_mapping"] = {
+                "aud_ccid": {"constant": 0},
+                "aud_cntrrn": {"constant": 0},
+                "aud_enttyp": {"constant": "PT"},
+            }
+        self.assertEqual(validate_config(derived)["active_destination"], "landing")
+
+        mismatch = copy.deepcopy(derived)
+        mismatch["active_destination"] = "bronze"
+        with self.assertRaisesRegex(ConfigError, "active_destination diverge"):
+            validate_config(mismatch)
+
+    def test_table_area_must_match_the_role_derived_data_destination(self):
         table_area = copy.deepcopy(self.full)
         table_area["tables"][0]["destination_area"] = "landing"
-        with self.assertRaisesRegex(ConfigError, "destination_area deve ser bronze"):
+        with self.assertRaisesRegex(ConfigError, "active_destination"):
             validate_config(table_area)
 
         mapping = copy.deepcopy(self.full)
@@ -588,6 +708,18 @@ class ConfigValidationTests(unittest.TestCase):
 class FingerprintTests(unittest.TestCase):
     def setUp(self):
         self.base = read_config(EXAMPLES / "config.auth-sql.json")
+
+    def test_default_roles_preserve_pre_role_v2_fingerprints(self):
+        legacy = copy.deepcopy(self.base)
+        for key in ("source", "bronze_destination", "landing_destination"):
+            legacy[key].pop("role", None)
+
+        self.assertEqual(
+            structural_fingerprint(legacy), structural_fingerprint(self.base)
+        )
+        self.assertEqual(
+            operational_fingerprint(legacy), operational_fingerprint(self.base)
+        )
 
     def test_operational_changes_do_not_change_structural_fingerprint(self):
         changed = copy.deepcopy(self.base)

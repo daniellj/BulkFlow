@@ -196,7 +196,7 @@ def control_object_names(control_schema: str) -> dict[str, str]:
     if control_schema != "dbo":
         raise ValueError(
             "control_schema deve ser dbo; o controle SQL persistente possui "
-            "contrato fixo em DBRO684.dbo"
+            "contrato fixo no schema dbo do destino de dados"
         )
     schema = qi(control_schema)
     return {
@@ -789,6 +789,15 @@ class DestinationImporter:
 
     def ensure_control(self) -> None:
         execute(self.connection, control_ddl(self.control_schema))
+
+    def validate_control(self) -> None:
+        """Validate the pre-existing SQL control contract without DDL."""
+
+        names = control_object_names(self.control_schema)
+        execute(
+            self.connection,
+            "SET NOCOUNT ON;\n" + _control_validation_sql(names),
+        )
 
     def finish_table(
         self,

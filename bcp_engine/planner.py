@@ -19,7 +19,13 @@ from .catalog import (
     discover_columns,
     discover_watermark,
 )
-from .config import effective_delete_confirmed_files, effective_tables
+from .config import (
+    DESTINATION_KEYS,
+    DESTINATION_ROLE_DATA_ONLY,
+    effective_delete_confirmed_files,
+    effective_tables,
+    endpoint_role,
+)
 from .ddl import CatalogState, analyze_schema_evolution, compare_catalog
 from .estimates import (
     METADATA_ROW_COUNT_METHOD,
@@ -328,6 +334,28 @@ def _failure_plan(
     )
 
 
+def _block_data_only_destination(
+    plan: TablePlan,
+    *,
+    catalog_state: str,
+    details: Sequence[str] = (),
+) -> None:
+    """Fail closed when a data-only destination is not proven fully compatible."""
+
+    detail_text = "; ".join(str(item) for item in details if item)
+    plan.status = TableStatus.LAYOUT_ERROR.value
+    plan.execution_allowed = False
+    plan.reason = (
+        "Destino com role=data_only exige estrutura previamente completa e "
+        "catálogo totalmente COMPATIBLE; "
+        f"estado observado: {catalog_state}."
+    )
+    if detail_text:
+        plan.reason += " Diagnóstico: " + detail_text
+    if "DATA_ONLY_DESTINATION_REQUIRES_COMPATIBLE_CATALOG" not in plan.warnings:
+        plan.warnings.append("DATA_ONLY_DESTINATION_REQUIRES_COMPATIBLE_CATALOG")
+
+
 def build_plan(
     config: Mapping[str, Any],
     source_connection: Any,
@@ -373,6 +401,11 @@ def build_plan(
     for table in tables:
         source = table["source"]
         destination = table["destination"]
+        destination_role = endpoint_role(
+            config,
+            DESTINATION_KEYS[destination["area"]],
+        )
+        data_only_destination = destination_role == DESTINATION_ROLE_DATA_ONLY
         try:
             source_columns = columns_discoverer(
                 source_connection, source["schema"], source["table"]
@@ -629,6 +662,12 @@ def build_plan(
                 plan.execution_allowed = False
         else:
             plan.warnings.append("DESTINATION_WITHOUT_SCHEMA_NOT_INSPECTED")
+            if data_only_destination:
+                _block_data_only_destination(
+                    plan,
+                    catalog_state="NOT_INSPECTED",
+                    details=("esquema de destino não informado",),
+                )
 
         connections = destination_connections or {}
         destination_connection = connections.get(destination["area"])
@@ -645,7 +684,17 @@ def build_plan(
                 plan.destination_catalog_errors = list(comparison.errors)
                 plan.destination_missing_objects = list(comparison.missing_objects)
                 plan.warnings.extend(comparison.warnings)
-                if comparison.state is CatalogState.SCHEMA_EVOLUTION_PENDING:
+                if (
+                    data_only_destination
+                    and comparison.state is not CatalogState.COMPATIBLE
+                ):
+                    _block_data_only_destination(
+                        plan,
+                        catalog_state=comparison.state.value,
+                        details=tuple(comparison.errors)
+                        + tuple(comparison.missing_objects),
+                    )
+                elif comparison.state is CatalogState.SCHEMA_EVOLUTION_PENDING:
                     evolution = analyze_schema_evolution(layout, snapshot)
                     if not bool(config.get("allow_schema_evolution", False)):
                         plan.status = TableStatus.SCHEMA_EVOLUTION_PENDING.value
@@ -684,11 +733,24 @@ def build_plan(
                     plan.warnings.append("DESTINATION_MISSING_AND_CREATION_DISABLED")
             except Exception as exc:
                 plan.destination_catalog_state = None
+                inspection_error = redacted_exception(exc)
                 plan.warnings.append(
-                    "DESTINATION_INSPECTION_UNAVAILABLE: " + redacted_exception(exc)
+                    "DESTINATION_INSPECTION_UNAVAILABLE: " + inspection_error
                 )
+                if data_only_destination:
+                    _block_data_only_destination(
+                        plan,
+                        catalog_state="INSPECTION_UNAVAILABLE",
+                        details=(inspection_error,),
+                    )
         elif layout is not None:
             plan.warnings.append("DESTINATION_NOT_INSPECTED")
+            if data_only_destination:
+                _block_data_only_destination(
+                    plan,
+                    catalog_state="NOT_INSPECTED",
+                    details=("conexão de destino não fornecida ao planejamento",),
+                )
 
         results.append(plan)
         if retain_all and plan.status == TableStatus.PENDING.value:

@@ -20,12 +20,28 @@
       "description": "Perímetro operacional global. Define apenas o usuário SQL sugerido; cada endpoint permanece editável e independente."
     },
     "source": {"$ref": "#/$defs/sourceEndpoint"},
-    "bronze_destination": {"$ref": "#/$defs/destinationEndpoint"},
-    "landing_destination": {"$ref": "#/$defs/destinationEndpoint"},
+    "bronze_destination": {
+      "$ref": "#/$defs/destinationEndpoint",
+      "properties": {
+        "role": {
+          "enum": ["structure_and_data", "structure_only", "data_only"],
+          "default": "structure_and_data"
+        }
+      }
+    },
+    "landing_destination": {
+      "$ref": "#/$defs/destinationEndpoint",
+      "properties": {
+        "role": {
+          "enum": ["structure_and_data", "structure_only", "data_only"],
+          "default": "structure_only"
+        }
+      }
+    },
     "active_destination": {
-      "const": "bronze",
+      "enum": ["bronze", "landing"],
       "default": "bronze",
-      "description": "Dados são carregados exclusivamente na Bronze. Landing é destino somente de DDL/evolução."
+      "description": "Rota interna do único destino cuja função inclui dados. Quando execute_import=true, deve coincidir com a função dos destinos."
     },
     "execute_import": {"type": "boolean", "default": true},
     "create_structure_if_needed": {
@@ -160,7 +176,167 @@
         "properties": {"execute_import": {"const": false}}
       },
       "then": {},
-      "else": {"required": ["destination_sql_directory", "bronze_destination"]}
+      "else": {
+        "required": ["destination_sql_directory"],
+        "oneOf": [
+          {
+            "required": ["bronze_destination"],
+            "properties": {
+              "active_destination": {"const": "bronze"},
+              "bronze_destination": {
+                "anyOf": [
+                  {"not": {"required": ["role"]}},
+                  {
+                    "required": ["role"],
+                    "properties": {
+                      "role": {"enum": ["structure_and_data", "data_only"]}
+                    }
+                  }
+                ]
+              },
+              "landing_destination": {
+                "anyOf": [
+                  {"not": {"required": ["role"]}},
+                  {
+                    "required": ["role"],
+                    "properties": {"role": {"const": "structure_only"}}
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "required": ["landing_destination"],
+            "properties": {
+              "active_destination": {"const": "landing"},
+              "bronze_destination": {
+                "required": ["role"],
+                "properties": {"role": {"const": "structure_only"}}
+              },
+              "landing_destination": {
+                "required": ["role"],
+                "properties": {
+                  "role": {"enum": ["structure_and_data", "data_only"]}
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "not": {
+        "required": ["bronze_destination", "landing_destination"],
+        "properties": {
+          "bronze_destination": {
+            "anyOf": [
+              {"not": {"required": ["role"]}},
+              {
+                "required": ["role"],
+                "properties": {
+                  "role": {"enum": ["structure_and_data", "data_only"]}
+                }
+              }
+            ]
+          },
+          "landing_destination": {
+            "required": ["role"],
+            "properties": {
+              "role": {"enum": ["structure_and_data", "data_only"]}
+            }
+          }
+        }
+      }
+    },
+    {
+      "not": {
+        "anyOf": [
+          {
+            "required": ["active_destination", "bronze_destination"],
+            "properties": {
+              "active_destination": {"const": "landing"},
+              "bronze_destination": {
+                "anyOf": [
+                  {"not": {"required": ["role"]}},
+                  {
+                    "required": ["role"],
+                    "properties": {
+                      "role": {"enum": ["structure_and_data", "data_only"]}
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "required": ["active_destination", "landing_destination"],
+            "properties": {
+              "active_destination": {"const": "bronze"},
+              "landing_destination": {
+                "required": ["role"],
+                "properties": {
+                  "role": {"enum": ["structure_and_data", "data_only"]}
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "anyOf": [
+          {
+            "required": ["active_destination"],
+            "properties": {"active_destination": {"const": "landing"}}
+          },
+          {
+            "not": {"required": ["active_destination"]},
+            "required": ["landing_destination"],
+            "properties": {
+              "landing_destination": {
+                "required": ["role"],
+                "properties": {
+                  "role": {"enum": ["structure_and_data", "data_only"]}
+                }
+              }
+            },
+            "anyOf": [
+              {"not": {"required": ["bronze_destination"]}},
+              {
+                "properties": {
+                  "bronze_destination": {
+                    "required": ["role"],
+                    "properties": {"role": {"const": "structure_only"}}
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "then": {
+        "properties": {
+          "tables": {
+            "items": {
+              "required": ["metadata_mapping"],
+              "properties": {"destination_area": {"const": "landing"}}
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "tables": {
+            "items": {
+              "properties": {
+                "destination_area": {"const": "bronze"},
+                "metadata_mapping": false
+              }
+            }
+          }
+        }
+      }
     }
   ],
   "$defs": {
@@ -262,6 +438,11 @@
       "additionalProperties": false,
       "required": ["instance", "port", "database", "schema", "authentication"],
       "properties": {
+        "role": {
+          "const": "data_provider",
+          "default": "data_provider",
+          "description": "Função fixa da origem: provedor de dados."
+        },
         "instance": {"type": "string", "minLength": 1},
         "port": {"type": "integer", "minimum": 1, "maximum": 65535},
         "database": {"$ref": "#/$defs/identifier"},
@@ -280,6 +461,10 @@
       "additionalProperties": false,
       "required": ["instance", "port", "database", "schema", "structure_profile", "authentication"],
       "properties": {
+        "role": {
+          "enum": ["structure_and_data", "structure_only", "data_only"],
+          "description": "Função operacional do destino. Arquivos V2 antigos podem omitir este campo; o padrão depende da chave do endpoint."
+        },
         "instance": {"type": "string", "minLength": 1},
         "port": {"type": "integer", "minimum": 1, "maximum": 65535},
         "database": {"$ref": "#/$defs/identifier"},
@@ -344,7 +529,7 @@
         "source_table": {"$ref": "#/$defs/identifier"},
         "destination_database": {
           "$ref": "#/$defs/identifier",
-          "description": "Banco de destino exibido por tabela. Nesta vers\u00e3o deve corresponder a bronze_destination.database; n\u00e3o cria uma conex\u00e3o independente."
+          "description": "Banco de destino exibido por tabela. Deve corresponder ao banco do active_destination; n\u00e3o cria uma conex\u00e3o independente."
         },
         "destination_table": {"$ref": "#/$defs/identifier"},
         "source_schema": {"$ref": "#/$defs/identifier"},
@@ -361,8 +546,18 @@
         "watermark": {"$ref": "#/$defs/watermark"},
         "rows_per_block": {"type": "integer", "minimum": 1, "maximum": 5000000},
         "structure_profile": {"type": "string", "minLength": 1},
-        "destination_area": {"const": "bronze"},
-        "metadata_mapping": false
+        "destination_area": {"enum": ["bronze", "landing"]},
+        "metadata_mapping": {"$ref": "#/$defs/landingMetadataMapping"}
+      }
+    },
+    "landingMetadataMapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["aud_ccid", "aud_cntrrn", "aud_enttyp"],
+      "properties": {
+        "aud_ccid": {"$ref": "#/$defs/metadataValue"},
+        "aud_cntrrn": {"$ref": "#/$defs/metadataValue"},
+        "aud_enttyp": {"$ref": "#/$defs/metadataValue"}
       }
     }
   }

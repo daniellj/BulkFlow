@@ -147,6 +147,11 @@ class GuiModelTests(unittest.TestCase):
         self.assertEqual(config["landing_destination"]["port"], 1433)
         self.assertEqual(config["bronze_destination"]["structure_profile"], "bronze")
         self.assertEqual(config["landing_destination"]["structure_profile"], "landing")
+        self.assertEqual(config["source"]["role"], "data_provider")
+        self.assertEqual(
+            config["bronze_destination"]["role"], "structure_and_data"
+        )
+        self.assertEqual(config["landing_destination"]["role"], "structure_only")
         self.assertNotIn("scope", config)
         self.assertFalse(config["allow_schema_evolution"])
         self.assertEqual(len(config["tables"]), 1)
@@ -270,6 +275,7 @@ class GuiModelTests(unittest.TestCase):
         }
         source = build_endpoint(shared, source=True)
         self.assertEqual(source["port"], 14333)
+        self.assertEqual(source["role"], "data_provider")
         self.assertNotIn("read_database", source)
         self.assertNotIn("structure_profile", source)
         destination = build_endpoint(
@@ -282,6 +288,7 @@ class GuiModelTests(unittest.TestCase):
             source=False,
         )
         self.assertNotIn("read_database", destination)
+        self.assertEqual(destination["role"], "structure_and_data")
         self.assertTrue(destination["structure_profile"].endswith("bronze.json"))
 
         for invalid in ("", "0", "65536", "abc"):
@@ -406,7 +413,9 @@ class GuiModelTests(unittest.TestCase):
     def test_connection_summary_is_complete_and_contains_no_secret(self):
         config = default_gui_config(ROOT)
         rows = connection_summary_rows(config)
-        self.assertEqual([row[0] for row in rows], ["ORIGEM", "LANDING", "BRONZE"])
+        self.assertEqual(
+            [row[0] for row in rows], ["ORIGEM", "DESTINO 01", "DESTINO 02"]
+        )
         self.assertEqual(rows[0][1:], ("u684", "SERVIDOR_ORIGEM", "1433", "BANCO_ORIGEM"))
         rendered = json.dumps(rows, ensure_ascii=False)
         self.assertNotIn("password", rendered.casefold())
@@ -866,6 +875,45 @@ class GuiConstructionTests(unittest.TestCase):
             application = BcpGuiApplication(root)
             root.update_idletasks()
             self.assertEqual(
+                [
+                    application._connections_notebook.tab(index, "text")
+                    for index in range(application._connections_notebook.index("end"))
+                ],
+                ["Origem", "Destino 01", "Destino 02"],
+            )
+            expected_roles = {
+                "source": (
+                    "provedor de dados",
+                    ("provedor de dados",),
+                ),
+                "bronze_destination": (
+                    "estrutura e dados",
+                    (
+                        "estrutura e dados",
+                        "somente estrutura",
+                        "somente dados (premissa: já existir a estrutura)",
+                    ),
+                ),
+                "landing_destination": (
+                    "somente estrutura",
+                    (
+                        "estrutura e dados",
+                        "somente estrutura",
+                        "somente dados (premissa: já existir a estrutura)",
+                    ),
+                ),
+            }
+            for endpoint, (default_role, options) in expected_roles.items():
+                role_variable = application.endpoint_variables[endpoint]["role"]
+                role_widget = application._role_comboboxes[endpoint]
+                self.assertEqual(role_variable.get(), default_role)
+                self.assertEqual(tuple(role_widget.cget("values")), options)
+                self.assertEqual(str(role_widget.cget("state")), "readonly")
+                self.assertEqual(
+                    str(role_widget.cget("style")), "DefaultValue.TCombobox"
+                )
+                self.assertTrue(hasattr(role_widget, "_field_tooltip"))
+            self.assertEqual(
                 application.global_variables["destination_sql_directory"].get(),
                 application.global_variables["executor_directory"].get(),
             )
@@ -932,6 +980,13 @@ class GuiConstructionTests(unittest.TestCase):
             self.assertEqual(len(config["tables"]), 1)
             self.assertEqual(config["perimeter"], "DESENVOLVIMENTO")
             self.assertEqual(config["active_destination"], "bronze")
+            self.assertEqual(config["source"]["role"], "data_provider")
+            self.assertEqual(
+                config["bronze_destination"]["role"], "structure_and_data"
+            )
+            self.assertEqual(
+                config["landing_destination"]["role"], "structure_only"
+            )
             self.assertTrue(config["create_structure_if_needed"])
             self.assertEqual(config["max_file_bytes"], 157_286_400)
             self.assertEqual(config["control_schema"], "dbo")
@@ -959,6 +1014,41 @@ class GuiConstructionTests(unittest.TestCase):
                 application.endpoint_variables["source"]["port"].set("1434")
             clear_cache.assert_called()
 
+            application.endpoint_variables["bronze_destination"]["role"].set(
+                "somente estrutura"
+            )
+            application.endpoint_variables["landing_destination"]["role"].set(
+                "estrutura e dados"
+            )
+            self.assertEqual(application._current_destination_area(), "landing")
+            switched_defaults = application._table_dialog_defaults()
+            self.assertEqual(
+                switched_defaults["default_destination_database"], "DLAN684"
+            )
+            self.assertEqual(
+                switched_defaults["default_structure_profile"], "landing"
+            )
+            application.endpoint_variables["bronze_destination"]["role"].set(
+                "estrutura e dados"
+            )
+            with self.assertRaisesRegex(ValueError, "exatamente um destino"):
+                application._required_data_destination_area()
+
+            application.global_variables["execute_import"].set(False)
+            application.endpoint_variables["source"]["authentication_type"].set(
+                "Windows integrada"
+            )
+            application._update_auth_state("source")
+            application.endpoint_variables["bronze_destination"]["role"].set(
+                "somente estrutura"
+            )
+            application.endpoint_variables["landing_destination"]["role"].set(
+                "somente estrutura"
+            )
+            structure_only = application._collect_config()
+            self.assertFalse(structure_only["execute_import"])
+            self.assertEqual(structure_only["active_destination"], "bronze")
+
             highlighted_variables = {
                 id(record[1]) for record in application._default_widgets
             }
@@ -979,6 +1069,7 @@ class GuiConstructionTests(unittest.TestCase):
                     id(application.global_variables[name]), highlighted_variables
                 )
             for endpoint in application.endpoint_variables.values():
+                self.assertIn(id(endpoint["role"]), highlighted_variables)
                 self.assertIn(id(endpoint["odbc_dsn"]), highlighted_variables)
                 for name in ("instance", "port", "database", "schema"):
                     self.assertNotIn(id(endpoint[name]), highlighted_variables)
@@ -1001,6 +1092,7 @@ class GuiConstructionTests(unittest.TestCase):
             "port",
             "database",
             "schema",
+            "role",
             "authentication_type",
             "username",
             "domain",
@@ -1021,7 +1113,7 @@ class GuiConstructionTests(unittest.TestCase):
         }
         self.assertFalse(required - set(FIELD_HELP))
         self.assertIn(
-            "provisionamento automático da Bronze",
+            "provisionamento automático do destino",
             FIELD_HELP["create_structure_if_needed"],
         )
         self.assertIn("Aplicar DDL", FIELD_HELP["create_structure_if_needed"])

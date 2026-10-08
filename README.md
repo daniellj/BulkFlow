@@ -2,30 +2,30 @@
 
 # BulkFlow — SQL Server Data Export/Import
 
-BulkFlow is a configurable engine that exports data with `bcp queryout` and
-loads it transactionally into the Bronze endpoint. The Landing endpoint
-receives only DDL in the Landing standard—table creation and additive schema
-evolution—and never receives rows. Processing is sequential by table and
-block; rows never pass through Python lists, DataFrames, or row-by-row
-transformations.
+BulkFlow is a configurable engine that exports data with `bcp queryout` and,
+when import is enabled, loads it transactionally into one data-capable destination. The GUI
+names the connections **Origem**, **Destino 01**, and **Destino 02**; this
+documentation refers to the two destination databases as `BD_DESTINO_01` and
+`BD_DESTINO_02`. Processing is sequential by table and block; rows never pass
+through Python lists, DataFrames, or row-by-row transformations.
 
 The engine, GUI, and CLI are environment- and infrastructure-agnostic. Docker,
-Compose, containerized SQL Server, fixed ports, `BD_ORIGEM`, `DBRO684`, and
-`DLAN684` belong exclusively to the optional local test lab; they are not
-product installation or operation requirements.
+Compose, containerized SQL Server, and fixed ports belong exclusively to the
+optional local test lab; they are not product installation or operation
+requirements.
 
 This distribution includes:
 
 - a reusable CLI for PowerShell and Linux shells;
 - a simple `ttkbootstrap` desktop interface;
-- exact Bronze and Landing profiles;
+- versioned destination structure profiles;
 - support for PKs, UNIQUE constraints, validated explicit watermarks, and
   bounded direct loads;
 - optional CDC per table;
 - configurable global CDC cleanup retention, with a default of 262,800 minutes;
 - optional additive schema evolution;
 - optional monthly partitioning on destination tables;
-- free-space verification on the executor and Bronze database volumes;
+- free-space verification on the executor and active data-destination volumes;
 - manifests, SHA-256, SQLite/SQL controls, and idempotent resume;
 - self-contained Windows executables for the GUI and CLI.
 
@@ -164,9 +164,9 @@ against the trusted local profile.
 ## Flow
 
 ```text
-Configured source
-  ├─ rows through BCP ───────────────> Bronze + persistent control
-  └─ metadata for creation/evolution ─> Landing (structure only)
+Configured source (role: data_provider)
+  ├─ rows through BCP ───────────────> one data-capable destination when importing
+  └─ metadata for DDL/evolution ───────> destinations whose role includes structure
 ```
 
 ```text
@@ -178,8 +178,8 @@ V2 configuration + versioned profile
   -> configure cleanup retention now, or leave it pending until the job exists
   -> enable table CDC; if retention is pending, confirm it before the first BCP
   -> select/prove the key and capture the upper bound
-  -> estimate and verify space on the executor and Bronze
-  -> create/evolve the required Bronze structure
+  -> estimate and verify space on the executor and active data destination
+  -> create/evolve the active destination only when its role allows structure
   -> bcp queryout to a .partial file
   -> actual row count + SHA-256 + atomic publication
   -> OPENROWSET(BULK...) with INSERT, control, and checkpoint in one commit
@@ -198,11 +198,12 @@ matrices are documented in
 [Failures, checkpoints, and resume](docs/FALHAS_E_RETOMADA.md).
 
 The recommended operational order is to validate prerequisites, plan and
-provide independent credentials, generate/review/apply Bronze and Landing DDL,
+provide independent credentials, generate/review/apply the applicable destination DDL,
 and only then run export/import. With `create_structure_if_needed=true`—the
-default—`run` also creates or idempotently completes the Bronze structure.
-With `false`, the engine only validates the existing structure and does not
-create missing objects. The detailed sequence is documented in
+default—`run` also creates or idempotently completes the active destination
+when its role is `structure_and_data`. With `false`, or with the `data_only`
+role, the engine validates the existing structure and does not create missing
+objects. The detailed sequence is documented in
 [Complete processing order](docs/ORDEM_PROCESSAMENTO.md).
 
 ## Configuration
@@ -227,21 +228,39 @@ Core parameters:
 | `allow_schema_evolution` | default `false` |
 | `create_structure_if_needed` | default `true`; can be cleared in the GUI to validate existing structures only |
 | `execute_import` | `false` produces artifacts only |
+| `source.role` | required value `data_provider` |
+| destination `role` | `structure_and_data`, `structure_only`, or `data_only` |
+| `active_destination` | compatible area ID (`bronze` or `landing`); optional in the input because the single data-capable destination is derived from the roles, while an explicit value is validated |
 | `enable_cdc` | independent flag for each table |
 | `cdc_retention_minutes` | global CDC cleanup retention; default `262800` (six months, approximately 182.5 days) |
 | `watermark` | `null` or an explicit list of columns; direction is always `ASC` |
 | `partition_column` | optional per table; absence disables partitioning |
 | `estimates.safety_factor` | default `1.25` |
-| `control_schema` | required value `dbo`; SQL control exists exclusively in `DBRO684.dbo` in the lab |
+| `control_schema` | required value `dbo`; SQL control exists in the active data destination |
 | `structure.secondary_indexes_phase` | default `before_load` |
 | `continue_after_table_error` | controls continuation between tables |
 | `artifact_reader_sids` | specific Windows SIDs with read/traverse access to artifacts; default `[]` |
 | `artifact_writer_sids` | trusted Windows SIDs with write access, only when the effective SMB identity differs; default `[]` |
 
-Source, Bronze, and Landing have independent `instance`, `port`, `database`,
-schema, authentication, and secret settings. The same configuration therefore
-supports both environments where Landing and Bronze share an instance and
-environments where each endpoint resides on a separate instance. The usernames
+Source, `BD_DESTINO_01`, and `BD_DESTINO_02` have independent `instance`,
+`port`, `database`, schema, authentication, secret, and role settings. Source
+always uses `data_provider`. Destination roles are:
+
+- `structure_and_data`: allows manual/automatic DDL and data loading;
+- `structure_only`: allows manual DDL and additive evolution, but never reads
+  BCP files or receives rows;
+- `data_only`: loads data into an already compatible layout and prohibits
+  creation, evolution, and index creation.
+
+At most one configured destination may have a role that includes data. When
+`execute_import=true`, exactly one is required and its compatible area ID
+becomes `active_destination`; with `execute_import=false`, zero or one is
+allowed. Defaults are
+`structure_and_data` for `BD_DESTINO_01` and `structure_only` for
+`BD_DESTINO_02`. The persisted names `bronze_destination`,
+`landing_destination`, and the areas `bronze`/`landing` are legacy-compatible
+internal IDs, not fixed operational roles. The same configuration therefore supports shared or separate
+instances. The usernames
 suggested by the perimeter are `u684` for `DESENVOLVIMENTO`, `h684` for `HOMOLOGAÇÃO`,
 and `s684` for `PRODUÇÃO`; each can be changed independently on its endpoint. The
 supported authentication modes are:
@@ -258,11 +277,11 @@ centralized redaction. In the lab, the independent references are
 `BCP_LANDING_SQL_PASSWORD`, even when all three resolve to the same test value.
 
 Each `tables` item can also persist `source_database` and
-`destination_database`. In the GUI, these fields inherit the Source and Bronze
-endpoint databases, respectively. In this version they make the mapping
+`destination_database`. In the GUI, these fields inherit the Source and active
+data-destination databases, respectively. In this version they make the mapping
 explicit, but **do not create independent per-table routes**: when provided,
-they must match `source.database` and `bronze_destination.database`
-case-insensitively. A mismatch is rejected during validation instead of
+they must match `source.database` and the endpoint selected by
+`active_destination`, case-insensitively. A mismatch is rejected during validation instead of
 silently loading into the wrong database. The suggested destination name
 remains lowercase `<source_database>_<source_table>`.
 
@@ -352,14 +371,14 @@ with the source's current business columns.
 - a new `NOT NULL` column on a populated table or a table with an unknown row
   count is rejected without an explicit backfill.
 
-The rule applies equally to the configured Bronze and Landing endpoints
-(`DBRO684` and `DLAN684` only in the lab).
+The rule applies to every destination whose role includes structure.
+`data_only` explicitly prohibits schema evolution.
 
 ## Optional partitioning
 
 When `tables[].partition_column` is provided, the column must exist in the
-destination layout and use `DATETIME2(7)`. The profile creates the following in
-Bronze and Landing:
+destination layout and use `DATETIME2(7)`. A structure-capable destination
+profile creates:
 
 - `pf_<coluna>_mensal` and `ps_<coluna>_mensal` when the column is `dh_carga`;
 - the `_attr` suffix for any other column;
@@ -382,11 +401,12 @@ requires an explicit migration.
 
 At the destinations, schemas, tables, columns, constraints, indexes, and
 sequences are materialized in lowercase. Each database name is preserved as
-configured; in the lab, `DBRO684` and `DLAN684` remain uppercase.
+configured.
 
-### Bronze
+### BD_DESTINO_01
 
-The `templates/bronze.json` profile creates:
+By default, `BD_DESTINO_01` uses the compatible internal area `bronze` and the
+`templates/bronze.json` profile, which creates:
 
 - `id_{destination_table}` as `BIGINT`, generated by a sequence without
   `IDENTITY`;
@@ -417,7 +437,7 @@ SELECT TOP (10)
     CASE WHEN bi_sequencia_evento IS NULL THEN 1 ELSE 0 END AS bi_sequencia_evento_nulo,
     CONVERT(varchar(22), bi_sequencia_evento, 1) AS bi_sequencia_evento_hex,
     DATALENGTH(bi_sequencia_evento) AS bi_sequencia_evento_bytes
-FROM DBRO684.<schema_name>.<table_name>;
+FROM BD_DESTINO_01.<schema_name>.<table_name>;
 ```
 
 For every row, the `*_nulo` indicators must return `0`. If the value were an
@@ -426,9 +446,10 @@ length columns would return `NULL`; a visually blank cell is therefore not
 used as evidence. The lab verifier repeats this validation across all rows and
 also confirms `BINARY(10) NOT NULL` in the catalog.
 
-### Landing
+### BD_DESTINO_02
 
-The `templates/landing.json` profile is used exclusively by `ddl --area
+By default, `BD_DESTINO_02` uses the compatible internal area `landing` and the
+`templates/landing.json` profile. It can be selected by `ddl --area
 landing|both` and creates:
 
 - `id_{source_table}` as `BIGINT IDENTITY(1,1)`;
@@ -443,11 +464,13 @@ landing|both` and creates:
   partitioning, the simple index on the selected column is removed when
   redundant, and clustered organization moves to that column.
 
-No data is loaded through or chained via Landing. `run`, `resume`, and `import`
-move data exclusively from the configured source to Bronze; Landing remains
-empty and contains structures only. In a generic scenario this corresponds to
-`BD_ORIGEM` → `DBRO684`, with `DLAN684` used for structure. The `ddl --area
-both` command independently creates/evolves both destinations.
+Roles, rather than internal area names, decide behavior. At most one of
+`BD_DESTINO_01` or `BD_DESTINO_02` may use `structure_and_data` or `data_only`.
+When import is enabled, exactly one must do so; that endpoint becomes
+`active_destination` and receives the rows and SQL control. A `structure_only` endpoint can receive manual DDL/evolution but never
+reads BCP files. A `data_only` endpoint receives rows only after strict layout
+validation and never creates/evolves objects or indexes. The `ddl --area both`
+command still uses the compatible area IDs to address both destinations.
 
 These time-zone rules belong only to the default `templates/bronze.json` and
 `templates/landing.json` profiles. A custom profile remains agnostic and can
@@ -475,16 +498,15 @@ executor/root UID.
 Local SQLite uses `controle_transferencia.sqlite3`, with persistent tables
 `metadados`, `execucao`, `execucao_tabela`, `execucao_lote`, and
 `tentativa_lote`, plus `PRAGMA user_version=5`. This local file name is not a
-SQL Server schema. The Bronze endpoint SQL control is persisted exclusively in
-`DBRO684.dbo.execucao`, `DBRO684.dbo.execucao_tabela`, and
-`DBRO684.dbo.execucao_lote`; its physical version is stored in
-`DBRO684.dbo.versao_esquema`. The engine validates the complete signature,
+SQL Server schema. SQL control is persisted in the active data destination as
+`dbo.execucao`, `dbo.execucao_tabela`, and `dbo.execucao_lote`; its physical
+version is stored in `dbo.versao_esquema`. The engine validates the complete signature,
 including columns, defaults, PK/FK constraints, indexes, and unexpected
 objects; a partial, tampered, or incompatible structure fails closed. The
 legacy SQL Server schema `controle_transferencia` is not part of the contract
 and must not coexist with these tables. This rule neither renames nor removes
-the local SQLite file `controle_transferencia.sqlite3`. The Landing endpoint
-receives only Landing profile tables, not load-control tables.
+the local SQLite file `controle_transferencia.sqlite3`. A `structure_only`
+destination does not receive load-control tables.
 
 In the GUI, `executor_directory` is presented as **Diretório de exportação dos
 arquivos**, and `destination_sql_directory` as **Diretório de importação dos
@@ -510,7 +532,7 @@ count for this projection. See
 [Graphical interface](docs/USO_INTERFACE_GRAFICA.md#1-prerequisites) and
 [Prerequisites](docs/PRE_REQUISITOS.md#directory-capacity-and-bcp-projection).
 
-Before provisioning and loading a table into Bronze, when the byte estimate is
+Before provisioning and loading a table into the active data destination, when the byte estimate is
 available, the engine multiplies it by the safety factor and compares it
 separately with every database volume returned by `sys.dm_os_volume_stats`.
 Data and log space are not treated as interchangeable: the displayed capacity
@@ -520,7 +542,7 @@ value; if any volume does not report `available_bytes`, the entire measurement
 is unavailable. Proven insufficiency raises an alert, marks the table as
 `SKIPPED_DESTINATION_INSUFFICIENT_SPACE`, does not start its import, and
 proceeds to the next table. An unavailable estimate follows
-`estimates.on_unavailable`; if only the Bronze volume query cannot be proven,
+`estimates.on_unavailable`; if only the active-destination volume query cannot be proven,
 the engine records a warning and proceeds without claiming unmeasured
 capacity.
 

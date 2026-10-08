@@ -3,6 +3,7 @@
   "perimeter": "DESENVOLVIMENTO",
   "scope": "Exemplo somente exportação sem destino",
   "source": {
+    "role": "data_provider",
     "instance": "SQL-ORIGEM\\INST01",
     "port": 1433,
     "database": "BD_ORIGEM",

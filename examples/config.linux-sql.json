@@ -3,6 +3,7 @@
   "perimeter": "DESENVOLVIMENTO",
   "scope": "Exemplo de executor Linux com autenticação SQL",
   "source": {
+    "role": "data_provider",
     "instance": "sql-source.example.internal",
     "port": 1433,
     "database": "BD_ORIGEM",
@@ -14,9 +15,10 @@
     }
   },
   "bronze_destination": {
+    "role": "structure_and_data",
     "instance": "sql-target.example.internal",
     "port": 1433,
-    "database": "BASE_BRONZE",
+    "database": "BD_DESTINO_01",
     "schema": "fonte_a",
     "structure_profile": "bronze",
     "authentication": {
@@ -26,9 +28,10 @@
     }
   },
   "landing_destination": {
-    "instance": "sql-landing.example.internal",
+    "role": "structure_only",
+    "instance": "sql-destination-02.example.internal",
     "port": 1433,
-    "database": "BASE_LANDING",
+    "database": "BD_DESTINO_02",
     "schema": "fonte_a",
     "structure_profile": "landing",
     "authentication": {

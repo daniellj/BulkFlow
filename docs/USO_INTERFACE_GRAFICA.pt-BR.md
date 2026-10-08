@@ -6,8 +6,8 @@ A interface `ttkbootstrap` usa o mesmo contrato V2 e o mesmo motor da CLI. Não
 existe uma segunda implementação da carga: as ações chamam os serviços de
 planejamento, DDL, execução, retomada, importação e consulta de estado.
 
-A aplicação é agnóstica de infraestrutura. Docker, portas fixas e os bancos
-`BD_ORIGEM`, `DBRO684` e `DLAN684` pertencem somente ao laboratório local.
+A aplicação é agnóstica de infraestrutura. Docker e portas fixas pertencem
+somente ao laboratório local.
 
 ## Abrir a interface
 
@@ -67,17 +67,19 @@ altera a validação: `*` e o texto do campo determinam obrigatoriedade.
 A aba reúne perímetro, modo de execução, diretórios, arquivos, limites,
 timeouts e ferramentas. Campos marcados com `*` são obrigatórios.
 
-O fluxo de dados é fixo: Origem → Bronze. Landing é exclusivamente estrutural.
+Origem é sempre o provedor de dados. No máximo um destino configurado é capaz
+de receber dados, e exatamente um é obrigatório quando a importação está
+habilitada.
 O campo antigo de escopo não é exibido. **Criar estrutura se necessário** volta
 a ser uma opção e vem marcada por padrão. Marcada, permite que `run`, `resume`
-e a importação de manifestos criem ou completem automaticamente os objetos
-Bronze ausentes; desmarcada, essas operações somente validam a estrutura
+e a importação de manifestos criem ou completem automaticamente os objetos do
+destino ativo quando sua função for `structure_and_data`; desmarcada, essas operações somente validam a estrutura
 existente e acusam estrutura ausente/incompleta, sem criá-la. **Gerar DDL** é
 sempre não mutável e o clique explícito em **Aplicar DDL** continua sendo uma
-autorização separada para aplicar os scripts Bronze/Landing, qualquer que seja
+autorização separada para aplicar scripts nos destinos com estrutura, qualquer que seja
 o estado desse checkbox. O tooltip do campo explica esse efeito. **Apagar
 arquivos exportados após confirmação** só remove
-o arquivo de dados depois que o commit na Bronze foi comprovado.
+o arquivo de dados depois que o commit no destino ativo foi comprovado.
 
 ### Perímetro e usuários sugeridos
 
@@ -95,10 +97,9 @@ não vincula as conexões: cada endpoint pode usar outro usuário e outra senha.
   `262800`, equivalente ao prazo de negócio de seis meses (aproximadamente
   182,5 dias). Informe apenas dígitos, sem ponto separador de milhar; o intervalo
   aceito é de `1` a `52494800` minutos.
-- **Esquema de controle:** valor obrigatório `dbo`. Na Bronze do laboratório,
-  o contrato persistente usa `DBRO684.dbo.execucao`,
-  `DBRO684.dbo.execucao_tabela`, `DBRO684.dbo.execucao_lote` e a tabela técnica
-  `DBRO684.dbo.versao_esquema`.
+- **Esquema de controle:** valor obrigatório `dbo`. No destino de dados ativo,
+  o contrato persistente usa `dbo.execucao`, `dbo.execucao_tabela`,
+  `dbo.execucao_lote` e a tabela técnica `dbo.versao_esquema`.
 - **Índices secundários:** default **Antes da carga**, persistido como
   `before_load`.
 
@@ -117,7 +118,7 @@ BCP 18+ é recomendado. Uma build 17 só é aceita quando comprova as opções T
   executor/BCP. O default no código-fonte é
   `<raiz do projeto>\Local\BulkFlow\bcp-data`.
 - **Diretório de importação dos arquivos:** visão dos mesmos bytes pelo SQL
-  Server Bronze; começa com o mesmo valor do diretório de exportação, mas pode
+  Server do destino de dados ativo; começa com o mesmo valor do diretório de exportação, mas pode
   ser alterado para um caminho de compartilhamento ou mount equivalente.
 - **Diretório de controle local:** guarda SQLite e checkpoints. O default no
   código-fonte é `<raiz do projeto>\Local\BulkFlow\.bcp-control`.
@@ -131,13 +132,19 @@ Uma tabela sem marca d'água, PK ou UNIQUE elegível usa metadados aproximados
 para pré-admissão, sem `COUNT_BIG` na Origem. A quantidade real copiada pelo
 BCP é validada contra o limite antes da publicação/importação.
 
-O caminho visto pelo executor e o caminho visto pelo SQL Server Bronze podem
+O caminho visto pelo executor e o caminho visto pelo SQL Server do destino ativo podem
 ter sintaxes diferentes, mas devem apontar para os mesmos bytes. O controle
 SQLite deve permanecer em armazenamento local, não em UNC.
 
 ## Aba Conexões
 
-Origem, Bronze e Landing possuem parâmetros independentes:
+As três subabas se chamam **Origem**, **Destino 01** e **Destino 02**. Suas
+chaves internas compatíveis permanecem `source`, `bronze_destination` e
+`landing_destination`; os IDs de área usados pela CLI permanecem `bronze` e
+`landing`. Eles são identificadores técnicos estáveis, não funções operacionais
+fixas.
+
+Origem, `BD_DESTINO_01` e `BD_DESTINO_02` possuem parâmetros independentes:
 
 - instância;
 - porta obrigatória, separada da instância;
@@ -145,15 +152,35 @@ Origem, Bronze e Landing possuem parâmetros independentes:
 - schema;
 - DSN opcional;
 - autenticação e usuário;
-- TLS.
+- TLS;
+- **Função**.
 
-Essa separação atende naturalmente tanto a um perímetro no qual Landing e
-Bronze compartilham uma instância quanto a outro em que os três endpoints ficam
-em instâncias e portas diferentes.
+A função da Origem tem o único valor **provedor de dados**, persistido como
+`data_provider`. Os dois destinos oferecem:
+
+- **estrutura e dados** (`structure_and_data`): permite DDL manual/automático,
+  evolução aditiva, criação de índices e carga;
+- **somente estrutura** (`structure_only`): permite DDL manual e evolução
+  aditiva, mas nunca lê arquivos BCP nem recebe linhas;
+- **somente dados (premissa: já existir a estrutura)** (`data_only`): carrega
+  em layout previamente compatível e proíbe criação, evolução e criação de
+  índices.
+
+Os defaults são `data_provider` na Origem, `structure_and_data` em
+`BD_DESTINO_01` e `structure_only` em `BD_DESTINO_02`. As caixas de função usam
+o fundo azul de valor default enquanto mantiverem esse valor e continuam
+editáveis quando houver mais de uma opção. No máximo um destino configurado
+pode incluir dados. Quando a importação está habilitada, exatamente um deve
+fazê-lo: sua área torna-se `active_destination`, ele recebe o controle SQL em
+`dbo` e é o único que lê arquivos BCP. Configurações somente de exportação
+podem não ter destino capaz de receber dados.
+
+Essa separação atende instâncias e portas compartilhadas ou distintas.
 
 Na Origem, **Banco de dados** é o banco lido; não há um segundo campo visual
-**Banco para leitura**. Na Bronze, o schema começa em branco e deve ser
-preenchido. O schema Landing herda o valor Bronze corrente quando apropriado,
+**Banco para leitura**. Em `BD_DESTINO_01`, o schema começa em branco e deve ser
+preenchido. O schema de `BD_DESTINO_02` herda o valor corrente de
+`BD_DESTINO_01` quando apropriado,
 mas permanece editável e obrigatório.
 
 A opção TLS é exibida como **Confiar no certificado do servidor**.
@@ -182,8 +209,8 @@ Para adicionar ou editar uma tabela, informe:
 - banco de dados de origem obrigatório, herdado da conexão Origem;
 - schema de origem obrigatório, herdado da conexão Origem;
 - tabela de origem;
-- banco de dados de destino obrigatório, herdado da conexão Bronze;
-- schema de destino obrigatório, herdado da conexão Bronze;
+- banco de dados de destino obrigatório, herdado do destino de dados ativo;
+- schema de destino obrigatório, herdado do destino de dados ativo;
 - tabela de destino, sugerida automaticamente como
   `<banco_origem>_<tabela_origem>` em minúsculas;
 - marca d'água opcional, informada somente pelos nomes das colunas separados
@@ -199,8 +226,8 @@ Os bancos e schemas herdados, a tabela de destino gerada, o lote por tabela, o
 perfil e o particionamento aparecem com o fundo de valor default. Nesta versão,
 editar os campos de banco não cria uma conexão separada por tabela:
 **Banco de dado de origem** deve continuar igual a `source.database`, e
-**Banco de dado de destino** deve continuar igual a
-`bronze_destination.database`, sem diferenciar maiúsculas de minúsculas. Uma
+**Banco de dado de destino** deve continuar igual ao endpoint selecionado por
+`active_destination`, sem diferenciar maiúsculas de minúsculas. Uma
 divergência é rejeitada ao validar/salvar, evitando que a interface prometa uma
 rota que o motor não executaria. Para outro par de bancos, salve e execute uma
 configuração separada.
@@ -286,7 +313,8 @@ Ao adicionar uma tabela, o particionamento vem habilitado e preenchido com
 preenchido; o usuário pode desabilitá-lo ou informar outra coluna. Ela
 deve existir no destino e ter tipo `DATETIME2(7)`.
 
-Bronze e Landing recebem função e scheme `RANGE RIGHT`, com limites mensais do
+Um perfil de destino cuja função inclua estrutura recebe function e scheme
+`RANGE RIGHT`, com limites mensais do
 mês corrente até dezembro do ano corrente mais seis anos, todos em `PRIMARY`.
 Para `dh_carga`, os nomes usam o descritor `mensal`; outras colunas usam
 `attr`. O ID técnico permanece a PK `NONCLUSTERED`, e a coluna particionada
@@ -297,7 +325,7 @@ Sem o parâmetro, nenhum objeto de particionamento é criado. O motor não
 reparticiona silenciosamente uma tabela existente incompatível; esse caso exige
 migração explícita.
 
-Nos perfis padrão Bronze e Landing, `dh_carga` registra o horário civil de
+Nos perfis padrão dos destinos, `dh_carga` registra o horário civil de
 Brasília. A expressão parte de UTC, aplica explicitamente o fuso SQL Server
 `E. South America Standard Time` e converte o resultado para `DATETIME2(7)`;
 portanto, não depende do fuso do servidor. Perfis customizados podem substituir
@@ -346,7 +374,7 @@ mounts diferentes. Por isso, as capacidades são comparadas separadamente e o
 motor não soma duas vezes a projeção. Quando o caminho de importação existir
 somente no host do SQL Server, o executor não pode medir seu volume e exibe
 **indisponível**. Isso não significa zero byte livre. A prova posterior de que
-a Bronze enxerga os mesmos bytes e a verificação dos volumes de dados/log do
+o destino ativo enxerga os mesmos bytes e a verificação dos volumes de dados/log do
 banco continuam sendo controles distintos.
 
 #### Custo da projeção
@@ -378,33 +406,36 @@ a execução.
 
 Clique em **Planejar** e informe, quando necessário, a senha mascarada de cada
 ambiente. O planejamento é somente leitura. Além dos resultados por tabela, a
-tela mostra usuário, instância, porta e banco efetivos de Origem, Landing e
-Bronze.
+tela mostra usuário, instância, porta, banco e função efetivos da Origem, de
+`BD_DESTINO_01` e de `BD_DESTINO_02`. Ela também identifica o único destino de
+dados ativo.
 
 ### 3. DDL
 
-**Gerar DDL** grava scripts para Bronze, Landing ou ambos. **Aplicar DDL** pede
-confirmação e aplica os scripts idempotentes. Landing recebe apenas estrutura,
-inclusive evolução e particionamento quando configurados; nunca recebe linhas.
+**Gerar DDL** grava scripts para `BD_DESTINO_01`, `BD_DESTINO_02` ou ambos,
+usando os IDs de área compatíveis `bronze`, `landing` e `both`. **Aplicar DDL**
+pede confirmação e aplica scripts idempotentes somente onde a função inclua
+estrutura. Um destino `data_only` é apenas validado e rejeita DDL, evolução e
+criação de índices.
 O campo **Diretório dos scripts** começa em
 `<raiz do projeto>\Local\BulkFlow\ddl` ao executar pelo código-fonte.
 
 ### 4. Dados
 
-- **Executar nova carga:** cria um UUID, exporta da Origem e importa somente na
-  Bronze.
+- **Executar nova carga:** cria um UUID, exporta da Origem e importa somente no
+  único destino capaz de receber dados.
 - **Retomar:** usa o mesmo UUID e os checkpoints duráveis.
 - **Consultar status:** lê o controle SQLite local.
 - **Importar manifestos:** importa artefatos publicados sem consultar a Origem.
 
 As tarefas longas rodam fora da thread visual. A janela impede uma segunda
 operação e não oferece cancelamento forçado. Em caso de pane, preserve o UUID,
-o SQLite, os artefatos e as quatro tabelas de controle em `DBRO684.dbo`; reabra
+o SQLite, os artefatos e as quatro tabelas de controle em `dbo` no destino ativo; reabra
 a mesma configuração e use **Retomar**.
 
 A retomada ocorre por bloco lógico, nunca pelo byte ou pela linha do arquivo
 `.partial`. Um bloco com commit SQL comprovado não é inserido novamente. Se o
-espaço livre nos volumes da Bronze for comprovadamente insuficiente, a tabela é
+espaço livre nos volumes do destino ativo for comprovadamente insuficiente, a tabela é
 sinalizada e pulada antes da importação, e o fluxo segue para a próxima. A
 capacidade é verificada por volume: espaços de dados e log não são somados, e o
 menor volume é o limitante.

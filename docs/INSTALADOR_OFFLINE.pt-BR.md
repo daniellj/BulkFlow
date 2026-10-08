@@ -61,7 +61,7 @@ Fontes oficiais:
    ou o comando `prerequisites` da CLI.
 
 Nenhuma senha de banco é pedida ou armazenada pelo instalador. As credenciais
-de Origem, Bronze e Landing continuam sendo solicitadas em tempo de operação,
+de Origem, `BD_DESTINO_01` e `BD_DESTINO_02` continuam sendo solicitadas em tempo de operação,
 com a senha mascarada e independente para cada conexão.
 
 ## Instalação silenciosa
@@ -116,7 +116,8 @@ tenta gravar em `Program Files`.
 
 Essa separação permite executar a aplicação sem conceder escrita na pasta do
 programa. A configuração ainda pode apontar diretórios operacionais para outro
-local autorizado, inclusive o compartilhamento exigido pelo SQL Server Bronze.
+local autorizado, inclusive o compartilhamento exigido pelo SQL Server do
+destino de dados ativo.
 
 Reparo, atualização e desinstalação preservam os artefatos operacionais em
 `%LOCALAPPDATA%\BulkFlow`, inclusive configurações, manifestos, arquivos BCP
@@ -198,7 +199,9 @@ desconectada. Registre evidências de cada item.
 - [ ] Abrir GUI e CLI sem Python no `PATH`.
 - [ ] Confirmar `ODBC Driver 18 for SQL Server` e executar `bcp -v`/`bcp -?`.
 - [ ] Executar `prerequisites`, `plan`, geração/aplicação de DDL e uma carga de
-      teste com Origem, Landing e Bronze configurados.
+      teste com Origem, `BD_DESTINO_01` e `BD_DESTINO_02` configurados; conferir
+      que no máximo uma função de destino inclua dados e que exatamente uma o
+      faça quando o teste importar dados.
 - [ ] Confirmar que os arquivos mutáveis são criados em `%LOCALAPPDATA%` ou nos
       caminhos configurados, nunca em `Program Files`.
 - [ ] Repetir o setup com as mesmas versões e comprovar idempotência/reparo.

@@ -874,6 +874,145 @@ class PlannerTests(unittest.TestCase):
         self.assertFalse(table.execution_allowed)
         self.assertIn("layout divergente", table.reason)
 
+    def test_data_only_destination_allows_execution_only_for_compatible_catalog(self):
+        config = planner_config(import_enabled=True)
+        config["bronze_destination"]["role"] = "data_only"
+
+        plan = build_plan(
+            config,
+            object(),
+            destination_connections={"bronze": object()},
+            disk_free_provider=lambda _path: 100_000,
+            destination_inspector=lambda *_args, **_kwargs: {"exists": True},
+            catalog_comparer=lambda *_args, **_kwargs: CatalogComparison(
+                CatalogState.COMPATIBLE
+            ),
+            **self.common_dependencies(),
+        )
+
+        table = plan.tables[0]
+        self.assertEqual(table.destination_catalog_state, CatalogState.COMPATIBLE.value)
+        self.assertEqual(table.status, TableStatus.PENDING.value)
+        self.assertTrue(table.execution_allowed)
+        self.assertNotIn(
+            "DATA_ONLY_DESTINATION_REQUIRES_COMPATIBLE_CATALOG",
+            table.warnings,
+        )
+
+    def test_data_only_destination_blocks_every_non_compatible_catalog_state(self):
+        non_compatible_states = tuple(
+            state for state in CatalogState if state is not CatalogState.COMPATIBLE
+        )
+        authorization_combinations = ((False, False), (True, True))
+
+        for state in non_compatible_states:
+            for create_structure, allow_evolution in authorization_combinations:
+                with self.subTest(
+                    state=state.value,
+                    create_structure=create_structure,
+                    allow_evolution=allow_evolution,
+                ):
+                    config = planner_config(import_enabled=True)
+                    config["bronze_destination"]["role"] = "data_only"
+                    config["create_structure_if_needed"] = create_structure
+                    config["allow_schema_evolution"] = allow_evolution
+                    errors = (
+                        ("layout divergente",)
+                        if state
+                        in {CatalogState.INCOMPATIBLE, CatalogState.CLUSTERED_CONFLICT}
+                        else ()
+                    )
+                    missing_objects = (
+                        ()
+                        if errors
+                        else ("INDEX:ix_required",)
+                    )
+                    comparison = CatalogComparison(
+                        state,
+                        errors=errors,
+                        missing_objects=missing_objects,
+                        missing_business_columns=(
+                            ("new_column",)
+                            if state is CatalogState.SCHEMA_EVOLUTION_PENDING
+                            else ()
+                        ),
+                    )
+
+                    plan = build_plan(
+                        config,
+                        object(),
+                        destination_connections={"bronze": object()},
+                        disk_free_provider=lambda _path: 100_000,
+                        destination_inspector=lambda *_args, **_kwargs: {
+                            "exists": True
+                        },
+                        catalog_comparer=lambda *_args, **_kwargs: comparison,
+                        **self.common_dependencies(),
+                    )
+
+                    table = plan.tables[0]
+                    self.assertEqual(table.destination_catalog_state, state.value)
+                    self.assertEqual(table.status, TableStatus.LAYOUT_ERROR.value)
+                    self.assertFalse(table.execution_allowed)
+                    self.assertIn("role=data_only", table.reason)
+                    self.assertIn(state.value, table.reason)
+                    self.assertIn(
+                        "DATA_ONLY_DESTINATION_REQUIRES_COMPATIBLE_CATALOG",
+                        table.warnings,
+                    )
+
+    def test_data_only_destination_without_catalog_evidence_is_blocked(self):
+        config = planner_config(import_enabled=True)
+        config["bronze_destination"]["role"] = "data_only"
+
+        without_connection = build_plan(
+            config,
+            object(),
+            disk_free_provider=lambda _path: 100_000,
+            **self.common_dependencies(),
+        ).tables[0]
+        self.assertFalse(without_connection.execution_allowed)
+        self.assertEqual(without_connection.status, TableStatus.LAYOUT_ERROR.value)
+        self.assertIn("NOT_INSPECTED", without_connection.reason)
+
+        def unavailable(*_args, **_kwargs):
+            raise RuntimeError("catalog unavailable")
+
+        inspection_failure = build_plan(
+            config,
+            object(),
+            destination_connections={"bronze": object()},
+            disk_free_provider=lambda _path: 100_000,
+            destination_inspector=unavailable,
+            **self.common_dependencies(),
+        ).tables[0]
+        self.assertFalse(inspection_failure.execution_allowed)
+        self.assertEqual(inspection_failure.status, TableStatus.LAYOUT_ERROR.value)
+        self.assertIn("INSPECTION_UNAVAILABLE", inspection_failure.reason)
+
+    def test_legacy_bronze_without_role_keeps_structure_and_data_behavior(self):
+        config = planner_config(import_enabled=True)
+        self.assertNotIn("role", config["bronze_destination"])
+
+        plan = build_plan(
+            config,
+            object(),
+            destination_connections={"bronze": object()},
+            disk_free_provider=lambda _path: 100_000,
+            destination_inspector=lambda *_args, **_kwargs: {"exists": False},
+            catalog_comparer=lambda *_args, **_kwargs: CatalogComparison(
+                CatalogState.ABSENT,
+                missing_objects=("TABLE:s344.dst_a",),
+            ),
+            **self.common_dependencies(),
+        )
+
+        table = plan.tables[0]
+        self.assertEqual(table.destination_catalog_state, CatalogState.ABSENT.value)
+        self.assertEqual(table.status, TableStatus.PENDING.value)
+        self.assertTrue(table.execution_allowed)
+        self.assertNotIn("role=data_only", table.reason or "")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -21,10 +21,11 @@ need internet access, Python, or `pip`, but UAC elevation is required to install
 the native components for the machine. See
 [Offline installer for Windows](INSTALADOR_OFFLINE.md).
 
-These tools do not need to be installed on the Source, Bronze, or Landing SQL
-Server instances solely for the engine to work. Those servers must accept the
-connections, provide the required permissions, and, for Bronze, be able to read
-the files produced by the executor.
+These tools do not need to be installed on the Source, `BD_DESTINO_01`, or
+`BD_DESTINO_02` SQL Server instances solely for the engine to work. Those
+servers must accept connections and provide the permissions required by their
+roles; when importing, the single data-capable destination must read the files
+produced by the executor.
 
 If the process runs through Task Scheduler, a service, a pipeline, or a
 container, the installation, `PATH`, DSNs, and permissions must work for that
@@ -83,8 +84,8 @@ Official Microsoft references:
 |---|---:|---:|---:|---|
 | GUI, CLI, or job executor | Yes for scripts; bundled in the EXEs | Yes, for SQL operations | Yes, for `run` and `resume` | Opens connections and creates artifacts. |
 | Source SQL Server | No | No | No | TDS access, read access, catalog access, and CDC permissions when requested. |
-| Bronze SQL Server | No | No | No | DDL/DML/control operations and artifact reads through `OPENROWSET`. |
-| Landing SQL Server | No | No | No | DDL and schema evolution; receives no rows. |
+| `BD_DESTINO_01` SQL Server | No | No | No | Permissions are determined by its configured destination role. |
+| `BD_DESTINO_02` SQL Server | No | No | No | Permissions are determined by its configured destination role. |
 | Operator workstation | Only if it is also the executor | Same | Same | SSMS, RDP, or SSH alone does not run the engine. |
 
 If the executor and SQL Server are on the same machine, installation remains
@@ -92,7 +93,7 @@ necessary because of the executor role, not because of the SQL service.
 
 Each connection has separate `instance` and `port` values. The port is required
 in new configurations and must be reachable between the executor and that
-endpoint. Source, Bronze, and Landing may share an instance or reside on three
+endpoint. Source, `BD_DESTINO_01`, and `BD_DESTINO_02` may share an instance or reside on three
 different instances and ports without changing the flow.
 
 ## Dependencies by operation
@@ -104,10 +105,10 @@ different instances and ports without changing the flow.
 | `status` and `migrate-control` | No | No | Operate on the local SQLite control database. |
 | `plan` | All configured endpoints | No | Inspects identities, metadata, cardinality, contracts, and the applicable destination. |
 | `ddl` without `--apply` | Source | No | Generates scripts only. |
-| `ddl --apply` | Source and selected destinations | No | Applies DDL to Bronze, Landing, or both according to `--area`. |
-| `run --export-only` and `resume` for an execution without loading | Source | Yes | Uses `execute_import=false` and does not open Bronze. |
-| `run` and `resume` with loading | Source and Bronze | Yes | BCP exports from Source; Bronze imports through SQL bulk operations. |
-| `import --manifest` | Bronze | No | Does not open Source and does not run BCP. |
+| `ddl --apply` | Source and selected structure-capable destinations | No | Uses compatible `bronze`, `landing`, or `both` area IDs; `data_only` rejects DDL. |
+| `run --export-only` and `resume` for an execution without loading | Source | Yes | Uses `execute_import=false` and does not open the active destination for data. |
+| `run` and `resume` with loading | Source and active data destination | Yes | BCP exports from Source; the single data-capable destination imports through SQL bulk operations. |
+| `import --manifest` | Active data destination | No | Does not open Source and does not run BCP. |
 
 `resume` performs BCP pre-validation even when all exported blocks will only be
 reconciled. To import existing manifests without Source or BCP, use
@@ -266,14 +267,14 @@ a container.
 For the GUI on Linux, Python must also provide Tk and access to a graphical
 session. The CLI does not require a display.
 
-## Files shared with Bronze
+## Files shared with the active data destination
 
 Artifact paths have different points of view:
 
 - `executor_directory`: **File export directory** in the GUI; an absolute,
   writable path seen by Python/BCP;
 - `destination_sql_directory`: **File import directory** in the GUI; an
-  absolute path seen by the Bronze SQL Server for the **same bytes** and the
+  absolute path seen by the active destination SQL Server for the **same bytes** and the
   same relative structure. In the interface, it initially has the same value
   as the export directory and must be adjusted when SQL sees those bytes
   through a different path;
@@ -284,11 +285,11 @@ A local executor directory does not automatically become visible to a remote
 SQL Server. Use an SMB share, volume, or bind mount and grant read access to the
 effective SQL Server/BULK service identity. Before loading data, the engine
 performs a path proof: it writes random content through the executor and
-requires Bronze to read exactly the same bytes through `OPENROWSET`.
+requires the active destination to read exactly the same bytes through `OPENROWSET`.
 
-The Landing endpoint does not read data files. `destination_sql_directory` is
-required for loading into Bronze and for `import --manifest`, but not for an
-export-only execution.
+A `structure_only` destination does not read data files.
+`destination_sql_directory` is required for loading into the active destination
+and for `import --manifest`, but not for an export-only execution.
 
 ### Directory capacity and BCP projection
 
@@ -324,7 +325,7 @@ This indication is for planning; it is not a filesystem reservation. Other
 processes may consume space after the observation, data distribution may
 differ from the sample, and retained files from earlier executions also occupy
 the volume. The engine retains its execution barriers and separate validation
-for the Bronze data/log volumes.
+for the active destination's data/log volumes.
 
 ### Computational cost of the projection
 
@@ -351,7 +352,10 @@ during BCP.
 ## Minimum permissions by role
 
 Exact grants must follow the environment's policy and the principle of least
-privilege:
+privilege. Source must use `data_provider`. At most one configured destination
+may use `structure_and_data` or `data_only`; exactly one is required when
+importing and becomes `active_destination`. Defaults are `structure_and_data` for `BD_DESTINO_01`
+and `structure_only` for `BD_DESTINO_02`:
 
 - **Source:** read access to data and metadata. If any table uses
   `enable_cdc=true`, the credential must also be authorized to enable CDC on
@@ -366,20 +370,23 @@ privilege:
   the cleanup job only then, and the engine restarts cleanup when necessary and
   confirms retention before starting any BCP operation. The `capture` job is
   not restarted.
-- **Bronze:** creation/evolution of schemas, tables, sequences, constraints,
-  and indexes; `INSERT`; creation or validation and maintenance of the
-  `dbo.versao_esquema`, `dbo.execucao`, `dbo.execucao_tabela`, and
-  `dbo.execucao_lote` control tables in the Bronze database (`DBRO684` in the
-  test environment); file reads through `OPENROWSET(BULK...)`; and volume-space
-  queries. On SQL Server 2022+, `sys.dm_os_volume_stats` normally requires
-  `VIEW SERVER PERFORMANCE STATE`. Partitioning requires the applicable
-  dataspace permission, normally `ALTER ANY DATASPACE`, in addition to the
-  database DDL permissions.
-- **Landing:** DDL and schema-evolution permissions. It does not need to read
-  BCP files or receive load DML.
+- **`structure_and_data`:** creation/evolution of schemas, tables, sequences,
+  constraints, and indexes; `INSERT`; creation or validation and maintenance
+  of `dbo.versao_esquema`, `dbo.execucao`, `dbo.execucao_tabela`, and
+  `dbo.execucao_lote`; file reads through `OPENROWSET(BULK...)`; and volume
+  queries. Partitioning requires the applicable dataspace permission, normally
+  `ALTER ANY DATASPACE`.
+- **`structure_only`:** manual DDL and schema-evolution permissions. It does not
+  read BCP files, receive load DML, or host load-control tables.
+- **`data_only`:** `INSERT`, BCP-file reads, volume queries, and use/maintenance
+  of pre-existing compatible `dbo` control tables. It prohibits creating or
+  evolving business objects, control objects, and indexes.
+
+On SQL Server 2022+, `sys.dm_os_volume_stats` normally requires
+`VIEW SERVER PERFORMANCE STATE` on the active data destination.
 
 The engine does not grant permissions, open firewalls, create shares, or
-configure a service account. Missing evidence when querying Bronze space is
+configure a service account. Missing evidence when querying active-destination space is
 logged as a warning; proven insufficient space causes the table to be skipped
 before import.
 
@@ -406,7 +413,7 @@ Check `where.exe bcp` on Windows or `command -v bcp` on Linux. In a service or
 job, configure an absolute path. Validate with `bcp -v` and `bcp -?`; the
 engine rejects an installation without the required TLS controls.
 
-### Bronze cannot read the file
+### The active destination cannot read the file
 
 Reinstalling ODBC or BCP does not fix this problem. Check the share/mount, the
 mapping between the two paths, and permissions for the effective SQL Server

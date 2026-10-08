@@ -34,8 +34,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="BulkFlowCLI",
         description=(
-            "BulkFlow: exportação e carga de dados na Bronze; "
-            "a Landing recebe somente DDL e evolução estrutural."
+            "BulkFlow: exportação da Origem e carga no único destino "
+            "cuja função autoriza dados."
         ),
     )
     parser.add_argument("--verbose", action="store_true", help="Log técnico adicional, sempre redigido")
@@ -98,7 +98,7 @@ def _event(name: str, payload: Mapping[str, Any]) -> None:
         LOG.info("Conexão validada: %s", stable_json(redact_structure(payload)))
     elif name == "destination_space":
         logger = LOG.info if payload.get("sufficient") is not False else LOG.error
-        logger("Espaço do destino Bronze: %s", stable_json(redact_structure(payload)))
+        logger("Espaço do destino de dados: %s", stable_json(redact_structure(payload)))
     elif name == "schema_evolution_detected":
         LOG.info(
             "Evolução de schema detectada: %s",
@@ -224,7 +224,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raise RuntimeError("Para importar no destino, informe --confirm-load")
             engine = _engine(args.config)
             if not engine.config["execute_import"]:
-                raise RuntimeError("O comando import exige execute_import=true e o destino Bronze")
+                raise RuntimeError(
+                    "O comando import exige execute_import=true e um destino cuja função autorize dados"
+                )
             report = engine.import_manifests(args.manifest.resolve())
             print(render_execution(report))
             return report.exit_code()

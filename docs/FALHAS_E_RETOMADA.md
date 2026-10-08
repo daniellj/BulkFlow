@@ -4,8 +4,11 @@
 
 This document describes the current implementation's operational contract for
 failures and resume operations. It applies to both CLI and graphical-interface
-execution and does not depend on Docker. The only data route is from Source to
-the Bronze endpoint; the Landing endpoint receives DDL only.
+execution and does not depend on Docker. Source uses `data_provider`. At most
+one configured destination uses `structure_and_data` or `data_only`; when the
+execution imports data, exactly one is required and becomes
+`active_destination`. A `structure_only` destination never reads BCP files or
+receives rows.
 
 Shortcuts: [BCP export failures](#failures-during-bcp-export) ·
 [destination load failures](#failures-during-the-destination-load) ·
@@ -67,11 +70,11 @@ Preserve all of the following elements to resume an execution:
 | Execution UUID | Identifies the existing execution; `resume` never creates another UUID. |
 | `local_control_directory/controle_transferencia.sqlite3` | Stores local executions, tables, blocks, attempts, and cursors. |
 | Execution directory under `executor_directory` | Stores the manifest, format file, and data that are still required. |
-| Bronze SQL control data, when an import occurred | Proves which blocks were actually committed at the destination. |
+| the active destination SQL control data, when an import occurred | Proves which blocks were actually committed at the destination. |
 | Compatible structural configuration | Preserves the logical source, watermark, batching, projection, and layout. |
-| Data already written to Bronze, when an import occurred | Must remain consistent with SQL control. |
+| Data already written to the active destination, when an import occurred | Must remain consistent with SQL control. |
 
-Credentials, `execute_import`, operational paths, and the Bronze address do not
+Credentials, `execute_import`, operational paths, and the active destination address do not
 by themselves change the structural hash. This does not mean that they may be
 changed arbitrarily during `resume`. Keep the same canonical SQLite and
 artifact paths: manifest paths persisted in SQLite are absolute and must remain
@@ -79,7 +82,7 @@ contained in the execution's `executor_directory`.
 `destination_sql_directory` may change only if it still represents exactly the
 same files to SQL Server.
 
-The logical Source instance is part of the structural contract. A Bronze
+The logical Source instance is part of the structural contract. The active destination
 address change during `resume` is safe only when it is an alias/route to the
 same physical database, tables, and SQL control; it does not migrate the
 execution. For another empty destination, use `import --manifest` with **all**
@@ -104,7 +107,7 @@ There are three complementary levels of evidence:
 2. **Final manifest** — a complete `block_*.manifest.json` file with valid
    identity, boundaries, counts, and hashes proves a published export. A
    `.partial` file never proves completion.
-3. **Bronze SQL control** — `DBRO684.dbo.execucao_lote` proves the destination
+3. **Active-destination SQL control** — `dbo.execucao_lote` proves the destination
    commit. Its row is created in the same transaction as the data and SQL
    checkpoint.
 
@@ -123,8 +126,8 @@ content.
 ```text
 capture/reuse final table ceiling
   -> plan block number and boundaries in SQLite
-  -> check estimated space on the executor and Bronze volumes
-  -> create/revalidate/evolve the Bronze structure
+  -> check estimated space on the executor and the active destination volumes
+  -> create/evolve for structure_and_data, or validate existing layout for data_only
   -> mark the block as EXPORTING and the attempt as RUNNING
   -> BCP queryout writes only block_*.bcp.partial
   -> validate completion, count, and bytes; bind the planned boundaries
@@ -171,7 +174,7 @@ transaction per block and with `sp_getapplock` for the physical destination.
 
 | Failure point | Destination result | Behavior on resume |
 |---|---|---|
-| Proven insufficient space on the Bronze volumes before provisioning/loading | No row from that table is inserted. The table receives `SKIPPED_DESTINATION_INSUFFICIENT_SPACE`. | The engine logs the warning and continues to the next table, even when the general policy would stop after a table error. Free or expand space and resume the same UUID. |
+| Proven insufficient space on the active destination volumes before provisioning/loading | No row from that table is inserted. The table receives `SKIPPED_DESTINATION_INSUFFICIENT_SPACE`. | The engine logs the warning and continues to the next table, even when the general policy would stop after a table error. Free or expand space and resume the same UUID. |
 | Before the transaction starts | No new row and no new SQL control row. | Revalidates the manifest and retries the same block. |
 | During `OPENROWSET`, due to a SQL error or disconnection before commit | The transaction is rolled back; data, `execucao_lote`, and the SQL cursor are not partially confirmed. | Reimports the entire same block. |
 | `ROWCOUNT_BIG` differs from manifest `rows_exported` | Full block rollback. | Keeps the file and fails; the cause must be fixed before resume. |
@@ -182,14 +185,14 @@ transaction per block and with `sp_getapplock` for the physical destination.
 | `.bcp` was already deleted by the post-confirmation policy | Manifest and format file remain; SQL confirms the exact block. | Missing data is accepted only because SQL control proves the commit. |
 | Data completed, but index creation failed | The table remains `DATA_COMPLETE_INDEXES_PENDING`. | After normal preflights and revalidation, retries missing indexes; it does not re-export or reinsert data. |
 
-When a byte estimate is available, the Bronze check queries the volumes
+When a byte estimate is available, the active destination check queries the volumes
 associated with data and log files through `sys.dm_os_volume_stats` and compares
 each volume separately with the estimate multiplied by the safety factor. Data
 and log free space are not added together: `available_bytes` represents the
 lowest value among distinct mount points, and all must be sufficient. Repeated
 mount points use the lowest observation; any `NULL` observation makes the
 measurement unavailable. An unavailable estimate follows
-`estimates.on_unavailable`. If only the Bronze volume query cannot be proven,
+`estimates.on_unavailable`. If only the active destination volume query cannot be proven,
 the engine logs a warning and continues; it does not assert nonexistent
 capacity or confuse missing evidence with proven insufficiency.
 
@@ -307,7 +310,7 @@ The BCP query in this mode uses `TABLOCK,HOLDLOCK` to stabilize reads without a
 reproducible key and may block writers for the duration of the export. Without
 a key, content changes that preserve the count cannot be proven; this is an
 explicit limitation. Subsequent tables stop or continue according to
-`continue_after_table_error`, except the special CDC and Bronze-space skips,
+`continue_after_table_error`, except the special CDC and active-destination-space skips,
 which always continue to the next table.
 
 ### Export without immediate load
@@ -334,9 +337,9 @@ must be under that UUID's directory in `executor_directory`.
 
 ### 1. Preserve state
 
-Do not truncate Bronze, do not delete `DBRO684.dbo.execucao`,
-`DBRO684.dbo.execucao_tabela`, `DBRO684.dbo.execucao_lote`, or
-`DBRO684.dbo.versao_esquema`, and do not remove SQLite or edit/delete
+Do not truncate the active destination, do not delete `dbo.execucao`,
+`dbo.execucao_tabela`, `dbo.execucao_lote`, or `dbo.versao_esquema` there, and
+do not remove SQLite or edit/delete
 artifacts. Do not start another `run` to continue: that creates a new UUID.
 
 In a disposable test environment, truncating targets and controls starts a new
@@ -363,7 +366,7 @@ engine_exit_code=$?
 ```
 
 `status` is local. To inspect destination commits, run
-[`query_control.sql`](../query_control.sql) in the Bronze database and set
+[`query_control.sql`](../query_control.sql) in the active destination database and set
 `@ExecutionId`.
 
 ### 3. Fix only the external cause
@@ -428,12 +431,12 @@ All manifests are prevalidated before the destination is opened or changed.
 - exit code `2`: a table was skipped, a partial error occurred, or work remains;
 - exit code `1`: a global failure or interruption occurred;
 - `status`: inspect local states, cursors, and counts;
-- `query_control.sql`: inspect blocks and rows confirmed in Bronze;
+- `query_control.sql`: inspect blocks and rows confirmed in the active destination;
 - when each imported table completes (`execute_import=true`), the engine
   requires the destination's physical cardinality to equal the sum of its
   confirmed blocks.
 
-For a stable source, test validation should also compare Source and Bronze row
+For a stable source, test validation should also compare Source and the active destination row
 counts. For a source receiving writes, compare against the ceiling and slice
 captured by the execution, not necessarily the source's current `COUNT_BIG`.
 
@@ -455,14 +458,14 @@ captured by the execution, not necessarily the source's current `COUNT_BIG`.
   with a durable ceiling, block, or checkpoint, blocks `resume`. A table with no
   progress in a provisional or error state may be rediscovered and revalidated
   under the contract; this never reinterprets existing blocks.
-- **External change to the Bronze table:** cardinality verification may detect
+- **External change to the active destination table:** cardinality verification may detect
   the mismatch, but the engine does not correct or truncate external data.
 
 ## Prohibited actions during recovery
 
 - run `run` expecting it to recognize the earlier execution;
 - reuse the UUID with a different structural configuration;
-- truncate Bronze tables or control tables;
+- truncate the active destination tables or control tables;
 - delete `controle_transferencia.sqlite3`;
 - delete a `.bcp`, XML, or block manifest that has not yet been confirmed;
 - edit a manifest, hash, boundaries, or counts;

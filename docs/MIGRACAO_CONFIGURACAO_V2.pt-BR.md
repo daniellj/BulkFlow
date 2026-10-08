@@ -22,9 +22,9 @@ convenção em português: isso não cria aliases para os parâmetros JSON.
 | `perimetro` | `perimeter` | Enum exato: `DESENVOLVIMENTO`, `HOMOLOGAÇÃO` ou `PRODUÇÃO`. |
 | — | `scope` | Descrição livre opcional; não substitui `perimeter`. |
 | `origem` | `source` | Endpoint obrigatório. |
-| `destino_bronze` | `bronze_destination` | Obrigatório quando Bronze é o destino ativo e há importação. |
-| `destino_landing` | `landing_destination` | Usado somente para gerar/aplicar DDL Landing. |
-| `destino_ativo` | `active_destination` | Deve ser `bronze`; Landing não recebe dados. |
+| `destino_bronze` | `bronze_destination` | Chave interna compatível exibida como **Destino 01** na GUI. |
+| `destino_landing` | `landing_destination` | Chave interna compatível exibida como **Destino 02** na GUI. |
+| `destino_ativo` | `active_destination` | ID de área do destino capaz de receber dados: `bronze` ou `landing`; opcional na entrada porque as funções o derivam, e um valor explícito é validado. |
 | `executar_importacao` | `execute_import` | Com `false`, o fluxo é somente exportação. |
 | `criar_estrutura_se_necessario` | `create_structure_if_needed` | Booleano; default `true`. A GUI exibe **Criar estrutura se necessário**, marcada por padrão. |
 | `diretorio_executor` | `executor_directory` | **Diretório de exportação dos arquivos** na GUI; caminho absoluto visto pelo processo Python/BCP. |
@@ -52,17 +52,16 @@ listas de ACL não aceitam nomes de conta nem grupos amplos; use SIDs específic
 de contas de serviço e conceda escrita apenas à identidade SMB efetiva que já
 faça parte da fronteira de confiança.
 
-`control_schema` deve conter obrigatoriamente `dbo`. Na Bronze do laboratório,
-o controle SQL é persistente exclusivamente em `DBRO684.dbo.execucao`,
-`DBRO684.dbo.execucao_tabela` e `DBRO684.dbo.execucao_lote`; a versão física
-fica em `DBRO684.dbo.versao_esquema`. O schema não é intercambiável. Nomes
+`control_schema` deve conter obrigatoriamente `dbo`. No destino de dados ativo,
+o controle SQL é persistido como `dbo.execucao`, `dbo.execucao_tabela` e
+`dbo.execucao_lote`; a versão física fica em `dbo.versao_esquema`. O schema não é intercambiável. Nomes
 legados são tratados apenas por uma migração administrativa explícita e não
 devem ser reutilizados em configurações novas.
 
 Na migração autorizada para esse contrato, remova as tabelas SQL do antigo
 schema `controle_transferencia` na ordem das dependências
 (`execucao_lote`, `execucao_tabela`, `execucao`, `versao_esquema`) e então
-remova o próprio schema. Recrie o contrato em `DBRO684.dbo`. Essa operação não
+remova o próprio schema. Recrie o contrato em `dbo` no destino de dados ativo. Essa operação não
 atinge o arquivo local `controle_transferencia.sqlite3`, que possui finalidade e
 ciclo de vida independentes.
 
@@ -79,6 +78,7 @@ O mapeamento abaixo vale dentro de `source`, `bronze_destination` e
 | `banco_leitura` | `read_database` |
 | `esquema` | `schema` |
 | `perfil_estrutura` | `structure_profile` |
+| `funcao` | `role` |
 | `autenticacao` | `authentication` |
 | `tipo` | `type` |
 | `usuario` | `username` |
@@ -95,6 +95,20 @@ Também converta os valores enumerados:
 | `windows_credencial` | `windows_credentials` |
 | `sql` | `sql` |
 | `prompt` | `prompt` |
+| `provedor_dados` | `data_provider` |
+| `estrutura_e_dados` | `structure_and_data` |
+| `somente_estrutura` | `structure_only` |
+| `somente_dados` | `data_only` |
+
+`source.role` deve ser `data_provider`. As funções dos destinos são
+`structure_and_data`, `structure_only` e `data_only`. Os defaults são
+`structure_and_data` em `bronze_destination` (`BD_DESTINO_01`) e
+`structure_only` em `landing_destination` (`BD_DESTINO_02`). No máximo um
+destino configurado pode incluir dados. Exatamente um é obrigatório com
+`execute_import=true`; com `false`, são permitidos zero ou um. Seu ID de área
+compatível torna-se `active_destination`. `structure_only` nunca lê arquivos BCP nem recebe linhas.
+`data_only` exige layout existente compatível e proíbe criação de objetos,
+evolução e criação de índices.
 
 Nunca migre uma senha literal. `password` deve conter somente o descritor do
 segredo. Para `provider: "prompt"`, use `reference: null`; para `env` ou
@@ -187,10 +201,10 @@ overrides opcionais e, quando omitidos, herdam os endpoints.
 
 Nesta versão, entretanto, os campos de banco por tabela não implementam
 roteamento independente: `source_database` deve coincidir com
-`source.database`, e `destination_database` deve coincidir com
-`bronze_destination.database`, sem diferenciar maiúsculas de minúsculas. A
-validação rejeita divergências. Isso preserva o contrato real do motor, que usa
-uma conexão Origem e uma conexão Bronze por execução. Para operar outro banco,
+`source.database`, e `destination_database` deve coincidir com o endpoint
+selecionado por `active_destination`, sem diferenciar maiúsculas de minúsculas.
+A validação rejeita divergências. Isso preserva uma conexão Origem e uma
+conexão de destino de dados ativo por execução. Para operar outro banco,
 use outra configuração/execução.
 
 ## Campos novos, sem equivalência direta
@@ -199,8 +213,8 @@ use outra configuração/execução.
   PK, UNIQUE ou marca comprovada; default `5000000`; `0` desabilita a exceção.
   A pré-admissão usa metadados aproximados, sem `COUNT_BIG` na Origem; a
   quantidade real produzida pelo BCP é validada antes da importação.
-- `allow_schema_evolution`: evolução aditiva nas estruturas Bronze/Landing;
-  default `false`. Desligado, apenas registra colunas ausentes.
+- `allow_schema_evolution`: evolução aditiva nos destinos cuja função inclua
+  estrutura; default `false`. `data_only` sempre proíbe evolução.
 - `tables[].enable_cdc`: decisão por tabela; default `false`. O CDC do banco só
   é tratado quando ao menos uma tabela usa `true`.
 - `cdc_retention_minutes`: prazo global, em minutos, do job de cleanup CDC na
@@ -222,8 +236,8 @@ use outra configuração/execução.
   particionamento.
 - `perimeter`: enum global exato `DESENVOLVIMENTO`, `HOMOLOGAÇÃO` ou `PRODUÇÃO`; default
   `DESENVOLVIMENTO`.
-- `tables[].destination_area`, quando informado, deve ser `bronze`. A Landing
-  é gerada pelo perfil estrutural e não participa da importação de linhas.
+- `tables[].destination_area`, quando informado, deve coincidir com o ID de
+  área compatível selecionada por `active_destination`: `bronze` ou `landing`.
 - Os provedores de segredo `env` e `windows_credential_manager` não tinham
   aliases definidos no exemplo preliminar; use diretamente esses valores V2.
 - `odbc_dsn`: DSN opcional por endpoint; não substitui os demais dados do
@@ -240,14 +254,17 @@ particionada para particionada (nem o inverso).
 O destino de uma tabela omitido passa a ser
 `<source_database>_<source_table>` em minúsculas, usando o banco efetivo da
 tabela (herdado de `source.database`). `source.read_database`
-omitido recebe `source.database`. Para `execute_import: false`, o endpoint de
-destino e `destination_sql_directory` podem ser omitidos, não há conexão com o
-destino e os arquivos são preservados.
+omitido recebe `source.database`. Para `execute_import: false`, o destino ativo
+não é contatado para dados e os arquivos são preservados. Uma configuração
+somente de exportação pode omitir tanto o destino capaz de receber dados quanto
+`active_destination`.
 
 ## Defaults e apresentação em português
 
-Os principais defaults do contrato são: perímetro `DESENVOLVIMENTO`, destino de dados
-Bronze, importação habilitada, criação automática de estrutura habilitada, lote
+Os principais defaults do contrato são: perímetro `DESENVOLVIMENTO`, função
+`data_provider` na Origem, `structure_and_data` em `BD_DESTINO_01`,
+`structure_only` em `BD_DESTINO_02`, `bronze` como área ativa compatível,
+importação habilitada, criação automática de estrutura habilitada, lote
 de 200.000 linhas, arquivo máximo de 157.286.400 bytes, limite sem chave de
 5.000.000, fator de segurança `1.25`, schema de controle `dbo`, evolução de
 schema desabilitada, retenção CDC de 262.800 minutos, CDC desabilitado por
@@ -261,7 +278,10 @@ Na interface, esses valores aparecem em português, por exemplo:
 | Interface pt-BR | Valor persistido no JSON |
 |---|---|
 | `DESENVOLVIMENTO` / `HOMOLOGAÇÃO` / `PRODUÇÃO` | mesmo valor exato em `perimeter` |
-| `Bronze` | `bronze` |
+| `provedor de dados` | `data_provider` |
+| `estrutura e dados` | `structure_and_data` |
+| `somente estrutura` | `structure_only` |
+| `somente dados (premissa: já existir a estrutura)` | `data_only` |
 | `Sim` / caixa marcada | `true` |
 | `Não` / caixa desmarcada | `false` |
 | `Metadados (aproximado)` | `metadata` |
@@ -282,6 +302,7 @@ não altera os defaults gerais do contrato.
   "perimeter": "HOMOLOGAÇÃO",
   "scope": "Exemplo de migração",
   "source": {
+    "role": "data_provider",
     "instance": "SQL-ORIGEM\\INST01",
     "port": 1433,
     "database": "BASE_ORIGEM",
@@ -296,9 +317,10 @@ não altera os defaults gerais do contrato.
     }
   },
   "bronze_destination": {
-    "instance": "SQL-DESTINO\\INST02",
+    "role": "structure_and_data",
+    "instance": "SQL-DESTINO-01\\INST01",
     "port": 1433,
-    "database": "BASE_BRONZE",
+    "database": "BD_DESTINO_01",
     "schema": "fonte_a",
     "structure_profile": "templates/bronze.json",
     "authentication": {
@@ -311,14 +333,15 @@ não altera os defaults gerais do contrato.
     }
   },
   "landing_destination": {
-    "instance": "SQL-LANDING\\INST03",
+    "role": "structure_only",
+    "instance": "SQL-DESTINO-02\\INST01",
     "port": 1433,
-    "database": "BASE_LANDING",
+    "database": "BD_DESTINO_02",
     "schema": "fonte_a",
     "structure_profile": "templates/landing.json",
     "authentication": {
       "type": "sql",
-      "username": "login_ddl_landing",
+      "username": "login_estrutura",
       "password": {
         "provider": "env",
         "reference": "BCP_LANDING_SQL_PASSWORD"
@@ -343,7 +366,7 @@ não altera os defaults gerais do contrato.
       "source_database": "BASE_ORIGEM",
       "source_schema": "dbo",
       "source_table": "CLIENTE",
-      "destination_database": "BASE_BRONZE",
+      "destination_database": "BD_DESTINO_01",
       "destination_schema": "fonte_a",
       "destination_table": "base_origem_cliente",
       "enable_cdc": false,
@@ -392,6 +415,6 @@ contexto da execução e não o grave no JSON, em linha de comando ou em logs.
 
 Não mantenha simultaneamente a chave antiga e a nova: a validação V2 rejeita a
 chave antiga. Ela também rejeita campos de autenticação conflitantes, nomes de
-destino duplicados, perímetros fora do enum exato, `active_destination`
-diferente de `bronze` e overrides de tabela que tentem direcionar dados à
-Landing.
+destino duplicados, perímetros fora do enum exato, zero ou múltiplos destinos
+capazes de receber dados, `active_destination` incompatível com as funções e
+overrides de tabela que apontem para outro destino.

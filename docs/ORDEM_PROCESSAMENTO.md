@@ -4,8 +4,7 @@
 
 This is the operational flow for **BulkFlow**. The same order applies to the
 graphical interface, the Python CLI, and the `BulkFlowCLI.exe` executable.
-Docker and the names `BD_ORIGEM`, `DBRO684`, and `DLAN684` are used only by the
-local test environment.
+Docker is used only by the local test environment.
 
 ## Recommended operator workflow
 
@@ -28,15 +27,17 @@ or install these native Microsoft components.
 
 ### 2. Plan
 
-Provide credentials for Source, Landing, and Bronze. Each endpoint has its own
-independent instance, port, database, schema, authentication type, user, and
-secret. Password input is masked and is not written to the configuration,
-command-line arguments, manifests, or logs.
+Provide credentials for Source, `BD_DESTINO_01`, and `BD_DESTINO_02`. Each
+endpoint has its own role, instance, port, database, schema, authentication
+type, user, and secret. Source must use `data_provider`; at most one destination
+may use `structure_and_data` or `data_only`. Exactly one is required when
+`execute_import=true` and becomes `active_destination`. Password input is masked and is not written to the
+configuration, command-line arguments, manifests, or logs.
 
 The databases displayed for each table inherit their endpoint settings. In
 this version, they are not additional routes: a table's source database must
-match the Source endpoint, and its destination database must match the Bronze
-endpoint. Use a separate configuration and execution for a different database
+match the Source endpoint, and its destination database must match the active
+data destination. Use a separate configuration and execution for a different database
 pair.
 
 `plan` is read-only. It validates the configuration, connections, effective
@@ -47,7 +48,12 @@ port, and database actually used for each environment.
 ### 3. Generate, review, and apply DDL
 
 Generate DDL for `bronze`, `landing`, or `both`; review the script, and then
-apply it. `create_structure_if_needed` is enabled by default and controls the
+apply it. The area names are compatible internal IDs: `bronze` identifies
+`bronze_destination` (`BD_DESTINO_01`) and `landing` identifies
+`landing_destination` (`BD_DESTINO_02`); roles determine behavior. A
+`structure_only` endpoint accepts manual DDL/evolution and never data. A
+`data_only` endpoint rejects DDL, evolution, and index creation. A
+`structure_and_data` endpoint permits both. `create_structure_if_needed` is enabled by default and controls the
 **automatic** provisioning performed by `run`, `resume`, and manifest imports.
 When disabled, these operations only validate the existing structure and do
 not create missing objects. The explicit `ddl --apply --confirm` command (and
@@ -64,9 +70,9 @@ existing tables.
   --area both --output .\ddl --apply --confirm
 ```
 
-Landing receives structure only. No `run`, `resume`, or `import` action inserts
-rows into it. Bronze receives both structure and data; in the test environment,
-persistent control data is stored exclusively in `DBRO684.dbo`.
+When import is enabled, exactly one configured destination includes data. It
+receives the rows and the persistent control objects under `dbo`; a `structure_only` destination never
+reads BCP artifacts.
 
 ### 4. Run the export/import
 
@@ -75,7 +81,7 @@ persistent control data is stored exclusively in `DBRO684.dbo`.
 ```
 
 The command creates and displays a UUID. Preserve that UUID, the local SQLite
-database, the artifacts, and the Bronze SQL control data. If a failure occurs,
+database, the artifacts, and the active-destination SQL control data. If a failure occurs,
 use `resume` with the same UUID; do not start another `run` in an attempt to
 continue.
 
@@ -87,10 +93,9 @@ continue.
    the UUID lease.
 3. Validate the artifact directory, connect to Source, and test the BCP version
    and capabilities.
-4. When `execute_import=true`, connect to Bronze, prove that SQL Server sees the
+4. When `execute_import=true`, connect to the active data destination, prove that SQL Server sees the
    same bytes, and validate/create `dbo.versao_esquema`, `dbo.execucao`,
-   `dbo.execucao_tabela`, and `dbo.execucao_lote` in the Bronze database
-   (`DBRO684` in the test environment).
+   `dbo.execucao_tabela`, and `dbo.execucao_lote` in that database.
 5. If at least one table has `enable_cdc=true`, verify/enable CDC on the Source
    database once. If the cleanup job already exists, verify, adjust, and
    confirm its retention at this stage, then cache the result. Retention uses
@@ -115,25 +120,26 @@ continue.
       watermark;
    3. capture/reuse the table ceiling and checkpoint;
    4. calculate estimates and verify executor disk space;
-   5. when a byte estimate is available, check each Bronze volume separately,
+   5. when a byte estimate is available, check each active-destination volume separately,
       using the lowest available space as the limiting capacity; proven
       insufficiency records `SKIPPED_DESTINATION_INSUFFICIENT_SPACE` and moves
       to the next table;
-   6. safely create/revalidate/evolve the Bronze structure;
+   6. create/revalidate/evolve the active structure only for
+      `structure_and_data`; strictly validate an existing layout for `data_only`;
    7. first reconcile and import any pending final manifest;
    8. export the next block with `bcp queryout` to a `.partial` file;
    9. verify the actual row count, boundaries, and size, calculate SHA-256, and
       atomically publish the data and manifest;
-   10. import into Bronze through `INSERT ... SELECT ... OPENROWSET(BULK...)`;
+   10. import into the active data destination through `INSERT ... SELECT ... OPENROWSET(BULK...)`;
        in that same `INSERT`, populate `bi_lsn_evento` and
        `bi_sequencia_evento` with zero as `BINARY(10)`, without a later
        `UPDATE`;
-   11. commit the data, `DBRO684.dbo.execucao_lote`, and the SQL checkpoint in
+   11. commit the data, `dbo.execucao_lote`, and the SQL checkpoint in
        the same transaction;
    12. confirm the block in SQLite and, when configured, delete only the
        already-confirmed data file;
-   13. repeat until the ceiling is reached, validate Bronze cardinality, and
-       finish the secondary indexes.
+   13. repeat until the ceiling is reached, validate destination cardinality,
+       and finish secondary indexes only when the role allows their creation.
 7. Write the JSON and CSV reports and return the consolidated exit code.
 
 The execution JSON records consolidated evidence in `cdc_database`. When the
@@ -148,9 +154,10 @@ order. The job's absence before the first CDC table is not a failure by itself;
 it becomes a failure if the job is still absent after a table has been
 enabled/confirmed.
 
-`run` also provisions the Bronze structure idempotently before loading each
-table. The explicit DDL step remains recommended because it supports prior
-review and is the only step that creates/evolves Landing.
+For `structure_and_data`, `run` also provisions the active structure
+idempotently before loading each table. For `data_only`, it validates a
+compatible existing layout and never creates/evolves objects or indexes. The
+explicit DDL step remains recommended for every structure-capable destination.
 
 ## Cursor strategy and keyless tables
 

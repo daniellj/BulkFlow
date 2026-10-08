@@ -33,7 +33,10 @@ SECRET_PROVIDER_LABELS: dict[str, str] = {
     "Variável de ambiente": "env",
     "Gerenciador de Credenciais do Windows": "windows_credential_manager",
 }
-DESTINATION_LABELS: dict[str, str] = {"Bronze": "bronze"}
+DESTINATION_LABELS: dict[str, str] = {
+    "Destino 01": "bronze",
+    "Destino 02": "landing",
+}
 PERIMETER_VALUES: tuple[str, ...] = tuple(PERIMETER_DEFAULT_USERNAMES)
 ROW_COUNT_LABELS: dict[str, str] = {
     "Metadados (aproximado)": "metadata",
@@ -45,8 +48,8 @@ INDEX_PHASE_LABELS: dict[str, str] = {
 
 ENDPOINT_DISPLAY_ORDER: tuple[tuple[str, str], ...] = (
     ("source", "ORIGEM"),
-    ("landing_destination", "LANDING"),
-    ("bronze_destination", "BRONZE"),
+    ("bronze_destination", "DESTINO 01"),
+    ("landing_destination", "DESTINO 02"),
 )
 
 _LANDING_TYPES = {
@@ -572,6 +575,12 @@ def build_endpoint(
         maximum=65_535,
     )
     result: dict[str, Any] = {
+        "role": str(
+            values.get(
+                "role",
+                "data_provider" if source else "structure_and_data",
+            )
+        ).strip(),
         "instance": str(values.get("instance", "")).strip(),
         "port": port,
         "database": str(values.get("database", "")).strip(),
@@ -584,6 +593,13 @@ def build_endpoint(
             secret_reference=str(values.get("secret_reference", "")),
         ),
     }
+    allowed_roles = (
+        {"data_provider"}
+        if source
+        else {"structure_and_data", "structure_only", "data_only"}
+    )
+    if result["role"] not in allowed_roles:
+        raise ValueError("Função da conexão inválida")
     if not source:
         result["structure_profile"] = str(values.get("structure_profile", "")).strip()
     dsn = str(values.get("odbc_dsn", "")).strip()
@@ -853,6 +869,7 @@ def default_gui_config(project_root: Path | None = None) -> dict[str, Any]:
         "config_version": 2,
         "perimeter": "DESENVOLVIMENTO",
         "source": {
+            "role": "data_provider",
             "instance": "SERVIDOR_ORIGEM",
             "port": 1433,
             "database": "BANCO_ORIGEM",
@@ -865,6 +882,7 @@ def default_gui_config(project_root: Path | None = None) -> dict[str, Any]:
             "tls": {"encrypt": True, "trust_server_certificate": False},
         },
         "bronze_destination": {
+            "role": "structure_and_data",
             "instance": "SERVIDOR_BRONZE",
             "port": 1433,
             "database": "DBRO684",
@@ -878,6 +896,7 @@ def default_gui_config(project_root: Path | None = None) -> dict[str, Any]:
             "tls": {"encrypt": True, "trust_server_certificate": False},
         },
         "landing_destination": {
+            "role": "structure_only",
             "instance": "SERVIDOR_LANDING",
             "port": 1433,
             "database": "DLAN684",
