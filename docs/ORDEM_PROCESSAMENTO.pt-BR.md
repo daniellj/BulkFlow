@@ -92,8 +92,8 @@ UUID; não inicie outro `run` para tentar continuar.
 3. Validar o diretório de artefatos, conectar à Origem e testar versão e
    capacidades do BCP.
 4. Quando `execute_import=true`, conectar ao destino de dados ativo, provar que o SQL Server vê
-   os mesmos bytes, e validar/criar `dbo.versao_esquema`, `dbo.execucao`,
-   `dbo.execucao_tabela` e `dbo.execucao_lote` nesse banco.
+   os mesmos bytes, e validar/criar `dbo.ctl_exec_versao`, `dbo.ctl_exec`,
+   `dbo.ctl_exec_tabela` e `dbo.ctl_exec_lote` nesse banco.
 5. Se ao menos uma tabela tiver `enable_cdc=true`, verificar/habilitar o CDC do
    banco de Origem uma única vez. Se o job de cleanup já existir, verificar,
    ajustar e confirmar sua retenção nesse momento e guardar o resultado em
@@ -130,7 +130,7 @@ UUID; não inicie outro `run` para tentar continuar.
    10. importar no destino ativo por `INSERT ... SELECT ... OPENROWSET(BULK...)`;
        nesse mesmo `INSERT`, preencher `bi_lsn_evento` e
        `bi_sequencia_evento` com zero em `BINARY(10)`, sem `UPDATE` posterior;
-   11. confirmar dados, `dbo.execucao_lote` e checkpoint SQL
+   11. confirmar dados, `dbo.ctl_exec_lote` e checkpoint SQL
        na mesma transação;
    12. confirmar o bloco no SQLite e, se configurado, apagar somente o arquivo
        de dados já confirmado;

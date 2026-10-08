@@ -89,6 +89,7 @@
 
       <Component Id="ControlQueryComponent" Guid="{754E8EB9-5DEC-4014-BD84-DB418EE8584B}" Win64="yes">
         <File Id="ControlQueryFile" Source="$(var.ProjectRoot)\query_control.sql" Name="query_control.sql" KeyPath="yes" />
+        <File Id="ControlMigrationFile" Source="$(var.ProjectRoot)\migrate_control_v2_to_v3.sql" Name="migrate_control_v2_to_v3.sql" />
       </Component>
 
       <Component Id="PayloadManifestComponent" Guid="{D4BCC7E9-568A-445A-9A3A-22EEE7CE16E8}" Win64="yes">

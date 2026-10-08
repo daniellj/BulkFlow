@@ -104,7 +104,7 @@ Há três níveis complementares de evidência:
    identidade, limites, contagens e hashes válidos, comprova uma exportação
    publicada. Um `.partial` nunca comprova conclusão.
 3. **Controle SQL do destino ativo** —
-   `dbo.execucao_lote` comprova o commit no destino. O
+   `dbo.ctl_exec_lote` comprova o commit no destino. O
    registro é criado na mesma transação dos dados e do checkpoint SQL.
 
 O arquivo [`query_control.sql`](../query_control.sql) consulta a fonte durável
@@ -335,9 +335,9 @@ sob o diretório daquele UUID em `executor_directory`.
 
 ### 1. Preserve o estado
 
-Não trunque o destino ativo, não apague `dbo.execucao`,
-`dbo.execucao_tabela`, `dbo.execucao_lote` nem
-`dbo.versao_esquema`, não remova o SQLite e não edite ou exclua
+Não trunque o destino ativo, não apague `dbo.ctl_exec`,
+`dbo.ctl_exec_tabela`, `dbo.ctl_exec_lote` nem
+`dbo.ctl_exec_versao`, não remova o SQLite e não edite ou exclua
 artefatos. Não
 inicie outro `run` para tentar
 continuar: isso cria um UUID novo.

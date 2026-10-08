@@ -94,8 +94,8 @@ continue.
 3. Validate the artifact directory, connect to Source, and test the BCP version
    and capabilities.
 4. When `execute_import=true`, connect to the active data destination, prove that SQL Server sees the
-   same bytes, and validate/create `dbo.versao_esquema`, `dbo.execucao`,
-   `dbo.execucao_tabela`, and `dbo.execucao_lote` in that database.
+   same bytes, and validate/create `dbo.ctl_exec_versao`, `dbo.ctl_exec`,
+   `dbo.ctl_exec_tabela`, and `dbo.ctl_exec_lote` in that database.
 5. If at least one table has `enable_cdc=true`, verify/enable CDC on the Source
    database once. If the cleanup job already exists, verify, adjust, and
    confirm its retention at this stage, then cache the result. Retention uses
@@ -134,7 +134,7 @@ continue.
        in that same `INSERT`, populate `bi_lsn_evento` and
        `bi_sequencia_evento` with zero as `BINARY(10)`, without a later
        `UPDATE`;
-   11. commit the data, `dbo.execucao_lote`, and the SQL checkpoint in
+   11. commit the data, `dbo.ctl_exec_lote`, and the SQL checkpoint in
        the same transaction;
    12. confirm the block in SQLite and, when configured, delete only the
        already-confirmed data file;

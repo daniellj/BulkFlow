@@ -54,9 +54,9 @@ service-account SIDs and grant write access only to the effective SMB identity
 that is already inside the trust boundary.
 
 `control_schema` must be `dbo`. In the active data destination, SQL control
-state is persisted as `dbo.execucao`, `dbo.execucao_tabela`, and
-`dbo.execucao_lote`; the physical schema version is stored in
-`dbo.versao_esquema`. The schema is not
+state is persisted as `dbo.ctl_exec`, `dbo.ctl_exec_tabela`, and
+`dbo.ctl_exec_lote`; the physical schema version is stored in
+`dbo.ctl_exec_versao`. The schema is not
 interchangeable. Legacy names are handled only through an explicit
 administrative migration and must not be reused in new configurations.
 

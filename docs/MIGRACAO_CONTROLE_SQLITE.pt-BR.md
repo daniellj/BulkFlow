@@ -94,8 +94,10 @@ O comando migra somente o estado SQLite local. Ele não converte arquivos JSON
 de configuração nem os objetos SQL persistentes do destino. Recrie
 configurações anteriores a partir dos exemplos atuais e valide-as com `plan`.
 No destino de dados ativo, o contrato vigente usa exclusivamente
-`dbo.execucao`, `dbo.execucao_tabela`, `dbo.execucao_lote` e a tabela técnica
-`dbo.versao_esquema`. A remoção de um schema SQL legado deve ocorrer
+`dbo.ctl_exec`, `dbo.ctl_exec_tabela`, `dbo.ctl_exec_lote` e a tabela técnica
+`dbo.ctl_exec_versao`, que contém a versão física 3. Para migrar o contrato
+anterior em `dbo` sem perder histórico, pare as cargas e execute como
+administrador `migrate_control_v2_to_v3.sql`. A remoção de um schema SQL legado deve ocorrer
 somente em uma migração administrativa explícita; o motor não apaga histórico
 automaticamente. A regra de preservação desta página continua valendo para os
 arquivos SQLite, inclusive para o legado `bcp_control_v2.sqlite3`. Um destino

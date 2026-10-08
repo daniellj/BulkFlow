@@ -372,8 +372,8 @@ and `structure_only` for `BD_DESTINO_02`:
   not restarted.
 - **`structure_and_data`:** creation/evolution of schemas, tables, sequences,
   constraints, and indexes; `INSERT`; creation or validation and maintenance
-  of `dbo.versao_esquema`, `dbo.execucao`, `dbo.execucao_tabela`, and
-  `dbo.execucao_lote`; file reads through `OPENROWSET(BULK...)`; and volume
+  of `dbo.ctl_exec_versao`, `dbo.ctl_exec`, `dbo.ctl_exec_tabela`, and
+  `dbo.ctl_exec_lote`; file reads through `OPENROWSET(BULK...)`; and volume
   queries. Partitioning requires the applicable dataspace permission, normally
   `ALTER ANY DATASPACE`.
 - **`structure_only`:** manual DDL and schema-evolution permissions. It does not

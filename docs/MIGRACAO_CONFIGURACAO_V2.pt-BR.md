@@ -53,8 +53,8 @@ de contas de serviço e conceda escrita apenas à identidade SMB efetiva que já
 faça parte da fronteira de confiança.
 
 `control_schema` deve conter obrigatoriamente `dbo`. No destino de dados ativo,
-o controle SQL é persistido como `dbo.execucao`, `dbo.execucao_tabela` e
-`dbo.execucao_lote`; a versão física fica em `dbo.versao_esquema`. O schema não é intercambiável. Nomes
+o controle SQL é persistido como `dbo.ctl_exec`, `dbo.ctl_exec_tabela` e
+`dbo.ctl_exec_lote`; a versão física fica em `dbo.ctl_exec_versao`. O schema não é intercambiável. Nomes
 legados são tratados apenas por uma migração administrativa explícita e não
 devem ser reutilizados em configurações novas.
 

@@ -499,8 +499,11 @@ Local SQLite uses `controle_transferencia.sqlite3`, with persistent tables
 `metadados`, `execucao`, `execucao_tabela`, `execucao_lote`, and
 `tentativa_lote`, plus `PRAGMA user_version=5`. This local file name is not a
 SQL Server schema. SQL control is persisted in the active data destination as
-`dbo.execucao`, `dbo.execucao_tabela`, and `dbo.execucao_lote`; its physical
-version is stored in `dbo.versao_esquema`. The engine validates the complete signature,
+`dbo.ctl_exec`, `dbo.ctl_exec_tabela`, and `dbo.ctl_exec_lote`; physical version
+3 is stored in `dbo.ctl_exec_versao`. Destinations using the previous contract
+must run `migrate_control_v2_to_v3.sql` administratively with no active load;
+the script renames the objects in one transaction and preserves all history.
+The engine validates the complete signature,
 including columns, defaults, PK/FK constraints, indexes, and unexpected
 objects; a partial, tampered, or incompatible structure fails closed. The
 legacy SQL Server schema `controle_transferencia` is not part of the contract

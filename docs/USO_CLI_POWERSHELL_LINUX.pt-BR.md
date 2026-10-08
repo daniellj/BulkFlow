@@ -223,8 +223,8 @@ Os argumentos são os da CLI Python: `prerequisites`, `plan`, `ddl`, `run`,
 `--verbose`, quando usada, deve aparecer antes do comando.
 
 O controle SQL no destino de dados ativo não é temporário: o contrato usa
-`dbo.execucao`, `dbo.execucao_tabela`, `dbo.execucao_lote` e a tabela técnica
-`dbo.versao_esquema`. O estado local
+`dbo.ctl_exec`, `dbo.ctl_exec_tabela`, `dbo.ctl_exec_lote` e a tabela técnica
+`dbo.ctl_exec_versao`. O estado local
 usa `controle_transferencia.sqlite3`, `PRAGMA user_version=5` e as tabelas
 `metadados`, `execucao`, `execucao_tabela`, `execucao_lote` e
 `tentativa_lote`.

@@ -225,8 +225,8 @@ parameters. When used, the global `--verbose` option must appear before the
 command.
 
 SQL control in the active data destination is not temporary: the contract uses
-`dbo.execucao`, `dbo.execucao_tabela`, `dbo.execucao_lote`, and the technical
-table `dbo.versao_esquema`. Local state uses
+`dbo.ctl_exec`, `dbo.ctl_exec_tabela`, `dbo.ctl_exec_lote`, and the technical
+table `dbo.ctl_exec_versao`. Local state uses
 `controle_transferencia.sqlite3`, `PRAGMA user_version=5`, and the tables
 `metadados`, `execucao`, `execucao_tabela`, `execucao_lote`, and
 `tentativa_lote`.

@@ -200,10 +200,10 @@ def control_object_names(control_schema: str) -> dict[str, str]:
         )
     schema = qi(control_schema)
     return {
-        "version": f"{schema}.[versao_esquema]",
-        "execution": f"{schema}.[execucao]",
-        "table": f"{schema}.[execucao_tabela]",
-        "block": f"{schema}.[execucao_lote]",
+        "version": f"{schema}.[ctl_exec_versao]",
+        "execution": f"{schema}.[ctl_exec]",
+        "table": f"{schema}.[ctl_exec_tabela]",
+        "block": f"{schema}.[ctl_exec_lote]",
     }
 
 
@@ -289,12 +289,12 @@ def _control_validation_sql(names: Mapping[str, str]) -> str:
     )
 
     index_rows = (
-        ("version", "pk_versao_esquema", 1, 1, 1, 0, "version:ASC"),
-        ("execution", "pk_execucao", 1, 1, 1, 0, "execution_id:ASC|dataset_id:ASC"),
-        ("table", "pk_execucao_tabela", 1, 1, 1, 0, "execution_id:ASC|dataset_id:ASC|table_id:ASC"),
-        ("table", "uq_execucao_tabela_destino", 2, 1, 0, 0, "destination_schema:ASC|destination_table:ASC"),
-        ("block", "pk_execucao_lote", 1, 1, 1, 0, "execution_id:ASC|dataset_id:ASC|table_id:ASC|block_id:ASC"),
-        ("block", "uq_execucao_lote_numero", 2, 1, 0, 1, "execution_id:ASC|dataset_id:ASC|table_id:ASC|block_number:ASC"),
+        ("version", "pk_ctl_exec_versao", 1, 1, 1, 0, "version:ASC"),
+        ("execution", "pk_ctl_exec", 1, 1, 1, 0, "execution_id:ASC|dataset_id:ASC"),
+        ("table", "pk_ctl_exec_tabela", 1, 1, 1, 0, "execution_id:ASC|dataset_id:ASC|table_id:ASC"),
+        ("table", "uq_ctl_exec_tabela_destino", 2, 1, 0, 0, "destination_schema:ASC|destination_table:ASC"),
+        ("block", "pk_ctl_exec_lote", 1, 1, 1, 0, "execution_id:ASC|dataset_id:ASC|table_id:ASC|block_id:ASC"),
+        ("block", "uq_ctl_exec_lote_numero", 2, 1, 0, 1, "execution_id:ASC|dataset_id:ASC|table_id:ASC|block_number:ASC"),
     )
     index_values = ",\n   ".join(
         "(" + ",".join(
@@ -313,10 +313,10 @@ def _control_validation_sql(names: Mapping[str, str]) -> str:
     )
 
     default_rows = (
-        ("version", "created_at", "df_versao_esquema_criado_em", "sysdatetime"),
-        ("table", "last_exported_block", "df_execucao_tabela_ultimo_lote_exportado", "0"),
-        ("table", "last_imported_block", "df_execucao_tabela_ultimo_lote_importado", "0"),
-        ("table", "imported_rows", "df_execucao_tabela_linhas_importadas", "0"),
+        ("version", "created_at", "df_ctl_exec_versao_criado_em", "sysdatetime"),
+        ("table", "last_exported_block", "df_ctl_exec_tabela_ultimo_lote_exportado", "0"),
+        ("table", "last_imported_block", "df_ctl_exec_tabela_ultimo_lote_importado", "0"),
+        ("table", "imported_rows", "df_ctl_exec_tabela_linhas_importadas", "0"),
     )
     default_values = ",\n   ".join(
         f"({qs(names[object_key])},{qs(column_name)},{qs(constraint_name)},{qs(definition)})"
@@ -324,11 +324,11 @@ def _control_validation_sql(names: Mapping[str, str]) -> str:
     )
 
     foreign_key_rows = (
-        ("table", "fk_execucao_tabela_execucao", 1, "execution_id", "execution", "execution_id"),
-        ("table", "fk_execucao_tabela_execucao", 2, "dataset_id", "execution", "dataset_id"),
-        ("block", "fk_execucao_lote_execucao_tabela", 1, "execution_id", "table", "execution_id"),
-        ("block", "fk_execucao_lote_execucao_tabela", 2, "dataset_id", "table", "dataset_id"),
-        ("block", "fk_execucao_lote_execucao_tabela", 3, "table_id", "table", "table_id"),
+        ("table", "fk_ctl_exec_tabela_exec", 1, "execution_id", "execution", "execution_id"),
+        ("table", "fk_ctl_exec_tabela_exec", 2, "dataset_id", "execution", "dataset_id"),
+        ("block", "fk_ctl_exec_lote_exec_tabela", 1, "execution_id", "table", "execution_id"),
+        ("block", "fk_ctl_exec_lote_exec_tabela", 2, "dataset_id", "table", "dataset_id"),
+        ("block", "fk_ctl_exec_lote_exec_tabela", 3, "table_id", "table", "table_id"),
     )
     foreign_key_values = ",\n   ".join(
         "(" + ",".join(
@@ -347,8 +347,8 @@ def _control_validation_sql(names: Mapping[str, str]) -> str:
 
     return f"""
  IF (SELECT COUNT_BIG(*) FROM {names['version']})<>1
-    OR NOT EXISTS(SELECT 1 FROM {names['version']} WHERE version=2)
-   THROW 51100,'Controle SQL incompativel: versao deve conter exatamente a linha 2.',1;
+    OR NOT EXISTS(SELECT 1 FROM {names['version']} WHERE version=3)
+   THROW 51100,'Controle SQL incompativel: versao deve conter exatamente a linha 3.',1;
 
  DECLARE @expected_columns table(
    object_name nvarchar(517) NOT NULL,
@@ -510,6 +510,10 @@ def control_ddl(control_schema: str) -> str:
     schema_literal = qs(control_schema)
     validation_sql = _control_validation_sql(names)
     legacy_names = (
+        "[dbo].[versao_esquema]",
+        "[dbo].[execucao]",
+        "[dbo].[execucao_tabela]",
+        "[dbo].[execucao_lote]",
         "[controle_transferencia].[versao_esquema]",
         "[controle_transferencia].[execucao]",
         "[controle_transferencia].[execucao_tabela]",
@@ -524,7 +528,7 @@ def control_ddl(control_schema: str) -> str:
     )
     legacy_guard = f"""
  IF ({legacy_condition})
-   THROW 51106,'Controle SQL legado detectado fora de dbo. Preserve ou descarte o historico explicitamente antes de criar ou usar o controle canonico.',1;
+   THROW 51106,'Controle SQL legado detectado. Execute a migracao administrativa e preserve ou descarte o historico explicitamente antes de criar ou usar o controle canonico.',1;
 """
     return f"""SET XACT_ABORT ON;
 SET ANSI_NULLS ON;
@@ -557,8 +561,8 @@ BEGIN TRY
  IF @control_object_count=0
  BEGIN
    CREATE TABLE {names['version']} (
-     version int NOT NULL CONSTRAINT [pk_versao_esquema] PRIMARY KEY,
-     created_at datetime2(7) NOT NULL CONSTRAINT [df_versao_esquema_criado_em] DEFAULT(SYSDATETIME())
+     version int NOT NULL CONSTRAINT [pk_ctl_exec_versao] PRIMARY KEY,
+     created_at datetime2(7) NOT NULL CONSTRAINT [df_ctl_exec_versao_criado_em] DEFAULT(SYSDATETIME())
    );
 
    CREATE TABLE {names['execution']} (
@@ -569,7 +573,7 @@ BEGIN TRY
      started_at datetime2(7) NOT NULL,
      updated_at datetime2(7) NOT NULL,
      state varchar(50) NOT NULL,
-     CONSTRAINT [pk_execucao] PRIMARY KEY(execution_id,dataset_id)
+     CONSTRAINT [pk_ctl_exec] PRIMARY KEY(execution_id,dataset_id)
    );
 
    CREATE TABLE {names['table']} (
@@ -581,19 +585,19 @@ BEGIN TRY
      layout_hash char(64) NOT NULL,
      projection_hash char(64) NOT NULL,
      final_limit_json nvarchar(max) NULL,
-     last_exported_block bigint NOT NULL CONSTRAINT [df_execucao_tabela_ultimo_lote_exportado] DEFAULT(0),
-     last_imported_block bigint NOT NULL CONSTRAINT [df_execucao_tabela_ultimo_lote_importado] DEFAULT(0),
+     last_exported_block bigint NOT NULL CONSTRAINT [df_ctl_exec_tabela_ultimo_lote_exportado] DEFAULT(0),
+     last_imported_block bigint NOT NULL CONSTRAINT [df_ctl_exec_tabela_ultimo_lote_importado] DEFAULT(0),
      import_cursor_json nvarchar(max) NULL,
-     imported_rows bigint NOT NULL CONSTRAINT [df_execucao_tabela_linhas_importadas] DEFAULT(0),
+     imported_rows bigint NOT NULL CONSTRAINT [df_ctl_exec_tabela_linhas_importadas] DEFAULT(0),
      state varchar(50) NOT NULL,
      index_state varchar(50) NOT NULL,
      updated_at datetime2(7) NOT NULL,
-     CONSTRAINT [pk_execucao_tabela]
+     CONSTRAINT [pk_ctl_exec_tabela]
        PRIMARY KEY(execution_id,dataset_id,table_id),
-     CONSTRAINT [fk_execucao_tabela_execucao]
+     CONSTRAINT [fk_ctl_exec_tabela_exec]
        FOREIGN KEY(execution_id,dataset_id) REFERENCES {names['execution']}(execution_id,dataset_id)
    );
-   CREATE UNIQUE INDEX [uq_execucao_tabela_destino]
+   CREATE UNIQUE INDEX [uq_ctl_exec_tabela_destino]
      ON {names['table']}(destination_schema,destination_table) WITH(IGNORE_DUP_KEY=OFF);
 
    CREATE TABLE {names['block']} (
@@ -613,15 +617,15 @@ BEGIN TRY
      format_file_name nvarchar(1024) NOT NULL,
      import_started_at datetime2(7) NOT NULL,
      commit_recorded_at datetime2(7) NOT NULL,
-     CONSTRAINT [pk_execucao_lote]
+     CONSTRAINT [pk_ctl_exec_lote]
        PRIMARY KEY(execution_id,dataset_id,table_id,block_id),
-     CONSTRAINT [uq_execucao_lote_numero]
+     CONSTRAINT [uq_ctl_exec_lote_numero]
        UNIQUE(execution_id,dataset_id,table_id,block_number),
-     CONSTRAINT [fk_execucao_lote_execucao_tabela]
+     CONSTRAINT [fk_ctl_exec_lote_exec_tabela]
        FOREIGN KEY(execution_id,dataset_id,table_id)
          REFERENCES {names['table']}(execution_id,dataset_id,table_id)
    );
-   INSERT {names['version']}(version) VALUES(2);
+   INSERT {names['version']}(version) VALUES(3);
  END;
 
  {validation_sql}

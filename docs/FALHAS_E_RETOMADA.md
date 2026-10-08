@@ -107,7 +107,7 @@ There are three complementary levels of evidence:
 2. **Final manifest** — a complete `block_*.manifest.json` file with valid
    identity, boundaries, counts, and hashes proves a published export. A
    `.partial` file never proves completion.
-3. **Active-destination SQL control** — `dbo.execucao_lote` proves the destination
+3. **Active-destination SQL control** — `dbo.ctl_exec_lote` proves the destination
    commit. Its row is created in the same transaction as the data and SQL
    checkpoint.
 
@@ -337,8 +337,8 @@ must be under that UUID's directory in `executor_directory`.
 
 ### 1. Preserve state
 
-Do not truncate the active destination, do not delete `dbo.execucao`,
-`dbo.execucao_tabela`, `dbo.execucao_lote`, or `dbo.versao_esquema` there, and
+Do not truncate the active destination, do not delete `dbo.ctl_exec`,
+`dbo.ctl_exec_tabela`, `dbo.ctl_exec_lote`, or `dbo.ctl_exec_versao` there, and
 do not remove SQLite or edit/delete
 artifacts. Do not start another `run` to continue: that creates a new UUID.
 

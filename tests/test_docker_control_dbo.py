@@ -29,11 +29,13 @@ class DockerControlDboTests(unittest.TestCase):
         ]
         offsets = [sql.index(statement) for statement in drop_order]
         self.assertEqual(offsets, sorted(offsets))
-        for object_name in ("versao_esquema", "execucao", "execucao_tabela", "execucao_lote"):
+        for object_name in ("ctl_exec_versao", "ctl_exec", "ctl_exec_tabela", "ctl_exec_lote"):
             self.assertIn(f"CREATE TABLE [dbo].[{object_name}]", sql)
         self.assertIn("DENY ALTER ON SCHEMA::[dbo] TO [u684]", sql)
-        self.assertIn("GRANT SELECT ON OBJECT::[dbo].[versao_esquema]", sql)
+        self.assertIn("GRANT SELECT ON OBJECT::[dbo].[ctl_exec_versao]", sql)
         self.assertIn("GRANT SELECT, INSERT, UPDATE, DELETE, REFERENCES", sql)
+        self.assertIn("EXEC sys.sp_rename N'dbo.execucao', N'ctl_exec'", sql)
+        self.assertIn("UPDATE [dbo].[ctl_exec_versao] SET [version] = 3", sql)
 
     def test_fixture_bootstraps_control_as_admin_and_keeps_dbo_denied(self):
         init_target = (SQLSERVER / "init-target.sql").read_text(encoding="utf-8")
@@ -48,12 +50,12 @@ class DockerControlDboTests(unittest.TestCase):
     def test_reset_and_verification_target_dbo_and_reject_legacy_schema(self):
         reset = (SQLSERVER / "reset-target-data.sql").read_text(encoding="utf-8")
         verify = (SQLSERVER / "verify-target.sql").read_text(encoding="utf-8")
-        self.assertIn("DELETE FROM [dbo].[execucao_lote]", reset)
-        self.assertIn("DELETE FROM [dbo].[execucao_tabela]", reset)
-        self.assertIn("DELETE FROM [dbo].[execucao]", reset)
+        self.assertIn("DELETE FROM [dbo].[ctl_exec_lote]", reset)
+        self.assertIn("DELETE FROM [dbo].[ctl_exec_tabela]", reset)
+        self.assertIn("DELETE FROM [dbo].[ctl_exec]", reset)
         self.assertNotIn("DELETE FROM [controle_transferencia]", reset)
         self.assertIn("SCHEMA_ID(N'controle_transferencia') IS NOT NULL", verify)
-        self.assertIn("OBJECT_ID(N'dbo.versao_esquema', N'U')", verify)
+        self.assertIn("OBJECT_ID(N'dbo.ctl_exec_versao', N'U')", verify)
         self.assertIn("@can_alter_dbo <> 0", verify)
 
 

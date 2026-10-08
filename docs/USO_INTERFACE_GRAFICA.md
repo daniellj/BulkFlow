@@ -99,8 +99,8 @@ username and password.
   without a thousands separator; the accepted range is `1` through `52494800`
   minutes.
 - **Esquema de controle:** required value `dbo`. In the active data destination,
-  the persistent contract uses `dbo.execucao`, `dbo.execucao_tabela`,
-  `dbo.execucao_lote`, and the technical table `dbo.versao_esquema`.
+  the persistent contract uses `dbo.ctl_exec`, `dbo.ctl_exec_tabela`,
+  `dbo.ctl_exec_lote`, and the technical table `dbo.ctl_exec_versao`.
 - **Índices secundários:** defaults to **Antes da carga**, persisted as
   `before_load`.
 

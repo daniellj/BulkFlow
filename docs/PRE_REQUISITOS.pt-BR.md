@@ -370,8 +370,8 @@ e `structure_only` em `BD_DESTINO_02`:
   antes de iniciar qualquer BCP. O job `capture` não é reiniciado.
 - **`structure_and_data`:** criação/evolução de schemas, tabelas, sequences,
   constraints e índices; `INSERT`; criação ou validação e manutenção de
-  `dbo.versao_esquema`, `dbo.execucao`, `dbo.execucao_tabela` e
-  `dbo.execucao_lote`; leitura por `OPENROWSET(BULK...)`; e consulta aos
+  `dbo.ctl_exec_versao`, `dbo.ctl_exec`, `dbo.ctl_exec_tabela` e
+  `dbo.ctl_exec_lote`; leitura por `OPENROWSET(BULK...)`; e consulta aos
   volumes. Particionamento requer a permissão de dataspace, normalmente
   `ALTER ANY DATASPACE`.
 - **`structure_only`:** DDL manual e evolução estrutural. Não lê arquivos BCP,

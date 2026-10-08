@@ -99,8 +99,8 @@ não vincula as conexões: cada endpoint pode usar outro usuário e outra senha.
   medida que o valor em minutos é alterado. Informe apenas dígitos, sem ponto
   separador de milhar; o intervalo aceito é de `1` a `52494800` minutos.
 - **Esquema de controle:** valor obrigatório `dbo`. No destino de dados ativo,
-  o contrato persistente usa `dbo.execucao`, `dbo.execucao_tabela`,
-  `dbo.execucao_lote` e a tabela técnica `dbo.versao_esquema`.
+  o contrato persistente usa `dbo.ctl_exec`, `dbo.ctl_exec_tabela`,
+  `dbo.ctl_exec_lote` e a tabela técnica `dbo.ctl_exec_versao`.
 - **Índices secundários:** default **Antes da carga**, persistido como
   `before_load`.
 

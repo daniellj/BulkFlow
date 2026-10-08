@@ -10,11 +10,14 @@ SET NOCOUNT ON;
 
 DECLARE @ExecutionId uniqueidentifier = NULL;
 
-IF OBJECT_ID(N'dbo.versao_esquema', N'U') IS NULL
-   OR OBJECT_ID(N'dbo.execucao', N'U') IS NULL
-   OR OBJECT_ID(N'dbo.execucao_tabela', N'U') IS NULL
-   OR OBJECT_ID(N'dbo.execucao_lote', N'U') IS NULL
+IF OBJECT_ID(N'dbo.ctl_exec_versao', N'U') IS NULL
+   OR OBJECT_ID(N'dbo.ctl_exec', N'U') IS NULL
+   OR OBJECT_ID(N'dbo.ctl_exec_tabela', N'U') IS NULL
+   OR OBJECT_ID(N'dbo.ctl_exec_lote', N'U') IS NULL
     THROW 51001, 'Uma ou mais tabelas persistentes de controle nao existem em DBRO684.dbo.', 1;
+IF (SELECT COUNT_BIG(*) FROM [dbo].[ctl_exec_versao]) <> 1
+   OR NOT EXISTS (SELECT 1 FROM [dbo].[ctl_exec_versao] WHERE [version] = 3)
+    THROW 51002, 'O controle persistente de DBRO684.dbo nao esta na versao fisica 3.', 1;
 
 /* Panorama por execucao. */
 SELECT
@@ -26,8 +29,8 @@ SELECT
     COALESCE(SUM(t.imported_rows), 0) AS imported_rows,
     MIN(e.started_at) AS started_at,
     MAX(e.updated_at) AS updated_at
-FROM [dbo].[execucao] AS e
-LEFT JOIN [dbo].[execucao_tabela] AS t
+FROM [dbo].[ctl_exec] AS e
+LEFT JOIN [dbo].[ctl_exec_tabela] AS t
     ON  t.execution_id = e.execution_id
     AND t.dataset_id = e.dataset_id
 WHERE @ExecutionId IS NULL OR e.execution_id = @ExecutionId
@@ -58,13 +61,13 @@ SELECT
         ELSE 0
     END) AS final_limit_reached,
     t.updated_at
-FROM [dbo].[execucao_tabela] AS t
+FROM [dbo].[ctl_exec_tabela] AS t
 OUTER APPLY
 (
     SELECT
         COUNT_BIG(*) AS confirmed_blocks,
         COALESCE(SUM(bl.manifest_rows), 0) AS manifest_rows
-    FROM [dbo].[execucao_lote] AS bl
+    FROM [dbo].[ctl_exec_lote] AS bl
     WHERE bl.execution_id = t.execution_id
       AND bl.dataset_id = t.dataset_id
       AND bl.table_id = t.table_id
@@ -93,8 +96,8 @@ SELECT TOP (100)
     bl.format_sha256,
     bl.import_started_at,
     bl.commit_recorded_at
-FROM [dbo].[execucao_lote] AS bl
-INNER JOIN [dbo].[execucao_tabela] AS t
+FROM [dbo].[ctl_exec_lote] AS bl
+INNER JOIN [dbo].[ctl_exec_tabela] AS t
     ON  t.execution_id = bl.execution_id
     AND t.dataset_id = bl.dataset_id
     AND t.table_id = bl.table_id

@@ -12,14 +12,15 @@ class ControlQueryV2Tests(unittest.TestCase):
 
         self.assertIn("USE [DBRO684];", sql)
         for object_name in (
-            "versao_esquema",
-            "execucao",
-            "execucao_tabela",
-            "execucao_lote",
+            "ctl_exec_versao",
+            "ctl_exec",
+            "ctl_exec_tabela",
+            "ctl_exec_lote",
         ):
             self.assertIn(f"OBJECT_ID(N'dbo.{object_name}'", sql)
-        for object_name in ("execucao", "execucao_tabela", "execucao_lote"):
+        for object_name in ("ctl_exec", "ctl_exec_tabela", "ctl_exec_lote"):
             self.assertIn(f"[dbo].[{object_name}]", sql)
+        self.assertIn("[dbo].[ctl_exec_versao] WHERE [version] = 3", sql)
         self.assertNotIn("@ControlSchema", sql)
         self.assertNotIn("QUOTENAME", sql)
         self.assertNotIn("sp_executesql", sql)
@@ -30,6 +31,17 @@ class ControlQueryV2Tests(unittest.TestCase):
         )
         self.assertIn('Source="$(var.ProjectRoot)\\query_control.sql"', installer)
         self.assertIn('<ComponentRef Id="ControlQueryComponent" />', installer)
+        self.assertIn(
+            'Source="$(var.ProjectRoot)\\migrate_control_v2_to_v3.sql"', installer
+        )
+
+        migration = (ROOT / "migrate_control_v2_to_v3.sql").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("BEGIN TRANSACTION", migration)
+        self.assertIn("N'dbo.execucao', N'ctl_exec'", migration)
+        self.assertIn("UPDATE [dbo].[ctl_exec_versao] SET [version] = 3", migration)
+        self.assertNotIn("DROP TABLE", migration.upper())
 
         for real_column in (
             "last_imported_block",

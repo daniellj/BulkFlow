@@ -95,9 +95,11 @@ physical signatures, not only by filenames.
 The command migrates only local SQLite state. It does not convert JSON
 configuration files or persistent destination SQL objects. Recreate older
 configurations from the current examples and validate them with `plan`. In the
-active data destination, the current contract uses only `dbo.execucao`,
-`dbo.execucao_tabela`, `dbo.execucao_lote`, and the technical table
-`dbo.versao_esquema`. A legacy SQL schema may be removed only
+active data destination, the current contract uses only `dbo.ctl_exec`,
+`dbo.ctl_exec_tabela`, `dbo.ctl_exec_lote`, and the technical table
+`dbo.ctl_exec_versao`, which contains physical version 3. To migrate the
+previous `dbo` contract without losing history, stop all loads and run
+`migrate_control_v2_to_v3.sql` as an administrator. A legacy SQL schema may be removed only
 during an explicit administrative migration; the engine never deletes history
 automatically. The preservation rule on this page continues to apply to SQLite
 files, including legacy `bcp_control_v2.sqlite3`. A destination with role

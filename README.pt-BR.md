@@ -492,8 +492,10 @@ O SQLite local usa `controle_transferencia.sqlite3`, com as tabelas persistentes
 `metadados`, `execucao`, `execucao_tabela`, `execucao_lote` e
 `tentativa_lote` e `PRAGMA user_version=5`. Esse nome de arquivo local não é um
 schema do SQL Server. O controle SQL é persistido no destino de dados ativo em
-`dbo.execucao`, `dbo.execucao_tabela` e `dbo.execucao_lote`; a versão física
-fica em `dbo.versao_esquema`. O motor valida a
+`dbo.ctl_exec`, `dbo.ctl_exec_tabela` e `dbo.ctl_exec_lote`; a versão física 3
+fica em `dbo.ctl_exec_versao`. Destinos com o contrato anterior devem executar
+`migrate_control_v2_to_v3.sql` administrativamente, sem carga ativa; o script
+renomeia os objetos em uma transação e preserva todo o histórico. O motor valida a
 assinatura completa, incluindo colunas, defaults, PK/FK, índices e objetos
 inesperados; estrutura parcial, adulterada ou incompatível falha fechada.
 O schema SQL Server legado `controle_transferencia` não faz parte do contrato e

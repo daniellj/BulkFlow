@@ -136,11 +136,11 @@ class ImportSqlTests(unittest.TestCase):
             "dbo",
         )
         begin = sql.index("BEGIN TRANSACTION")
-        duplicate_guard = sql.index("IF EXISTS(SELECT 1 FROM [dbo].[execucao_lote]")
+        duplicate_guard = sql.index("IF EXISTS(SELECT 1 FROM [dbo].[ctl_exec_lote]")
         data_insert = sql.index("INSERT INTO [s344].[bd_origem_tabela_origem_01]")
         row_count = sql.index("SET @inserted=ROWCOUNT_BIG()")
-        block_control = sql.index("INSERT [dbo].[execucao_lote]")
-        checkpoint = sql.index("UPDATE [dbo].[execucao_tabela]")
+        block_control = sql.index("INSERT [dbo].[ctl_exec_lote]")
+        checkpoint = sql.index("UPDATE [dbo].[ctl_exec_tabela]")
         commit = sql.rindex("COMMIT;")
         self.assertLess(begin, duplicate_guard)
         self.assertLess(duplicate_guard, data_insert)
@@ -262,7 +262,7 @@ class ImportSqlTests(unittest.TestCase):
         self.assertNotIn("OPENROWSET", sql)
         self.assertNotIn("INSERT INTO [s344]", sql)
         self.assertIn("SET @inserted=CONVERT(bigint,0)", sql)
-        self.assertIn("INSERT [dbo].[execucao_lote]", sql)
+        self.assertIn("INSERT [dbo].[ctl_exec_lote]", sql)
         self.assertIn("import_cursor_json=@upper", sql)
 
     def test_direct_keyless_import_uses_empty_bookmarks_and_bcp_count_guard(self):
@@ -302,9 +302,9 @@ class ImportSqlTests(unittest.TestCase):
 
     def test_control_ddl_is_side_by_side_idempotent_and_non_destructive(self):
         ddl = control_ddl("dbo")
-        self.assertIn("execucao", ddl)
-        self.assertIn("execucao_tabela", ddl)
-        self.assertIn("execucao_lote", ddl)
+        self.assertIn("ctl_exec", ddl)
+        self.assertIn("ctl_exec_tabela", ddl)
+        self.assertIn("ctl_exec_lote", ddl)
         self.assertIn("OBJECT_ID", ddl)
         self.assertIn("BEGIN TRANSACTION", ddl)
         self.assertIn("ROLLBACK", ddl)
@@ -321,19 +321,28 @@ class ImportSqlTests(unittest.TestCase):
         self.assertIn("is_not_trusted<>0", ddl)
         self.assertIn("quantidade de colunas divergente", ddl)
         self.assertIn("trigger nao versionado", ddl)
+        self.assertIn("VALUES(3)", ddl)
+        self.assertIn("WHERE version=3", ddl)
 
     def test_default_control_contract_rejects_silent_split_from_legacy_objects(self):
         ddl = control_ddl("dbo")
+        for object_name in (
+            "ctl_exec_versao",
+            "ctl_exec",
+            "ctl_exec_tabela",
+            "ctl_exec_lote",
+        ):
+            self.assertIn(f"[dbo].[{object_name}]", ddl)
         for object_name in (
             "versao_esquema",
             "execucao",
             "execucao_tabela",
             "execucao_lote",
         ):
-            self.assertIn(f"[dbo].[{object_name}]", ddl)
             self.assertIn(f"[controle_transferencia].[{object_name}]", ddl)
+            self.assertIn(f"[dbo].[{object_name}]", ddl)
         self.assertIn("[bcp_control_v2].[bcp_schema_version]", ddl)
-        self.assertIn("Controle SQL legado detectado fora de dbo", ddl)
+        self.assertIn("Controle SQL legado detectado", ddl)
         self.assertIn("THROW 51106", ddl)
         self.assertNotIn("DROP ", ddl.upper())
 
@@ -343,10 +352,10 @@ class ImportSqlTests(unittest.TestCase):
         with patch("bcp_engine.importer.execute") as execute_sql:
             importer.ensure_control()
         ddl = execute_sql.call_args.args[1]
-        self.assertIn("CREATE TABLE [dbo].[versao_esquema]", ddl)
-        self.assertIn("CREATE TABLE [dbo].[execucao]", ddl)
-        self.assertIn("CREATE TABLE [dbo].[execucao_tabela]", ddl)
-        self.assertIn("CREATE TABLE [dbo].[execucao_lote]", ddl)
+        self.assertIn("CREATE TABLE [dbo].[ctl_exec_versao]", ddl)
+        self.assertIn("CREATE TABLE [dbo].[ctl_exec]", ddl)
+        self.assertIn("CREATE TABLE [dbo].[ctl_exec_tabela]", ddl)
+        self.assertIn("CREATE TABLE [dbo].[ctl_exec_lote]", ddl)
 
     def test_destination_importer_can_validate_existing_control_without_ddl(self):
         importer = DestinationImporter(object())
@@ -354,7 +363,7 @@ class ImportSqlTests(unittest.TestCase):
             importer.validate_control()
         sql = execute_sql.call_args.args[1]
         self.assertIn("Controle SQL incompativel", sql)
-        self.assertIn("[dbo].[versao_esquema]", sql)
+        self.assertIn("[dbo].[ctl_exec_versao]", sql)
         self.assertNotIn("CREATE TABLE", sql.upper())
         self.assertNotIn("CREATE SCHEMA", sql.upper())
         self.assertNotIn("ALTER TABLE", sql.upper())
@@ -757,7 +766,7 @@ class DestinationImporterTests(unittest.TestCase):
         competing_resource = competing_sql.split("@Resource=", 1)[1].split(",@LockMode", 1)[0]
         self.assertEqual(first_resource, competing_resource)
         self.assertIn(
-            "IF NOT EXISTS(SELECT 1 FROM [dbo].[execucao_tabela] WITH(UPDLOCK,HOLDLOCK)",
+            "IF NOT EXISTS(SELECT 1 FROM [dbo].[ctl_exec_tabela] WITH(UPDLOCK,HOLDLOCK)",
             first_sql,
         )
         self.assertIn("execution_id=? AND dataset_id=? AND table_id=?", first_sql)
