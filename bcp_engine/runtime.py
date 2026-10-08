@@ -15,7 +15,7 @@ import shutil
 import sys
 
 
-PRODUCT_DATA_DIRECTORY = "MotorDados"
+PRODUCT_DATA_DIRECTORY = "BulkFlow"
 SOURCE_LOCAL_DIRECTORY = "Local"
 CONTROL_DIRECTORY_NAME = ".bcp-control"
 EXPORT_DIRECTORY_NAME = "bcp-data"
@@ -30,6 +30,32 @@ def is_frozen_application() -> bool:
     return bool(getattr(sys, "frozen", False))
 
 
+def _frozen_source_project_root() -> Path | None:
+    """Return the source-tree root when a frozen binary runs from ``release``.
+
+    Release executables kept inside the project are portable homologation
+    artifacts and must retain the same ``<project>/Local/BulkFlow`` defaults as
+    source execution. Installed/copy-only binaries do not have the source-tree
+    markers and continue to use the writable per-user LocalAppData directory.
+    """
+
+    if not is_frozen_application():
+        return None
+    try:
+        executable_directory = Path(sys.executable).resolve().parent
+    except OSError:
+        return None
+    candidates = (executable_directory, executable_directory.parent)
+    for candidate in candidates:
+        if (
+            (candidate / "bcp_bronze.py").is_file()
+            and (candidate / "templates").is_dir()
+            and (candidate / "schemas").is_dir()
+        ):
+            return candidate
+    return None
+
+
 def runtime_data_root(
     project_root: Path | None = None,
     *,
@@ -39,9 +65,10 @@ def runtime_data_root(
 
     An explicitly supplied root is primarily useful to callers and tests that
     operate from the source tree. Unfrozen execution keeps generated data below
-    ``<project root>/Local/MotorDados``. A frozen Windows build uses
-    LocalAppData so an installation under Program Files never needs write
-    permission there.
+    ``<project root>/Local/BulkFlow``. A frozen release executed from inside a
+    source checkout keeps that project-local convention. An installed or
+    standalone frozen Windows build uses LocalAppData so an installation under
+    Program Files never needs write permission there.
     """
 
     if project_root is not None:
@@ -56,6 +83,14 @@ def runtime_data_root(
             / SOURCE_LOCAL_DIRECTORY
             / PRODUCT_DATA_DIRECTORY
         )
+
+    frozen_project_root = _frozen_source_project_root()
+    if frozen_project_root is not None:
+        return (
+            frozen_project_root
+            / SOURCE_LOCAL_DIRECTORY
+            / PRODUCT_DATA_DIRECTORY
+        ).resolve()
 
     values = os.environ if environment is None else environment
     local_app_data = values.get("LOCALAPPDATA")

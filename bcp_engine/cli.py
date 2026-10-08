@@ -13,6 +13,7 @@ from .engine import BcpEngine
 from .models import SUCCESS_STATUSES, TableStatus
 from .prerequisites import inspect_prerequisites
 from .reporting import render_execution, render_plan_rows
+from .runtime import runtime_ddl_directory
 from .state_migration import migrate_local_state
 from .util import RedactingFormatter, deep_copy_json, redact_structure, redacted_exception, stable_json
 
@@ -52,7 +53,7 @@ def build_parser() -> argparse.ArgumentParser:
     ddl = sub.add_parser("ddl", help="Gerar ou aplicar DDL idempotente")
     ddl.add_argument("--config", type=Path, required=True)
     ddl.add_argument("--area", choices=["bronze", "landing", "both"], default="both")
-    ddl.add_argument("--output", type=Path, default=Path("ddl"))
+    ddl.add_argument("--output", type=Path, default=runtime_ddl_directory())
     ddl.add_argument("--apply", action="store_true")
     ddl.add_argument("--confirm", action="store_true")
 

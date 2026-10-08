@@ -42,8 +42,14 @@ _PASSWORD_PROMPT = re.compile(r"(?i)(?:password|senha|contrase(?:ñ|n)a)\s*:")
 WINPTY_EXIT_DRAIN_GRACE_SECONDS = 2.0
 WINPTY_EXIT_DRAIN_HARD_TIMEOUT_SECONDS = 5.0
 WINPTY_READ_RETRY_SECONDS = 0.02
+_BCP_COUNT_TOKEN = r"(?<!\S)([0-9](?:[0-9.,'’ \t\u00a0\u202f]*[0-9])?)"
+_BCP_COUNT_TOKEN_NONCAPTURING = (
+    r"(?<!\S)(?:[0-9](?:[0-9.,'’ \t\u00a0\u202f]*[0-9])?)"
+)
 _BCP_FINAL_COUNT_MARKER = re.compile(
-    r"(?i)\b[0-9][0-9., ]*\s+(?:rows? copied|linhas? copiadas?|filas? copiadas?)\.?"
+    _BCP_COUNT_TOKEN_NONCAPTURING
+    + r"\s+(?:rows? copied|linhas? copiadas?|filas? copiadas?)\.?",
+    re.IGNORECASE,
 )
 
 
@@ -126,6 +132,7 @@ class PrivateConsole(Protocol):
         monitor_path: Path | None = None,
         maximum_bytes: int = 2_147_483_648,
         minimum_free: int = 10_737_418_240,
+        expect_row_count: bool = True,
     ) -> tuple[int, str]: ...
 
 
@@ -155,6 +162,7 @@ class WinPtyConsole:
         monitor_path: Path | None = None,
         maximum_bytes: int = 2_147_483_648,
         minimum_free: int = 10_737_418_240,
+        expect_row_count: bool = True,
     ) -> tuple[int, str]:
         password = _private_console_password(invocation)
         if not self.available():
@@ -255,9 +263,24 @@ class WinPtyConsole:
                     exit_drain_started = exit_drain_started or now
                     if final_count_seen.is_set():
                         break
-                    quiet_since = last_exit_output_at or exit_drain_started
-                    if now - quiet_since >= WINPTY_EXIT_DRAIN_GRACE_SECONDS:
-                        break
+                    if expect_row_count:
+                        # A successful counted export is not authoritative until
+                        # BCP's final counter reaches the reader.  In particular,
+                        # never turn an intermediate ``Total received`` progress
+                        # update into a checkpoint.  ConPTY may expose its final
+                        # screen tail well after the ordinary quiet grace.
+                        if (
+                            now - exit_drain_started
+                            >= WINPTY_EXIT_DRAIN_HARD_TIMEOUT_SECONDS
+                        ):
+                            break
+                    else:
+                        # Format generation has no final row counter.  Preserve
+                        # the short quiet drain so it does not pay the counted
+                        # export's hard timeout after every successful command.
+                        quiet_since = last_exit_output_at or exit_drain_started
+                        if now - quiet_since >= WINPTY_EXIT_DRAIN_GRACE_SECONDS:
+                            break
                     # This retry is the important race fix: ConPTY may expose
                     # the final screen buffer only after pywinpty reports one
                     # EOF immediately following child termination.
@@ -423,6 +446,7 @@ class PosixPtyConsole:
         monitor_path: Path | None = None,
         maximum_bytes: int = 2_147_483_648,
         minimum_free: int = 10_737_418_240,
+        expect_row_count: bool = True,
     ) -> tuple[int, str]:
         password = _private_console_password(invocation)
         if not self.available():
@@ -553,9 +577,9 @@ class PosixPtyConsole:
 
 
 _ROWS_PATTERNS = (
-    re.compile(r"(?i)\b([0-9][0-9., ]*)\s+rows? copied\.?"),
-    re.compile(r"(?i)\b([0-9][0-9., ]*)\s+linhas? copiadas?\.?"),
-    re.compile(r"(?i)\b([0-9][0-9., ]*)\s+filas? copiadas?\.?"),
+    re.compile(_BCP_COUNT_TOKEN + r"\s+rows? copied\.?", re.IGNORECASE),
+    re.compile(_BCP_COUNT_TOKEN + r"\s+linhas? copiadas?\.?", re.IGNORECASE),
+    re.compile(_BCP_COUNT_TOKEN + r"\s+filas? copiadas?\.?", re.IGNORECASE),
 )
 
 
@@ -577,8 +601,9 @@ def parse_rows_copied(output: str) -> int:
     visible = _terminal_visible_text(raw_output)
     progress_chunks: list[int] = []
     for item in re.findall(
-            r"(?i)\b([0-9][0-9., ]*)\s+rows?\s+successfully\s+bulk-copied",
+            _BCP_COUNT_TOKEN + r"\s+rows?\s+successfully\s+bulk-copied",
             visible,
+            flags=re.IGNORECASE,
     ):
         digits = re.sub(r"\D", "", item)
         if digits:
@@ -810,6 +835,7 @@ class BcpRunner:
                 monitor_path=monitor_path,
                 maximum_bytes=maximum_bytes,
                 minimum_free=minimum_free,
+                expect_row_count=expect_row_count,
             )
         else:
             code, output = self._run_standard(

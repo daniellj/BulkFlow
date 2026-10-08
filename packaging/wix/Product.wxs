@@ -84,6 +84,7 @@
 
       <Component Id="ReadmeComponent" Guid="{24E9388C-34F6-4A6C-AEA3-6A2B6B7C70CB}" Win64="yes">
         <File Id="ReadmeFile" Source="$(var.ProjectRoot)\README.md" Name="README.md" KeyPath="yes" />
+        <File Id="ReadmePtBrFile" Source="$(var.ProjectRoot)\README.pt-BR.md" Name="README.pt-BR.md" />
       </Component>
 
       <Component Id="ControlQueryComponent" Guid="{754E8EB9-5DEC-4014-BD84-DB418EE8584B}" Win64="yes">
@@ -113,30 +114,38 @@
     <DirectoryRef Id="DOCUMENTATIONFOLDER">
       <Component Id="OfflineInstallerDocumentComponent" Guid="{35CFD056-F30E-4C2B-99EA-D8B7C1700CC2}" Win64="yes">
         <File Id="OfflineInstallerDocument" Source="$(var.ProjectRoot)\docs\INSTALADOR_OFFLINE.md" Name="INSTALADOR_OFFLINE.md" KeyPath="yes" />
+        <File Id="OfflineInstallerDocumentPtBr" Source="$(var.ProjectRoot)\docs\INSTALADOR_OFFLINE.pt-BR.md" Name="INSTALADOR_OFFLINE.pt-BR.md" />
       </Component>
       <Component Id="CombinedLicensesComponent" Guid="{2EFD09A7-1971-4D1D-82DE-29ADEEDA2B5B}" Win64="yes">
         <File Id="CombinedLicensesDocument" Source="$(var.LicenseRtfPath)" Name="LICENCAS_COMPONENTES.rtf" KeyPath="yes" />
       </Component>
       <Component Id="PrerequisitesDocumentComponent" Guid="{6FDF9543-D55B-4F10-BDB9-5D1F9E52CB19}" Win64="yes">
         <File Id="PrerequisitesDocument" Source="$(var.ProjectRoot)\docs\PRE_REQUISITOS.md" Name="PRE_REQUISITOS.md" KeyPath="yes" />
+        <File Id="PrerequisitesDocumentPtBr" Source="$(var.ProjectRoot)\docs\PRE_REQUISITOS.pt-BR.md" Name="PRE_REQUISITOS.pt-BR.md" />
       </Component>
       <Component Id="GuiDocumentComponent" Guid="{14E25433-D3C7-4989-AE4D-8C5A8DDFFC55}" Win64="yes">
         <File Id="GuiDocument" Source="$(var.ProjectRoot)\docs\USO_INTERFACE_GRAFICA.md" Name="USO_INTERFACE_GRAFICA.md" KeyPath="yes" />
+        <File Id="GuiDocumentPtBr" Source="$(var.ProjectRoot)\docs\USO_INTERFACE_GRAFICA.pt-BR.md" Name="USO_INTERFACE_GRAFICA.pt-BR.md" />
       </Component>
       <Component Id="CliDocumentComponent" Guid="{6F1447C4-58B7-4A6B-A932-F17295C44F14}" Win64="yes">
         <File Id="CliDocument" Source="$(var.ProjectRoot)\docs\USO_CLI_POWERSHELL_LINUX.md" Name="USO_CLI_POWERSHELL_LINUX.md" KeyPath="yes" />
+        <File Id="CliDocumentPtBr" Source="$(var.ProjectRoot)\docs\USO_CLI_POWERSHELL_LINUX.pt-BR.md" Name="USO_CLI_POWERSHELL_LINUX.pt-BR.md" />
       </Component>
       <Component Id="ProcessOrderDocumentComponent" Guid="{DD6192FE-81D8-470B-AAC1-888E029C0DE4}" Win64="yes">
         <File Id="ProcessOrderDocument" Source="$(var.ProjectRoot)\docs\ORDEM_PROCESSAMENTO.md" Name="ORDEM_PROCESSAMENTO.md" KeyPath="yes" />
+        <File Id="ProcessOrderDocumentPtBr" Source="$(var.ProjectRoot)\docs\ORDEM_PROCESSAMENTO.pt-BR.md" Name="ORDEM_PROCESSAMENTO.pt-BR.md" />
       </Component>
       <Component Id="RecoveryDocumentComponent" Guid="{1220E744-3823-4229-ABEC-4E44FAEA8FA1}" Win64="yes">
         <File Id="RecoveryDocument" Source="$(var.ProjectRoot)\docs\FALHAS_E_RETOMADA.md" Name="FALHAS_E_RETOMADA.md" KeyPath="yes" />
+        <File Id="RecoveryDocumentPtBr" Source="$(var.ProjectRoot)\docs\FALHAS_E_RETOMADA.pt-BR.md" Name="FALHAS_E_RETOMADA.pt-BR.md" />
       </Component>
       <Component Id="ConfigurationMigrationDocumentComponent" Guid="{FACCC86D-A81E-4C0F-BFEF-5B83DF0986A7}" Win64="yes">
         <File Id="ConfigurationMigrationDocument" Source="$(var.ProjectRoot)\docs\MIGRACAO_CONFIGURACAO_V2.md" Name="MIGRACAO_CONFIGURACAO_V2.md" KeyPath="yes" />
+        <File Id="ConfigurationMigrationDocumentPtBr" Source="$(var.ProjectRoot)\docs\MIGRACAO_CONFIGURACAO_V2.pt-BR.md" Name="MIGRACAO_CONFIGURACAO_V2.pt-BR.md" />
       </Component>
       <Component Id="ControlMigrationDocumentComponent" Guid="{B6812BAF-2DB1-4946-95CC-4B9F3750D882}" Win64="yes">
         <File Id="ControlMigrationDocument" Source="$(var.ProjectRoot)\docs\MIGRACAO_CONTROLE_SQLITE.md" Name="MIGRACAO_CONTROLE_SQLITE.md" KeyPath="yes" />
+        <File Id="ControlMigrationDocumentPtBr" Source="$(var.ProjectRoot)\docs\MIGRACAO_CONTROLE_SQLITE.pt-BR.md" Name="MIGRACAO_CONTROLE_SQLITE.pt-BR.md" />
       </Component>
     </DirectoryRef>
 

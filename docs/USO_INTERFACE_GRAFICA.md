@@ -1,15 +1,17 @@
-# Interface gráfica do BulkFlow
+**English** | [Português (Brasil)](USO_INTERFACE_GRAFICA.pt-BR.md)
 
-A interface `ttkbootstrap` usa o mesmo contrato V2 e o mesmo motor da CLI. Não
-existe uma segunda implementação da carga: as ações chamam os serviços de
-planejamento, DDL, execução, retomada, importação e consulta de estado.
+# BulkFlow graphical interface
 
-A aplicação é agnóstica de infraestrutura. Docker, portas fixas e os bancos
-`BD_ORIGEM`, `DBRO684` e `DLAN684` pertencem somente ao laboratório local.
+The `ttkbootstrap` interface uses the same V2 contract and engine as the CLI.
+There is no second load implementation: its actions call the planning, DDL,
+execution, resume, import, and status services.
 
-## Abrir a interface
+The application is infrastructure-agnostic. Docker, fixed ports, and the
+`BD_ORIGEM`, `DBRO684`, and `DLAN684` databases belong only to the local lab.
 
-Com Python 3.10+:
+## Opening the interface
+
+With Python 3.10+:
 
 ```powershell
 python -m pip install -r .\requirements.txt
@@ -17,403 +19,408 @@ python .\bcp_gui.py
 python .\bcp_gui.py --config .\caminho\config.v2.json
 ```
 
-Com o executável Windows:
+With the Windows executable:
 
 ```powershell
 .\release\BulkFlowGUI.exe
 .\release\BulkFlowGUI.exe --config .\caminho\config.v2.json
 ```
 
-`BulkFlowGUI.exe` incorpora Python, Tk, `ttkbootstrap`, `pyodbc`, `pywinpty`,
-o motor, os schemas e os perfis padrão. Ele não incorpora o Microsoft ODBC
-Driver nem o utilitário Microsoft `bcp`; ambos precisam estar instalados e
-visíveis para a mesma conta que inicia o EXE. Consulte
-[Pré-requisitos do executor](PRE_REQUISITOS.md).
+`BulkFlowGUI.exe` includes Python, Tk, `ttkbootstrap`, `pyodbc`, `pywinpty`,
+the engine, schemas, and standard profiles. It does not include the Microsoft
+ODBC Driver or the Microsoft `bcp` utility; both must be installed and visible
+to the same account that starts the EXE. See
+[Executor prerequisites](PRE_REQUISITOS.md).
 
-Sem `--config`, a janela abre um modelo agnóstico que deve ser preenchido. Os
-principais defaults são:
+Without `--config`, the window opens an infrastructure-neutral template that
+must be completed. Its principal defaults are:
 
-- perímetro `DREADS`, com sugestão editável de usuário `u684`;
-- 200.000 linhas por bloco;
-- fator de segurança `1.25`;
-- limite de 5.000.000 de linhas para carga direta sem chave;
-- evolução aditiva de esquema desabilitada;
-- retenção CDC de 262.800 minutos (seis meses, aproximadamente 182,5 dias);
-- CDC desabilitado em cada tabela;
-- criação de estrutura habilitada;
-- arquivo máximo de 157.286.400 bytes (150 MiB);
-- schema de controle `dbo` e índices secundários antes da carga;
-- Driver `ODBC Driver 18 for SQL Server` e executável `bcp`;
-- no código-fonte, controle em `Local\MotorDados\.bcp-control`, exportação e
-  importação em `Local\MotorDados\bcp-data` e scripts DDL em
-  `Local\MotorDados\ddl`, relativos à raiz do projeto.
+- `DESENVOLVIMENTO` perimeter, with the editable username suggestion `u684`;
+- 200,000 rows per block;
+- `1.25` safety factor;
+- 5,000,000-row limit for keyless direct load;
+- additive schema evolution disabled;
+- CDC retention of 262,800 minutes (six months, approximately 182.5 days);
+- CDC disabled for each table;
+- structure creation enabled;
+- maximum file size of 157,286,400 bytes (150 MiB);
+- `dbo` control schema and secondary indexes before the load;
+- `ODBC Driver 18 for SQL Server` driver and `bcp` executable;
+- when running from source, control under `Local\BulkFlow\.bcp-control`,
+  export and import under `Local\BulkFlow\bcp-data`, and DDL scripts under
+  `Local\BulkFlow\ddl`, all relative to the project root.
 
-O fundo destacado identifica valores sugeridos ou herdados que normalmente
-podem ser aceitos sem ajuste; os campos continuam editáveis. Alguns campos
-operacionais também abrem preenchidos, mas permanecem com fundo branco para
-sinalizar que o operador deve revisá-los: retenção CDC, os dois diretórios e
-instância, porta, banco e schema de cada conexão. Todos os parâmetros visíveis
-possuem ajuda breve por tooltip no ícone `?`.
+A highlighted background identifies suggested or inherited values that can
+normally be accepted without adjustment; these fields remain editable. Some
+operational fields are also prefilled but retain a white background to signal
+that the operator must review them: CDC retention, both directories, and the
+instance, port, database, and schema of every connection. Every visible
+parameter has brief help available through its `?` tooltip.
 
-Entre os campos destacados estão os SIDs opcionais de leitores/escritores, o
-DSN opcional de cada endpoint e, no formulário de tabela, lote, perfil,
-particionamento e os valores herdados de banco/schema/destino. Cor de fundo não
-altera a validação: `*` e o texto do campo determinam obrigatoriedade.
+Highlighted fields include the optional reader/writer SIDs, each endpoint's
+optional DSN, and the per-table batch, profile, partitioning, and inherited
+database/schema/destination values. Background color does not change
+validation: `*` and the field text determine whether a value is required.
 
-## Aba Geral
+## General tab
 
-A aba reúne perímetro, modo de execução, diretórios, arquivos, limites,
-timeouts e ferramentas. Campos marcados com `*` são obrigatórios.
+This tab groups the perimeter, execution mode, directories, files, limits,
+timeouts, and tools. Fields marked with `*` are required.
 
-O fluxo de dados é fixo: Origem → Bronze. Landing é exclusivamente estrutural.
-O campo antigo de escopo não é exibido. **Criar estrutura se necessário** volta
-a ser uma opção e vem marcada por padrão. Marcada, permite que `run`, `resume`
-e a importação de manifestos criem ou completem automaticamente os objetos
-Bronze ausentes; desmarcada, essas operações somente validam a estrutura
-existente e acusam estrutura ausente/incompleta, sem criá-la. **Gerar DDL** é
-sempre não mutável e o clique explícito em **Aplicar DDL** continua sendo uma
-autorização separada para aplicar os scripts Bronze/Landing, qualquer que seja
-o estado desse checkbox. O tooltip do campo explica esse efeito. **Apagar
-arquivos exportados após confirmação** só remove
-o arquivo de dados depois que o commit na Bronze foi comprovado.
+The data flow is fixed: Source → Bronze. Landing is structure-only. The former
+scope field is not displayed. **Criar estrutura se necessário** is available
+again and selected by default. When selected, it allows `run`, `resume`, and
+manifest import to create or complete missing Bronze objects automatically.
+When cleared, these operations only validate the existing structure and report
+missing/incomplete structures without creating them. **Gerar DDL** is always
+non-mutating, and explicitly selecting **Aplicar DDL** remains a separate
+authorization to apply Bronze/Landing scripts regardless of this checkbox.
+The field's tooltip explains this behavior. **Apagar arquivos exportados após
+confirmação** removes a data file only after the Bronze commit has been proven.
 
-### Perímetro e usuários sugeridos
+### Perimeter and suggested users
 
-O perímetro aceita exatamente `DREADS`, `HOMOLOGAÇÃO` ou `CAPGV`, sempre em
-maiúsculas. Ele sugere, respectivamente, `u684`, `h684` ou `s684`. A sugestão
-não vincula as conexões: cada endpoint pode usar outro usuário e outra senha.
+The perimeter accepts exactly `DESENVOLVIMENTO`, `HOMOLOGAÇÃO`, or `PRODUÇÃO`, always in
+uppercase. These values suggest `u684`, `h684`, and `s684`, respectively. The
+suggestion does not bind the connections: each endpoint may use another
+username and password.
 
-### Planejamento e ferramentas
+### Planning and tools
 
-- **Driver ODBC:** nome registrado no sistema e usado pelo `pyodbc`, por
-  exemplo `ODBC Driver 18 for SQL Server`.
-- **Executável BCP:** `bcp` quando estiver no `PATH`, ou seu caminho absoluto.
-- **Fator de segurança:** multiplica a estimativa de bytes; default `1.25`.
-- **Retenção do CDC (minutos):** prazo do job de cleanup na Origem; default
-  `262800`, equivalente ao prazo de negócio de seis meses (aproximadamente
-  182,5 dias). Informe apenas dígitos, sem ponto separador de milhar; o intervalo
-  aceito é de `1` a `52494800` minutos.
-- **Esquema de controle:** valor obrigatório `dbo`. Na Bronze do laboratório,
-  o contrato persistente usa `DBRO684.dbo.execucao`,
-  `DBRO684.dbo.execucao_tabela`, `DBRO684.dbo.execucao_lote` e a tabela técnica
-  `DBRO684.dbo.versao_esquema`.
-- **Índices secundários:** default **Antes da carga**, persistido como
+- **Driver ODBC:** the system-registered name used by `pyodbc`, for example
+  `ODBC Driver 18 for SQL Server`.
+- **Executável BCP:** `bcp` when it is on `PATH`, or its absolute path.
+- **Fator de segurança:** multiplies the byte estimate; default `1.25`.
+- **Retenção do CDC (minutos):** retention period of the Source cleanup job;
+  default `262800`, equivalent to the six-month business period
+  (approximately 182.5 days). Enter digits only, without a thousands
+  separator; the accepted range is `1` through `52494800` minutes.
+- **Esquema de controle:** required value `dbo`. In the lab's Bronze database,
+  the persistent contract uses `DBRO684.dbo.execucao`,
+  `DBRO684.dbo.execucao_tabela`, `DBRO684.dbo.execucao_lote`, and the technical
+  table `DBRO684.dbo.versao_esquema`.
+- **Índices secundários:** defaults to **Antes da carga**, persisted as
   `before_load`.
 
-BCP 18+ é recomendado. Uma build 17 só é aceita quando comprova as opções TLS
-`-Y` e `-u`.
+BCP 18+ is recommended. A build 17 is accepted only when it demonstrates
+support for the `-Y` and `-u` TLS options.
 
-### Arquivos e limites
+### Files and limits
 
-- **Linhas por bloco:** default 200.000; pode ser sobrescrito por tabela.
-- **Limite para tabelas sem chave:** default 5.000.000; zero desabilita
+- **Linhas por bloco:** default 200,000; may be overridden per table.
+- **Limite para tabelas sem chave:** default 5,000,000; zero disables
   `DIRECT_KEYLESS`.
 - **Arquivo máximo em bytes:** default `157286400` (150 MiB).
-- **Arquivo máximo em bytes** e **Espaço livre mínimo em bytes:** permanecem
-  editáveis em bytes e têm uma caixa ao lado com a conversão para MB e GB.
-- **Diretório de exportação dos arquivos:** caminho gravável usado pelo
-  executor/BCP. O default no código-fonte é
-  `<raiz do projeto>\Local\MotorDados\bcp-data`.
-- **Diretório de importação dos arquivos:** visão dos mesmos bytes pelo SQL
-  Server Bronze; começa com o mesmo valor do diretório de exportação, mas pode
-  ser alterado para um caminho de compartilhamento ou mount equivalente.
-- **Diretório de controle local:** guarda SQLite e checkpoints. O default no
-  código-fonte é `<raiz do projeto>\Local\MotorDados\.bcp-control`.
+- **Arquivo máximo em bytes** and **Espaço livre mínimo em bytes:** remain
+  editable in bytes and have an adjacent box that converts the value to MB and
+  GB.
+- **Diretório de exportação dos arquivos:** writable path used by the
+  executor/BCP. When running from source, the default is
+  `<project root>\Local\BulkFlow\bcp-data`.
+- **Diretório de importação dos arquivos:** the Bronze SQL Server's view of the
+  same bytes. It initially matches the export directory but may be changed to
+  an equivalent share or mount path.
+- **Diretório de controle local:** stores SQLite and checkpoints. When running
+  from source, the default is
+  `<project root>\Local\BulkFlow\.bcp-control`.
 
-Os diretórios padrão de controle, exportação e DDL são criados
-automaticamente quando ausentes. Seus conteúdos estão excluídos do Git. Abrir
-uma configuração existente preserva os caminhos explícitos nela; inclusive os
-caminhos usados pelo laboratório Docker não são substituídos.
+The standard control, export, and DDL directories are created automatically
+when absent. Their contents are excluded from Git. Opening an existing
+configuration preserves its explicit paths; paths used by the Docker lab are
+not replaced either.
 
-Uma tabela sem marca d'água, PK ou UNIQUE elegível usa metadados aproximados
-para pré-admissão, sem `COUNT_BIG` na Origem. A quantidade real copiada pelo
-BCP é validada contra o limite antes da publicação/importação.
+A table without a watermark, eligible PK, or eligible UNIQUE key uses
+approximate metadata for pre-admission, without `COUNT_BIG` on the Source. The
+actual number of rows copied by BCP is checked against the limit before
+publication/import.
 
-O caminho visto pelo executor e o caminho visto pelo SQL Server Bronze podem
-ter sintaxes diferentes, mas devem apontar para os mesmos bytes. O controle
-SQLite deve permanecer em armazenamento local, não em UNC.
+The executor-visible path and Bronze SQL Server-visible path may use different
+syntax, but they must point to the same bytes. SQLite control must remain on
+local storage, not UNC.
 
-## Aba Conexões
+## Connections tab
 
-Origem, Bronze e Landing possuem parâmetros independentes:
+Source, Bronze, and Landing have independent parameters:
 
-- instância;
-- porta obrigatória, separada da instância;
-- banco de dados;
+- instance;
+- required port, separate from the instance;
+- database;
 - schema;
-- DSN opcional;
-- autenticação e usuário;
+- optional DSN;
+- authentication and username;
 - TLS.
 
-Essa separação atende naturalmente tanto a um perímetro no qual Landing e
-Bronze compartilham uma instância quanto a outro em que os três endpoints ficam
-em instâncias e portas diferentes.
+This separation naturally supports both a perimeter in which Landing and
+Bronze share an instance and one in which all three endpoints use different
+instances and ports.
 
-Na Origem, **Banco de dados** é o banco lido; não há um segundo campo visual
-**Banco para leitura**. Na Bronze, o schema começa em branco e deve ser
-preenchido. O schema Landing herda o valor Bronze corrente quando apropriado,
-mas permanece editável e obrigatório.
+For Source, **Banco de dados** is the database being read; there is no second
+**Banco para leitura** field. The Bronze schema starts blank and must be
+provided. The Landing schema inherits the current Bronze value when
+appropriate, but remains editable and required.
 
-A opção TLS é exibida como **Confiar no certificado do servidor**.
+The TLS option is displayed as **Confiar no certificado do servidor**.
 
-### Autenticação e senhas
+### Authentication and passwords
 
-A interface suporta:
+The interface supports:
 
-- Windows integrada;
-- SQL Server;
-- credencial Windows explícita.
+- Windows integrated authentication;
+- SQL Server authentication;
+- explicit Windows credentials.
 
-O campo **Domínio** só é editável com credencial Windows. A tela não exibe uma
-caixa técnica de referência do segredo. Quando uma operação precisa de senha,
-ela é solicitada em diálogo mascarado e mantida apenas durante a sessão
-necessária. A senha não é salva no JSON nem apresentada no acompanhamento.
+The **Domínio** field is editable only with Windows credentials. The screen
+does not display a technical secret-reference box. When an operation requires
+a password, the interface requests it in a masked dialog and retains it only
+for the necessary session. The password is neither saved in JSON nor displayed
+in status output.
 
-O contrato JSON/CLI também suporta os provedores avançados `prompt`, `env` e
-`windows_credential_manager`. Ao abrir configurações avançadas, valide o JSON
-salvo antes de reutilizá-lo em automação.
+The JSON/CLI contract also supports the advanced `prompt`, `env`, and
+`windows_credential_manager` providers. When opening advanced configurations,
+validate the saved JSON before reusing it in automation.
 
-## Aba Tabelas
+## Tables tab
 
-Para adicionar ou editar uma tabela, informe:
+To add or edit a table, provide:
 
-- banco de dados de origem obrigatório, herdado da conexão Origem;
-- schema de origem obrigatório, herdado da conexão Origem;
-- tabela de origem;
-- banco de dados de destino obrigatório, herdado da conexão Bronze;
-- schema de destino obrigatório, herdado da conexão Bronze;
-- tabela de destino, sugerida automaticamente como
-  `<banco_origem>_<tabela_origem>` em minúsculas;
-- marca d'água opcional, informada somente pelos nomes das colunas separados
-  por vírgula, por exemplo `data_referencia, sequencial`; a direção do cursor
-  é sempre ascendente;
-- lote opcional por tabela, inicialmente igual ao valor global;
-- flag **Ativar CDC nesta tabela**;
-- perfil de estrutura opcional, inicialmente herdado do destino;
-- particionamento opcional, habilitado por padrão com `dh_carga` ao adicionar
-  uma tabela.
+- required source database, inherited from the Source connection;
+- required source schema, inherited from the Source connection;
+- source table;
+- required destination database, inherited from the Bronze connection;
+- required destination schema, inherited from the Bronze connection;
+- destination table, automatically suggested as
+  `<source_database>_<source_table>` in lowercase;
+- optional watermark, containing only comma-separated column names, for
+  example `data_referencia, sequencial`; cursor direction is always ascending;
+- optional per-table batch size, initially equal to the global value;
+- **Ativar CDC nesta tabela** flag;
+- optional structure profile, initially inherited from the destination;
+- optional partitioning, enabled with `dh_carga` by default when adding a
+  table.
 
-Os bancos e schemas herdados, a tabela de destino gerada, o lote por tabela, o
-perfil e o particionamento aparecem com o fundo de valor default. Nesta versão,
-editar os campos de banco não cria uma conexão separada por tabela:
-**Banco de dado de origem** deve continuar igual a `source.database`, e
-**Banco de dado de destino** deve continuar igual a
-`bronze_destination.database`, sem diferenciar maiúsculas de minúsculas. Uma
-divergência é rejeitada ao validar/salvar, evitando que a interface prometa uma
-rota que o motor não executaria. Para outro par de bancos, salve e execute uma
-configuração separada.
+Inherited databases and schemas, the generated destination table, per-table
+batch size, profile, and partitioning use the default-value background. In this
+version, editing the database fields does not create a separate per-table
+connection: **Banco de dado de origem** must remain equal to
+`source.database`, and **Banco de dado de destino** must remain equal to
+`bronze_destination.database`, case-insensitively. Validation/save rejects a
+mismatch so that the interface does not promise a route the engine cannot
+execute. Save and run a separate configuration for another database pair.
 
-Marca d'água vazia significa: tentar PK elegível, depois UNIQUE elegível e, se
-nenhuma existir, avaliar `DIRECT_KEYLESS`. Uma marca informada é somente
-validada; o motor nunca descobre ou substitui a combinação por conta própria.
-A ordem dos nomes em uma marca composta é significativa e é preservada no
-contrato, sempre com `direction: "ASC"`.
+An empty watermark means: try an eligible PK, then an eligible UNIQUE key, and
+if neither exists, evaluate `DIRECT_KEYLESS`. A provided watermark is only
+validated; the engine never discovers or replaces the combination by itself.
+The name order in a composite watermark is significant and preserved in the
+contract, always with `direction: "ASC"`.
 
-### Baixar e executar a validação da marca d'água
+### Downloading and running watermark validation
 
-No diálogo **Adicionar ou Editar tabela**, preencha **Banco de dados de
-origem**, **Esquema de origem**, **Tabela de origem** e **Marca d'água
-(opcional)**. A marca recebe somente um nome de coluna ou vários nomes
-separados por vírgula, como `data_evento, sequencial`. Não informe `ASC` ou
-`DESC`: o cursor é sempre ascendente e preserva a ordem digitada.
+In the **Adicionar ou Editar tabela** dialog, complete **Banco de dados de
+origem**, **Esquema de origem**, **Tabela de origem**, and **Marca d'água
+(opcional)**. The watermark accepts one column name or multiple comma-separated
+names, such as `data_evento, sequencial`. Do not specify `ASC` or `DESC`: the
+cursor is always ascending and preserves the entered order.
 
-Clique em **Baixar script de validação…** e escolha onde salvar o arquivo
-`.sql`. O arquivo já contém, como literais, o banco, o esquema, a tabela e as
-colunas que estavam preenchidos no diálogo; ele não deixa macros para o
-operador substituir e não tenta descobrir outra combinação. Se qualquer campo
-obrigatório ou coluna estiver inválido, a GUI informa o erro antes de abrir a
-janela de gravação.
+Select **Baixar script de validação…** and choose where to save the `.sql`
+file. The file already contains, as literals, the database, schema, table, and
+columns filled in within the dialog. It leaves no macros for the operator to
+replace and does not attempt to discover another combination. If any required
+field or column is invalid, the GUI reports the error before opening the save
+dialog.
 
-Execute o arquivo na mesma instância SQL Server da Origem, preferencialmente
-com a mesma credencial somente leitura que será usada pelo motor. O script é
-reexecutável na mesma sessão e não cria ou altera objetos persistentes. Na
-única linha de resultado, avalie principalmente:
+Run the file on the same SQL Server instance as the Source, preferably with the
+same read-only credentials the engine will use. The script can be rerun in the
+same session and does not create or modify persistent objects. In its single
+result row, evaluate primarily:
 
-- `marca_dagua_aceitavel`: `1` indica que a combinação atende ao contrato do
-  motor; `0` indica rejeição ou resultado inconclusivo;
-- `marca_dagua_distingue_registros`: informa se a combinação é única nos dados
-  observados;
-- `registros_com_nulo_na_marca`, `grupos_com_duplicidade` e
-  `registros_duplicados_excedentes`: evidências que justificam a decisão;
-- `decisao_sugerida`: orientação operacional consolidada.
+- `marca_dagua_aceitavel`: `1` means the combination meets the engine
+  contract; `0` means rejection or an inconclusive result;
+- `marca_dagua_distingue_registros`: reports whether the combination is unique
+  in the observed data;
+- `registros_com_nulo_na_marca`, `grupos_com_duplicidade`, and
+  `registros_duplicados_excedentes`: evidence supporting the decision;
+- `decisao_sugerida`: consolidated operational guidance.
 
-Uma tabela sem PK/UNIQUE elegível só comprova a marca explícita quando não está
-vazia, não contém NULL na combinação e não apresenta duplicidades. Quando há
-PK/UNIQUE elegível, o motor também aceita uma marca comparável, ascendente e
-sem NULL; empates são exportados como grupo completo.
+A table without an eligible PK/UNIQUE key proves an explicit watermark only
+when it is nonempty, contains no NULL in the combination, and has no
+duplicates. When an eligible PK/UNIQUE key exists, the engine also accepts a
+comparable, ascending, non-NULL watermark; ties are exported as a complete
+group.
 
-O arquivo usa `COUNT_BIG` e `GROUP BY` para produzir a evidência e pode varrer
-a tabela. Sob o isolamento padrão `READ COMMITTED`, essa leitura pode adquirir
-S-locks e bloquear gravações concorrentes durante partes da varredura.
-`LOCK_TIMEOUT` limita apenas quanto o script espera por locks de terceiros; ele
-não limita a duração dos locks adquiridos pela própria leitura. Execute em uma
-janela operacional adequada e, com a administração do banco, avalie índice
-compatível ou isolamento por versionamento já habilitado. O script não usa
-`NOLOCK`, pois leitura suja não comprova unicidade com segurança.
+The file uses `COUNT_BIG` and `GROUP BY` to produce evidence and may scan the
+table. Under the default `READ COMMITTED` isolation, this read may acquire
+S-locks and block concurrent writes during parts of the scan. `LOCK_TIMEOUT`
+limits only how long the script waits for locks held by others; it does not
+limit the duration of locks acquired by the read itself. Run it during an
+appropriate operational window and, with database administration, evaluate a
+compatible index or already-enabled row-versioning isolation. The script does
+not use `NOLOCK`, because dirty reads cannot safely prove uniqueness.
 
-A grade de tabelas usa uma única linha de cabeçalho e nomenclatura consistente.
-Ela pode ser reordenada, e essa é a ordem sequencial do processamento.
+The table grid uses one header row and consistent naming. Rows may be reordered,
+and their order determines sequential processing.
 
 ### CDC
 
-Se nenhuma tabela estiver marcada, o motor não tenta ativar CDC no banco nem
-consulta sua retenção. Se ao menos uma estiver marcada, o CDC do banco é
-verificado/habilitado uma única vez. Quando o job de cleanup já existe, sua
-retenção é ajustada e confirmada nesse preflight. Em um banco recém-habilitado,
-o SQL Server pode criar o job apenas depois da primeira tabela CDC; nesse caso,
-o motor habilita/confirma essa tabela, ajusta e confirma a retenção e só então
-inicia qualquer BCP. O resultado fica em cache para as tabelas seguintes. A
-retenção global é persistida no JSON como `cdc_retention_minutes`.
+If no table is selected, the engine neither attempts to enable database CDC
+nor queries its retention. If at least one table is selected, database CDC is
+checked/enabled once. When the cleanup job already exists, its retention is
+adjusted and confirmed during this preflight. In a newly enabled database, SQL
+Server may create the job only after the first CDC table; in that case, the
+engine enables/confirms that table, adjusts and confirms retention, and only
+then starts any BCP operation. The result is cached for subsequent tables.
+Global retention is persisted in JSON as `cdc_retention_minutes`.
 
-Se o valor configurado for diferente do atual, o motor aplica a mudança com
-`sys.sp_cdc_change_job`, reinicia somente o job `cleanup` por
-`sys.sp_cdc_stop_job`/`sys.sp_cdc_start_job` para vigência imediata e confirma
-o valor antes de liberar o BCP. O job `capture` não é reiniciado.
-O acompanhamento exibe os eventos do banco, da retenção e da tabela, e o
-relatório JSON persiste a evidência consolidada em `cdc_database`.
+If the configured value differs from the current value, the engine applies the
+change with `sys.sp_cdc_change_job`, restarts only the `cleanup` job through
+`sys.sp_cdc_stop_job`/`sys.sp_cdc_start_job` for immediate effect, and confirms
+the value before releasing BCP. The `capture` job is not restarted. Status
+output displays database, retention, and table events, and the JSON report
+persists consolidated evidence under `cdc_database`.
 
-Falha no preflight do banco ou na confirmação da retenção bloqueia as tabelas
-marcadas para CDC, com diagnóstico, sem impedir as tabelas sem a flag. A ausência
-inicial do job é um estado pendente esperado, não uma falha. Uma falha isolada
-ao habilitar uma tabela CDC pula essa tabela e segue para a próxima.
+A database preflight or retention-confirmation failure blocks marked CDC
+tables with a diagnostic, without preventing unmarked tables from running. The
+initial absence of the job is an expected pending state, not a failure. An
+isolated failure enabling one CDC table skips that table and proceeds to the
+next.
 
-### Particionamento
+### Partitioning
 
-Ao adicionar uma tabela, o particionamento vem habilitado e preenchido com
-`dh_carga`. Ele só é criado quando o parâmetro opcional permanece habilitado e
-preenchido; o usuário pode desabilitá-lo ou informar outra coluna. Ela
-deve existir no destino e ter tipo `DATETIME2(7)`.
+When adding a table, partitioning is enabled and filled with `dh_carga`. It is
+created only while this optional parameter remains enabled and populated; the
+operator may disable it or provide another column. The column must exist at the
+destination and have type `DATETIME2(7)`.
 
-Bronze e Landing recebem função e scheme `RANGE RIGHT`, com limites mensais do
-mês corrente até dezembro do ano corrente mais seis anos, todos em `PRIMARY`.
-Para `dh_carga`, os nomes usam o descritor `mensal`; outras colunas usam
-`attr`. O ID técnico permanece a PK `NONCLUSTERED`, e a coluna particionada
-recebe o único índice `CLUSTERED`. Um índice simples nonclustered redundante
-nessa coluna é retirado do contrato.
+Bronze and Landing receive a `RANGE RIGHT` function and scheme, with monthly
+boundaries from the current month through December of the current year plus
+six years, all on `PRIMARY`. For `dh_carga`, names use the `mensal` descriptor;
+other columns use `attr`. The technical ID remains the `NONCLUSTERED` PK, and
+the partition column receives the only `CLUSTERED` index. A redundant simple
+nonclustered index on that column is removed from the contract.
 
-Sem o parâmetro, nenhum objeto de particionamento é criado. O motor não
-reparticiona silenciosamente uma tabela existente incompatível; esse caso exige
-migração explícita.
+Without the parameter, no partitioning object is created. The engine does not
+silently repartition an incompatible existing table; that case requires an
+explicit migration.
 
-Nos perfis padrão Bronze e Landing, `dh_carga` registra o horário civil de
-Brasília. A expressão parte de UTC, aplica explicitamente o fuso SQL Server
-`E. South America Standard Time` e converte o resultado para `DATETIME2(7)`;
-portanto, não depende do fuso do servidor. Perfis customizados podem substituir
-essa expressão e continuam responsáveis pela semântica de data/hora escolhida.
+In the standard Bronze and Landing profiles, `dh_carga` records Brasília civil
+time. The expression starts from UTC, explicitly applies the SQL Server
+`E. South America Standard Time` time zone, and converts the result to
+`DATETIME2(7)`; it therefore does not depend on the server time zone. Custom
+profiles may replace this expression and remain responsible for their chosen
+date/time semantics.
 
-## Aba Executar e acompanhar
+## Run and monitor tab
 
-A tela segue a ordem operacional abaixo.
+The screen follows the operational sequence below.
 
-### 1. Pré-requisitos
+### 1. Prerequisites
 
-Verifique o Driver ODBC indicado em **Geral → Planejamento e ferramentas** e o
-BCP. O resultado mostra se o driver foi localizado e a versão/capacidade do
-utilitário. Essa verificação não instala componentes.
+Check the ODBC Driver selected under **Geral → Planejamento e ferramentas** and
+BCP. The result shows whether the driver was found and the utility's
+version/capabilities. This check does not install components.
 
-Depois de **Planejar**, esta mesma área também compara a projeção dos arquivos
-BCP com o espaço livre observado nos dois caminhos configurados em **Geral →
-Arquivos e limites**:
+After **Planejar**, this same area also compares the BCP-file projection with
+the free space observed in both paths configured under **Geral → Arquivos e
+limites**:
 
-- **Diretório de exportação dos arquivos**, conforme enxergado pelo executor;
-- **Diretório de importação dos arquivos**, conforme enxergado pelo executor,
-  quando esse caminho também estiver acessível nessa máquina.
+- **Diretório de exportação dos arquivos**, as seen by the executor;
+- **Diretório de importação dos arquivos**, as seen by the executor when that
+  path is also accessible from this machine.
 
-O quadro apresenta o total bruto consolidado de todas as tabelas configuradas, a margem
-em bytes, o total protegido pelo **Fator de segurança**, o pico operacional
-previsto, o espaço livre e o saldo de cada diretório. O detalhamento por tabela
-permite localizar qual estimativa compõe o total. Uma tabela cuja
-quantidade de linhas ou tamanho médio não pôde ser estimado fica identificada
-como **indisponível**; nesse caso, o consolidado e o saldo também são
-desconhecidos, em vez de assumir zero. O subtotal conhecido continua visível,
-mas não é apresentado como total completo.
+The panel shows the consolidated raw total for all configured tables, the byte
+margin, the total protected by **Fator de segurança**, the projected
+operational peak, free space, and the balance for each directory. Per-table
+details identify how much each estimate contributes to the total. A table for
+which row count or average size could not be estimated is marked
+**indisponível**; in that case, the consolidated total and balance are also
+unknown instead of assuming zero. The known subtotal remains visible but is
+not presented as the complete total.
 
-O total protegido é a soma das reservas calculadas por tabela; por isso cada
-parcela recebe o fator e o arredondamento conservador antes da soma. A
-capacidade operacional usa o pico previsto, e o saldo é
-`livre - espaço_livre_mínimo - pico`. Quando os arquivos são retidos, o pico
-acumula as reservas; quando são apagados somente após o commit confirmado, o
-pico considera os blocos simultaneamente necessários. O total bruto/protegido
-continua exposto para informar quanto será gerado ao longo de toda a execução,
-mesmo quando esse total não permanece inteiro em disco ao mesmo tempo. A tela
-mantém também a comparação direta `livre - espaço_livre_mínimo - total
-protegido`, deixando explícito se todo o conjunto caberia simultaneamente.
+The protected total is the sum of the per-table reservations, so each part
+receives the factor and conservative rounding before summation. Operational
+capacity uses the projected peak, and the balance is
+`free - minimum_free_space - peak`. When files are retained, the peak
+accumulates reservations; when files are deleted only after a confirmed
+commit, the peak considers the blocks required simultaneously. The
+raw/protected total remains available to show how much will be generated over
+the entire execution, even when that amount is not all present on disk at the
+same time. The screen also retains the direct comparison
+`free - minimum_free_space - protected total`, making it explicit whether the
+entire set would fit simultaneously.
 
-Os dois caminhos normalmente representam os mesmos arquivos por nomes ou
-mounts diferentes. Por isso, as capacidades são comparadas separadamente e o
-motor não soma duas vezes a projeção. Quando o caminho de importação existir
-somente no host do SQL Server, o executor não pode medir seu volume e exibe
-**indisponível**. Isso não significa zero byte livre. A prova posterior de que
-a Bronze enxerga os mesmos bytes e a verificação dos volumes de dados/log do
-banco continuam sendo controles distintos.
+Both paths normally represent the same files through different names or
+mounts. Capacities are therefore compared separately, and the engine does not
+double the projection. When the import path exists only on the SQL Server
+host, the executor cannot measure its volume and displays **indisponível**.
+This does not mean zero free bytes. Later proof that Bronze sees the same bytes
+and validation of the database data/log volumes remain separate controls.
 
-#### Custo da projeção
+#### Projection cost
 
-A leitura de espaço livre é uma chamada de metadados do sistema operacional
-por caminho e tem custo desprezível. A projeção de tamanho, porém, precisa das
-credenciais da Origem e por isso é calculada no **Planejar**, não no simples
-clique de verificação do Driver/BCP.
+Reading free space is one operating-system metadata call per path and has
+negligible cost. Size projection, however, requires Source credentials and is
+therefore calculated during **Planejar**, not when merely checking the
+Driver/BCP.
 
-Com os defaults, a cardinalidade vem de
-`sys.partitions.rows` (aproximada e proporcional ao número de partições)
-e o tamanho médio é obtido por `TOP (10000)` com `DATALENGTH` nas colunas
-exportadas. Assim, o trabalho de estimativa de tamanho é limitado a até 10.000
-linhas por tabela, mais consultas pequenas de catálogo; não é uma exportação
-nem uma varredura integral deliberada. O custo cresce aproximadamente com
-`tabelas × linhas_amostradas × colunas_exportadas` e pode gerar leitura de
-páginas se a amostra não estiver em cache.
+With the defaults, cardinality comes from `sys.partitions.rows` (approximate
+and proportional to the partition count), while average size is obtained from
+`TOP (10000)` with `DATALENGTH` over the exported columns. Size-estimation work
+is therefore limited to at most 10,000 rows per table plus small catalog
+queries; it is neither an export nor an intentional full scan. Cost grows
+approximately with `tables × sampled_rows × exported_columns` and may cause
+page reads when the sample is not cached.
 
-A cardinalidade de planejamento é sempre obtida por metadados; o contrato não
-faz varredura integral para essa finalidade. Isso não altera a validação de
-uma marca d'água explícita sem PK/UNIQUE: para comprovar sua unicidade, o
-script de validação usa agregação e pode percorrer a tabela. A amostra é de
-conveniência e o formato/valores das linhas reais podem variar; o fator de
-segurança reduz essa incerteza, mas não transforma a projeção em garantia. O
-motor continua revalidando limites, linhas realmente copiadas e espaço durante
-a execução.
+Planning cardinality always comes from metadata; the contract performs no full
+scan for that purpose. This does not change validation of an explicit
+watermark without a PK/UNIQUE key: to prove uniqueness, the validation script
+uses aggregation and may scan the table. The sample is based on convenience,
+and actual row formats/values may vary; the safety factor reduces this
+uncertainty but does not turn the projection into a guarantee. The engine
+continues to revalidate limits, rows actually copied, and space during
+execution.
 
-### 2. Planejar
+### 2. Plan
 
-Clique em **Planejar** e informe, quando necessário, a senha mascarada de cada
-ambiente. O planejamento é somente leitura. Além dos resultados por tabela, a
-tela mostra usuário, instância, porta e banco efetivos de Origem, Landing e
-Bronze.
+Select **Planejar** and, when requested, enter the masked password for each
+environment. Planning is read-only. In addition to per-table results, the
+screen shows the effective Source, Landing, and Bronze username, instance,
+port, and database.
 
 ### 3. DDL
 
-**Gerar DDL** grava scripts para Bronze, Landing ou ambos. **Aplicar DDL** pede
-confirmação e aplica os scripts idempotentes. Landing recebe apenas estrutura,
-inclusive evolução e particionamento quando configurados; nunca recebe linhas.
-O campo **Diretório dos scripts** começa em
-`<raiz do projeto>\Local\MotorDados\ddl` ao executar pelo código-fonte.
+**Gerar DDL** writes scripts for Bronze, Landing, or both. **Aplicar DDL**
+requests confirmation and applies the idempotent scripts. Landing receives
+structure only, including evolution and partitioning when configured; it never
+receives rows. When running from source, **Diretório dos scripts** starts at
+`<project root>\Local\BulkFlow\ddl`.
 
-### 4. Dados
+### 4. Data
 
-- **Executar nova carga:** cria um UUID, exporta da Origem e importa somente na
-  Bronze.
-- **Retomar:** usa o mesmo UUID e os checkpoints duráveis.
-- **Consultar status:** lê o controle SQLite local.
-- **Importar manifestos:** importa artefatos publicados sem consultar a Origem.
+- **Executar nova carga:** creates a UUID, exports from Source, and imports only
+  into Bronze.
+- **Retomar:** uses the same UUID and durable checkpoints.
+- **Consultar status:** reads local SQLite control.
+- **Importar manifestos:** imports published artifacts without querying Source.
 
-As tarefas longas rodam fora da thread visual. A janela impede uma segunda
-operação e não oferece cancelamento forçado. Em caso de pane, preserve o UUID,
-o SQLite, os artefatos e as quatro tabelas de controle em `DBRO684.dbo`; reabra
-a mesma configuração e use **Retomar**.
+Long-running tasks execute outside the UI thread. The window prevents a second
+operation and does not offer forced cancellation. After a disruption, retain
+the UUID, SQLite, artifacts, and the four control tables under `DBRO684.dbo`;
+reopen the same configuration and select **Retomar**.
 
-A retomada ocorre por bloco lógico, nunca pelo byte ou pela linha do arquivo
-`.partial`. Um bloco com commit SQL comprovado não é inserido novamente. Se o
-espaço livre nos volumes da Bronze for comprovadamente insuficiente, a tabela é
-sinalizada e pulada antes da importação, e o fluxo segue para a próxima. A
-capacidade é verificada por volume: espaços de dados e log não são somados, e o
-menor volume é o limitante.
-Consulte [Falhas, checkpoints e retomada](FALHAS_E_RETOMADA.md).
+Resume occurs by logical block, never by byte or row within a `.partial` file.
+A block with a proven SQL commit is not inserted again. If free space on the
+Bronze volumes is demonstrably insufficient, the table is marked and skipped
+before import, and processing continues with the next table. Capacity is
+checked by volume: data and log space are not added together, and the smallest
+volume is the constraint. See
+[Failures, checkpoints, and resume](FALHAS_E_RETOMADA.md).
 
-## Salvar na GUI e executar pela CLI
+## Save in the GUI and run from the CLI
 
-**Abrir** usa o mesmo JSON V2 da CLI. **Validar configuração** não conecta a
-SQL. **Salvar** usa publicação atômica e só grava uma configuração validada.
+**Abrir** uses the same V2 JSON as the CLI. **Validar configuração** does not
+connect to SQL. **Salvar** uses atomic publication and writes only a validated
+configuration.
 
-O arquivo gerado pode ser reutilizado sem conversão:
+The generated file can be reused without conversion:
 
 ```powershell
 .\release\BulkFlowCLI.exe prerequisites --config .\config.gui.json
@@ -427,14 +434,15 @@ O arquivo gerado pode ser reutilizado sem conversão:
 ./scripts/launchers/invoke-bcp.sh run --config ./config.gui.json --confirm-load
 ```
 
-Ao abrir um arquivo, perfis relativos são resolvidos contra o diretório dessa
-configuração para que **Salvar como** não mude silenciosamente o perfil.
+When opening a file, relative profiles are resolved against that
+configuration's directory so that **Salvar como** does not silently change the
+profile.
 
-## Validação automatizada da interface
+## Automated interface validation
 
-As regras de montagem do JSON ficam em `bcp_engine/gui_model.py` e possuem
-testes sem display. O smoke test da janela roda quando o ambiente oferece uma
-sessão gráfica.
+JSON assembly rules live in `bcp_engine/gui_model.py` and have display-free
+tests. The window smoke test runs when the environment provides a graphical
+session.
 
 ```powershell
 python -m unittest discover -s tests -p "test_gui_v2.py" -v

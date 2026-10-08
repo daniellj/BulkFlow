@@ -129,7 +129,7 @@ class GuiModelTests(unittest.TestCase):
     def test_default_form_contract_is_infrastructure_neutral(self):
         config = default_gui_config(ROOT)
         self.assertEqual(config["config_version"], 2)
-        self.assertEqual(config["perimeter"], "DREADS")
+        self.assertEqual(config["perimeter"], "DESENVOLVIMENTO")
         self.assertEqual(config["source"]["database"], "BANCO_ORIGEM")
         self.assertEqual(config["bronze_destination"]["database"], "DBRO684")
         self.assertEqual(config["landing_destination"]["database"], "DLAN684")
@@ -155,11 +155,11 @@ class GuiModelTests(unittest.TestCase):
         self.assertEqual(config["active_destination"], "bronze")
         self.assertEqual(validate_config(config), config)
 
-    def test_source_defaults_use_and_create_project_local_motor_dados_paths(self):
+    def test_source_defaults_use_and_create_project_local_bulkflow_paths(self):
         with tempfile.TemporaryDirectory() as temporary:
             project_root = Path(temporary)
             config = default_gui_config(project_root)
-            expected_root = project_root.resolve() / "Local" / "MotorDados"
+            expected_root = project_root.resolve() / "Local" / "BulkFlow"
             control = expected_root / ".bcp-control"
             data = expected_root / "bcp-data"
             ddl = expected_root / "ddl"
@@ -178,15 +178,19 @@ class GuiModelTests(unittest.TestCase):
             validate_config(config)
 
     def test_perimeter_username_suggestions_preserve_custom_values(self):
-        self.assertEqual(default_username_for_perimeter("DREADS"), "u684")
+        self.assertEqual(default_username_for_perimeter("DESENVOLVIMENTO"), "u684")
         self.assertEqual(default_username_for_perimeter("HOMOLOGAÇÃO"), "h684")
-        self.assertEqual(default_username_for_perimeter("CAPGV"), "s684")
+        self.assertEqual(default_username_for_perimeter("PRODUÇÃO"), "s684")
         self.assertEqual(
-            update_default_username_for_perimeter("CAPGV", "u684", "DREADS"),
+            update_default_username_for_perimeter(
+                "PRODUÇÃO", "u684", "DESENVOLVIMENTO"
+            ),
             "s684",
         )
         self.assertEqual(
-            update_default_username_for_perimeter("CAPGV", "login_custom", "DREADS"),
+            update_default_username_for_perimeter(
+                "PRODUÇÃO", "login_custom", "DESENVOLVIMENTO"
+            ),
             "login_custom",
         )
         self.assertEqual(
@@ -415,12 +419,21 @@ class GuiModelTests(unittest.TestCase):
 
     def test_atomic_writer_round_trips_only_a_validated_contract(self):
         config = default_gui_config(ROOT)
+        expected_root = ROOT.resolve() / "Local" / "BulkFlow"
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "config.json"
             write_config_atomic(path, config)
             self.assertFalse(path.with_suffix(".json.partial").exists())
             loaded = read_config(path)
         self.assertEqual(loaded, config)
+        self.assertEqual(
+            loaded["local_control_directory"],
+            str(expected_root / ".bcp-control"),
+        )
+        self.assertEqual(loaded["executor_directory"], str(expected_root / "bcp-data"))
+        self.assertEqual(
+            loaded["destination_sql_directory"], str(expected_root / "bcp-data")
+        )
 
     def test_atomic_writer_does_not_replace_existing_file_with_invalid_config(self):
         config = default_gui_config(ROOT)
@@ -464,10 +477,10 @@ class GuiModelTests(unittest.TestCase):
             ):
                 config = default_gui_config()
             directories_existed = all(
-                (local_app_data / "MotorDados" / name).is_dir()
+                (local_app_data / "BulkFlow" / name).is_dir()
                 for name in (".bcp-control", "bcp-data", "ddl")
             )
-        expected_root = (local_app_data / "MotorDados").resolve()
+        expected_root = (local_app_data / "BulkFlow").resolve()
         self.assertEqual(config["executor_directory"], str(expected_root / "bcp-data"))
         self.assertEqual(
             config["destination_sql_directory"], str(expected_root / "bcp-data")
@@ -480,6 +493,16 @@ class GuiModelTests(unittest.TestCase):
 
 
 class GuiConstructionTests(unittest.TestCase):
+    def test_source_gui_ddl_field_uses_exact_project_local_default(self):
+        try:
+            from bcp_engine.gui import RUNTIME_DATA_ROOT, RUNTIME_DDL_DIRECTORY
+        except ImportError as error:  # pragma: no cover
+            self.skipTest(f"Dependência gráfica indisponível: {error}")
+
+        expected_root = ROOT.resolve() / "Local" / "BulkFlow"
+        self.assertEqual(RUNTIME_DATA_ROOT, expected_root)
+        self.assertEqual(RUNTIME_DDL_DIRECTORY, expected_root / "ddl")
+
     def test_disk_projection_is_rendered_in_prerequisite_area(self):
         try:
             from bcp_engine.gui import BcpGuiApplication
@@ -907,7 +930,7 @@ class GuiConstructionTests(unittest.TestCase):
             config = application._collect_config()
             self.assertEqual(config["rows_per_block"], 200_000)
             self.assertEqual(len(config["tables"]), 1)
-            self.assertEqual(config["perimeter"], "DREADS")
+            self.assertEqual(config["perimeter"], "DESENVOLVIMENTO")
             self.assertEqual(config["active_destination"], "bronze")
             self.assertTrue(config["create_structure_if_needed"])
             self.assertEqual(config["max_file_bytes"], 157_286_400)

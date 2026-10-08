@@ -1,75 +1,78 @@
-# Migração da configuração em português para o contrato V2
+**English** | [Português (Brasil)](MIGRACAO_CONFIGURACAO_V2.pt-BR.md)
 
-Este guia converte o contrato preliminar em português documentado no escopo
-para o contrato V2 efetivamente aceito pelo motor. A migração é manual e
-explícita: o carregador não mantém aliases e rejeita qualquer propriedade
-desconhecida. Preserve o arquivo anterior como evidência e crie um novo JSON.
+# Migrating a Portuguese configuration to the V2 contract
 
-Os nomes de parâmetros, variáveis e identificadores de código são sempre em
-inglês americano. A interface gráfica apresenta rótulos, opções e defaults em
-português do Brasil. Os identificadores de negócio de `perimeter` são a exceção
-deliberada: devem ser persistidos exatamente como `DREADS`, `HOMOLOGAÇÃO` ou
-`CAPGV`. Os nomes físicos dos objetos persistentes de controle também seguem a
-convenção em português: isso não cria aliases para os parâmetros JSON.
+This guide converts the preliminary Portuguese contract documented in the
+original scope into the V2 contract that the engine actually accepts. Migration
+is manual and explicit: the loader does not maintain aliases and rejects every
+unknown property. Preserve the previous file as evidence and create a new JSON
+file.
 
-## Mapeamento da raiz
+Parameter, variable, and code identifier names always use American English.
+The graphical interface presents labels, options, and defaults in Brazilian
+Portuguese. The `perimeter` business identifiers are the deliberate exception:
+they must be persisted exactly as `DESENVOLVIMENTO`, `HOMOLOGAÇÃO`, or `PRODUÇÃO`. Physical
+names for persistent control objects also follow the Portuguese business naming
+convention; this does not create aliases for JSON parameters.
 
-| Contrato anterior | Contrato V2 | Observação |
+## Root mapping
+
+| Previous contract | V2 contract | Notes |
 |---|---|---|
-| `versao_configuracao` | `config_version` | Deve ser o número `2`. |
-| `perimetro` | `perimeter` | Enum exato: `DREADS`, `HOMOLOGAÇÃO` ou `CAPGV`. |
-| — | `scope` | Descrição livre opcional; não substitui `perimeter`. |
-| `origem` | `source` | Endpoint obrigatório. |
-| `destino_bronze` | `bronze_destination` | Obrigatório quando Bronze é o destino ativo e há importação. |
-| `destino_landing` | `landing_destination` | Usado somente para gerar/aplicar DDL Landing. |
-| `destino_ativo` | `active_destination` | Deve ser `bronze`; Landing não recebe dados. |
-| `executar_importacao` | `execute_import` | Com `false`, o fluxo é somente exportação. |
-| `criar_estrutura_se_necessario` | `create_structure_if_needed` | Booleano; default `true`. A GUI exibe **Criar estrutura se necessário**, marcada por padrão. |
-| `diretorio_executor` | `executor_directory` | **Diretório de exportação dos arquivos** na GUI; caminho absoluto visto pelo processo Python/BCP. |
-| `diretorio_sql_destino` | `destination_sql_directory` | **Diretório de importação dos arquivos** na GUI; caminho absoluto dos mesmos bytes, visto pelo SQL Server. |
-| — | `artifact_reader_sids` | Lista opcional de SIDs Windows específicos que precisam ler os artefatos; default `[]`. |
-| — | `artifact_writer_sids` | Lista excepcional de SIDs confiáveis que escrevem via identidade SMB distinta; default `[]`. |
-| `diretorio_controle_local` | `local_control_directory` | Deve estar em disco local; UNC não é aceito para SQLite/WAL. |
-| `linhas_por_bloco` | `rows_per_block` | Global; pode ser sobrescrito por tabela. |
-| `arquivo_maximo_bytes` | `max_file_bytes` | Limite operacional em bytes; default `157286400` (150 MiB). |
-| `espaco_livre_minimo_bytes` | `minimum_free_space_bytes` | Reserva em bytes. |
-| `apagar_arquivos_confirmados` | `delete_confirmed_files` | Só é efetivo após importação confirmada. |
-| `continuar_apos_erro_tabela` | `continue_after_table_error` | Não transforma falha global em falha por tabela. |
-| `estimativas` | `estimates` | Veja a tabela de seções aninhadas. |
-| `loteamento` | `batching` | Veja a tabela de seções aninhadas. |
-| `estrutura` | `structure` | Veja a tabela de seções aninhadas. |
-| `id_evento_bronze` | `bronze_event_id` | Veja a tabela de seções aninhadas. |
-| `tabelas` | `tables` | Array não vazio. |
+| `versao_configuracao` | `config_version` | Must be the number `2`. |
+| `perimetro` | `perimeter` | Exact enum: `DESENVOLVIMENTO`, `HOMOLOGAÇÃO`, or `PRODUÇÃO`. |
+| — | `scope` | Optional free-form description; it does not replace `perimeter`. |
+| `origem` | `source` | Required endpoint. |
+| `destino_bronze` | `bronze_destination` | Required when Bronze is the active destination and import is enabled. |
+| `destino_landing` | `landing_destination` | Used only to generate or apply Landing DDL. |
+| `destino_ativo` | `active_destination` | Must be `bronze`; Landing does not receive data. |
+| `executar_importacao` | `execute_import` | With `false`, the flow exports only. |
+| `criar_estrutura_se_necessario` | `create_structure_if_needed` | Boolean; default `true`. The GUI displays **Criar estrutura se necessário**, selected by default. |
+| `diretorio_executor` | `executor_directory` | **Diretório de exportação dos arquivos** in the GUI; absolute path visible to the Python/BCP process. |
+| `diretorio_sql_destino` | `destination_sql_directory` | **Diretório de importação dos arquivos** in the GUI; absolute path to the same bytes as seen by SQL Server. |
+| — | `artifact_reader_sids` | Optional list of specific Windows SIDs that must read the artifacts; default `[]`. |
+| — | `artifact_writer_sids` | Exceptional list of trusted SIDs that write through a different SMB identity; default `[]`. |
+| `diretorio_controle_local` | `local_control_directory` | Must be on a local disk; UNC is not accepted for SQLite/WAL. |
+| `linhas_por_bloco` | `rows_per_block` | Global value; each table may override it. |
+| `arquivo_maximo_bytes` | `max_file_bytes` | Operational limit in bytes; default `157286400` (150 MiB). |
+| `espaco_livre_minimo_bytes` | `minimum_free_space_bytes` | Reserved free space in bytes. |
+| `apagar_arquivos_confirmados` | `delete_confirmed_files` | Effective only after a confirmed import. |
+| `continuar_apos_erro_tabela` | `continue_after_table_error` | Does not turn a global failure into a per-table failure. |
+| `estimativas` | `estimates` | See the nested-sections table. |
+| `loteamento` | `batching` | See the nested-sections table. |
+| `estrutura` | `structure` | See the nested-sections table. |
+| `id_evento_bronze` | `bronze_event_id` | See the nested-sections table. |
+| `tabelas` | `tables` | Non-empty array. |
 
-Parâmetros operacionais que não apareciam no exemplo preliminar usam somente
-os nomes V2: `odbc_driver`, `bcp_executable`,
+Operational parameters that were absent from the preliminary example use only
+their V2 names: `odbc_driver`, `bcp_executable`,
 `connection_timeout_seconds`, `sql_timeout_seconds`,
 `bcp_timeout_seconds`, `control_schema`, `artifact_reader_sids`,
-`artifact_writer_sids` e `tls`. Não crie traduções ou aliases para eles. As
-listas de ACL não aceitam nomes de conta nem grupos amplos; use SIDs específicos
-de contas de serviço e conceda escrita apenas à identidade SMB efetiva que já
-faça parte da fronteira de confiança.
+`artifact_writer_sids`, and `tls`. Do not create translations or aliases for
+them. ACL lists do not accept account names or broad groups; use specific
+service-account SIDs and grant write access only to the effective SMB identity
+that is already inside the trust boundary.
 
-`control_schema` deve conter obrigatoriamente `dbo`. Na Bronze do laboratório,
-o controle SQL é persistente exclusivamente em `DBRO684.dbo.execucao`,
-`DBRO684.dbo.execucao_tabela` e `DBRO684.dbo.execucao_lote`; a versão física
-fica em `DBRO684.dbo.versao_esquema`. O schema não é intercambiável. Nomes
-legados são tratados apenas por uma migração administrativa explícita e não
-devem ser reutilizados em configurações novas.
+`control_schema` must be `dbo`. In the Bronze laboratory database, SQL control
+state is persisted exclusively in `DBRO684.dbo.execucao`,
+`DBRO684.dbo.execucao_tabela`, and `DBRO684.dbo.execucao_lote`; the physical
+schema version is stored in `DBRO684.dbo.versao_esquema`. The schema is not
+interchangeable. Legacy names are handled only through an explicit
+administrative migration and must not be reused in new configurations.
 
-Na migração autorizada para esse contrato, remova as tabelas SQL do antigo
-schema `controle_transferencia` na ordem das dependências
-(`execucao_lote`, `execucao_tabela`, `execucao`, `versao_esquema`) e então
-remova o próprio schema. Recrie o contrato em `DBRO684.dbo`. Essa operação não
-atinge o arquivo local `controle_transferencia.sqlite3`, que possui finalidade e
-ciclo de vida independentes.
+For the authorized migration to this contract, remove the SQL tables from the
+old `controle_transferencia` schema in dependency order (`execucao_lote`,
+`execucao_tabela`, `execucao`, `versao_esquema`), then remove the schema itself.
+Recreate the contract under `DBRO684.dbo`. This operation does not affect the
+local `controle_transferencia.sqlite3` file, which has an independent purpose
+and lifecycle.
 
-## Endpoints, autenticação e TLS
+## Endpoints, authentication, and TLS
 
-O mapeamento abaixo vale dentro de `source`, `bronze_destination` e
-`landing_destination`, conforme a aplicabilidade de cada campo.
+The mapping below applies inside `source`, `bronze_destination`, and
+`landing_destination`, according to the applicability of each field.
 
-| Contrato anterior | Contrato V2 |
+| Previous contract | V2 contract |
 |---|---|
 | `instancia` | `instance` |
 | `porta` | `port` |
@@ -85,60 +88,60 @@ O mapeamento abaixo vale dentro de `source`, `bronze_destination` e
 | `provedor` | `provider` |
 | `referencia` | `reference` |
 
-Também converta os valores enumerados:
+Convert enumerated values as well:
 
-| Valor anterior | Valor V2 |
+| Previous value | V2 value |
 |---|---|
 | `windows_integrada` | `windows_integrated` |
 | `windows_credencial` | `windows_credentials` |
 | `sql` | `sql` |
 | `prompt` | `prompt` |
 
-Nunca migre uma senha literal. `password` deve conter somente o descritor do
-segredo. Para `provider: "prompt"`, use `reference: null`; para `env` ou
-`windows_credential_manager`, informe uma referência não vazia. Cada endpoint
-tem autenticação independente. Use referências distintas, por exemplo
-`BCP_SOURCE_SQL_PASSWORD`, `BCP_BRONZE_SQL_PASSWORD` e
+Never migrate a literal password. `password` must contain only the secret
+descriptor. For `provider: "prompt"`, use `reference: null`; for `env` or
+`windows_credential_manager`, provide a non-empty reference. Authentication is
+independent for each endpoint. Use distinct references such as
+`BCP_SOURCE_SQL_PASSWORD`, `BCP_BRONZE_SQL_PASSWORD`, and
 `BCP_LANDING_SQL_PASSWORD`.
 
-Para autenticação `sql`, o perímetro fornece apenas o usuário sugerido:
-`DREADS` → `u684`, `HOMOLOGAÇÃO` → `h684` e `CAPGV` → `s684`. O campo
-`username` de cada endpoint pode sobrescrever essa sugestão, inclusive com três
-usuários completamente diferentes.
+For `sql` authentication, the perimeter provides only a suggested username:
+`DESENVOLVIMENTO` → `u684`, `HOMOLOGAÇÃO` → `h684`, and `PRODUÇÃO` → `s684`. The `username`
+field on each endpoint may override that suggestion, including with three
+completely different users.
 
-`port` é obrigatório em configurações novas e aceita valores de 1 a 65535. O
-motor normaliza arquivos V2 legados sem esse campo para `1433`, mas ao editar ou
-salvar a configuração informe a porta explicitamente. A conexão é formada a
-partir de `instance` e `port`; não duplique `,porta` dentro de `instance`.
+`port` is required in new configurations and accepts values from 1 through
+65535. The engine normalizes legacy V2 files that omit it to `1433`, but always
+specify the port when editing or saving a configuration. The connection target
+is assembled from `instance` and `port`; do not duplicate `,port` inside
+`instance`.
 
-`read_database` permanece aceito como opção avançada do JSON da Origem e, se
-omitido, recebe `database`. A GUI apresenta apenas **Banco de dados**.
+`read_database` remains available as an advanced source JSON option and
+defaults to `database` when omitted. The GUI displays only **Banco de dados**.
 
-TLS global usa `tls.encrypt`, `tls.trust_server_certificate`,
-`tls.hostname_in_certificate` e `tls.bcp_switch`. O mesmo bloco pode ser
-sobrescrito por endpoint. Os valores de `bcp_switch` aceitos são `-Ys`, `-Ym` e
-`-Yo`.
+Global TLS settings use `tls.encrypt`, `tls.trust_server_certificate`,
+`tls.hostname_in_certificate`, and `tls.bcp_switch`. Each endpoint may override
+the same block. Accepted `bcp_switch` values are `-Ys`, `-Ym`, and `-Yo`.
 
-## Seções operacionais
+## Operational sections
 
-| Contrato anterior | Contrato V2 | Conversão de valor |
+| Previous contract | V2 contract | Value conversion |
 |---|---|---|
-| `estimativas.contagem` | `estimates.row_count_method` | Somente `metadados` → `metadata`; a antiga contagem integral não é aceita. |
-| `estimativas.amostra_maxima_linhas` | `estimates.maximum_sample_rows` | Inteiro positivo |
-| `estimativas.fator_seguranca` | `estimates.safety_factor` | Número maior ou igual a `1` |
-| — | `estimates.on_unavailable` | Novo: `stop` ou `warn` |
+| `estimativas.contagem` | `estimates.row_count_method` | Only `metadados` → `metadata`; the former full row count is not accepted. |
+| `estimativas.amostra_maxima_linhas` | `estimates.maximum_sample_rows` | Positive integer |
+| `estimativas.fator_seguranca` | `estimates.safety_factor` | Number greater than or equal to `1` |
+| — | `estimates.on_unavailable` | New: `stop` or `warn` |
 | `loteamento.politica_nulos` | `batching.null_policy` | `rejeitar_tabela` → `reject_table` |
 | `loteamento.empates` | `batching.tie_policy` | `grupo_completo` → `complete_group` |
 | `loteamento.limite_superior` | `batching.upper_bound_policy` | `capturar_no_inicio_da_tabela` → `capture_at_table_start` |
-| `loteamento.exigir_indice_marca_dagua` | `batching.require_watermark_index` | Booleano |
-| `estrutura.momento_indices_secundarios` | `structure.secondary_indexes_phase` | `apos_carga_tabela` → `after_table_load`; antes da carga → `before_load` |
-| `id_evento_bronze.estrategia` | `bronze_event_id.strategy` | `sequence` ou `source_column` |
-| `id_evento_bronze.nome_sequence` | `bronze_event_id.sequence_name` | Com `sequence`, deve conter `{destination_table}`. |
-| `id_evento_bronze.coluna_origem` | `bronze_event_id.source_column` | Obrigatória apenas com `source_column`. |
+| `loteamento.exigir_indice_marca_dagua` | `batching.require_watermark_index` | Boolean |
+| `estrutura.momento_indices_secundarios` | `structure.secondary_indexes_phase` | `apos_carga_tabela` → `after_table_load`; before load → `before_load` |
+| `id_evento_bronze.estrategia` | `bronze_event_id.strategy` | `sequence` or `source_column` |
+| `id_evento_bronze.nome_sequence` | `bronze_event_id.sequence_name` | With `sequence`, must contain `{destination_table}`. |
+| `id_evento_bronze.coluna_origem` | `bronze_event_id.source_column` | Required only with `source_column`. |
 
-## Tabelas e marca d'água
+## Tables and watermarks
 
-| Contrato anterior | Contrato V2 |
+| Previous contract | V2 contract |
 |---|---|
 | `origem` | `source_table` |
 | `destino` | `destination_table` |
@@ -154,131 +157,130 @@ sobrescrito por endpoint. Os valores de `bcp_switch` aceitos são `-Ys`, `-Ym` e
 | `coluna_particionamento` | `partition_column` |
 | `perfil_estrutura` | `structure_profile` |
 
-Uma marca composta anterior como:
+A previous composite watermark such as:
 
 ```json
 {"marca_dagua":{"colunas":[{"nome":"data_referencia","ordem":"ASC"}]}}
 ```
 
-passa a ser:
+becomes:
 
 ```json
 {"watermark":{"columns":[{"name":"data_referencia","direction":"ASC"}]}}
 ```
 
-`watermark: null` não significa uma coluna vazia: solicita PK elegível, depois
-UNIQUE elegível e, se nenhuma existir, avalia a carga direta limitada. Uma
-marca explícita é somente validada; o motor não procura outra combinação para
-substituí-la. `direction` aceita exclusivamente `ASC`; configurações antigas
-com `DESC` devem ser corrigidas antes da execução.
+`watermark: null` does not mean an empty column. It requests an eligible primary
+key, then an eligible UNIQUE key, and, if neither exists, evaluates the limited
+direct-load path. An explicit watermark is validated as provided; the engine
+does not search for a different combination to replace it. `direction` accepts
+only `ASC`; old configurations that use `DESC` must be corrected before
+execution.
 
-Schemas, tabelas, colunas, constraints, índices e sequences criados no destino
-são materializados em minúsculas. O banco mantém o nome configurado. Origem e
-destino têm schemas independentes; não copie automaticamente `source.schema`
-para o destino.
+Schemas, tables, columns, constraints, indexes, and sequences created at the
+destination are materialized in lowercase. The database retains its configured
+name. Source and destination schemas are independent; do not automatically copy
+`source.schema` to the destination.
 
-Na GUI, banco, schema e tabela são apresentados nesta ordem para cada lado do
-mapeamento. `source_database`, `source_schema`, `destination_database` e
-`destination_schema` são preenchidos a partir dos endpoints correspondentes e
-ficam editáveis. No JSON, os campos de banco e schema continuam sendo
-overrides opcionais e, quando omitidos, herdam os endpoints.
+In the GUI, database, schema, and table are presented in that order on both
+sides of the mapping. `source_database`, `source_schema`,
+`destination_database`, and `destination_schema` are initialized from their
+corresponding endpoints and remain editable. In JSON, database and schema fields
+remain optional overrides and inherit their endpoints when omitted.
 
-Nesta versão, entretanto, os campos de banco por tabela não implementam
-roteamento independente: `source_database` deve coincidir com
-`source.database`, e `destination_database` deve coincidir com
-`bronze_destination.database`, sem diferenciar maiúsculas de minúsculas. A
-validação rejeita divergências. Isso preserva o contrato real do motor, que usa
-uma conexão Origem e uma conexão Bronze por execução. Para operar outro banco,
-use outra configuração/execução.
+In this version, however, per-table database fields do not implement independent
+routing: `source_database` must match `source.database`, and
+`destination_database` must match `bronze_destination.database`,
+case-insensitively. Validation rejects mismatches. This preserves the engine's
+actual contract, which uses one Source connection and one Bronze connection per
+execution. Use a separate configuration and execution to operate on another
+database.
 
-## Campos novos, sem equivalência direta
+## New fields with no direct equivalent
 
-- `keyless_direct_load_max_rows`: limite global de linhas para uma tabela sem
-  PK, UNIQUE ou marca comprovada; default `5000000`; `0` desabilita a exceção.
-  A pré-admissão usa metadados aproximados, sem `COUNT_BIG` na Origem; a
-  quantidade real produzida pelo BCP é validada antes da importação.
-- `allow_schema_evolution`: evolução aditiva nas estruturas Bronze/Landing;
-  default `false`. Desligado, apenas registra colunas ausentes.
-- `tables[].enable_cdc`: decisão por tabela; default `false`. O CDC do banco só
-  é tratado quando ao menos uma tabela usa `true`.
-- `cdc_retention_minutes`: prazo global, em minutos, do job de cleanup CDC na
-  Origem; default `262800` (seis meses, aproximadamente 182,5 dias). Só é
-  aceito entre `1` e `52494800`, limite do SQL Server, e só é
-  consultado/aplicado quando ao menos uma tabela usa `enable_cdc=true`. Se o job
-  ainda não existir logo depois de habilitar o banco, o valor fica pendente até
-  a primeira tabela CDC ser habilitada. Quando o valor muda, o motor executa
-  `sys.sp_cdc_change_job`, reinicia somente o cleanup com
-  `sys.sp_cdc_stop_job`/`sys.sp_cdc_start_job`, confirma a retenção antes de
-  qualquer BCP e reutiliza o resultado nas tabelas seguintes. O job `capture`
-  não é reiniciado.
-- `tables[].source_database` e `tables[].destination_database`: herdam os
-  bancos dos endpoints quando omitidos e, nesta versão, devem coincidir com
-  eles; não criam conexões independentes por tabela.
-- `tables[].partition_column`: coluna `DATETIME2(7)` opcional para
-  particionamento mensal dos destinos. Ao adicionar uma tabela pela GUI, a
-  opção vem habilitada com `dh_carga`; ausente no JSON, desabilita
-  particionamento.
-- `perimeter`: enum global exato `DREADS`, `HOMOLOGAÇÃO` ou `CAPGV`; default
-  `DREADS`.
-- `tables[].destination_area`, quando informado, deve ser `bronze`. A Landing
-  é gerada pelo perfil estrutural e não participa da importação de linhas.
-- Os provedores de segredo `env` e `windows_credential_manager` não tinham
-  aliases definidos no exemplo preliminar; use diretamente esses valores V2.
-- `odbc_dsn`: DSN opcional por endpoint; não substitui os demais dados do
-  endpoint no contrato e não carrega senha.
-- `estimates.on_unavailable`: define `stop` ou `warn` quando a estimativa não
-  puder ser obtida.
+- `keyless_direct_load_max_rows`: global row limit for a table without a primary
+  key, UNIQUE key, or proven watermark; default `5000000`; `0` disables the
+  exception. Pre-admission uses approximate metadata and never runs `COUNT_BIG`
+  on the Source; the actual row count produced by BCP is checked before import.
+- `allow_schema_evolution`: additive evolution for Bronze and Landing
+  structures; default `false`. When disabled, missing columns are only logged.
+- `tables[].enable_cdc`: per-table decision; default `false`. Database CDC is
+  handled only when at least one table sets it to `true`.
+- `cdc_retention_minutes`: global CDC cleanup retention period on the Source,
+  in minutes; default `262800` (six months, approximately 182.5 days). Accepted
+  values range from `1` through `52494800`, the SQL Server limit, and the value
+  is queried or applied only when at least one table has `enable_cdc=true`. If
+  the job does not exist immediately after the database is enabled, the value
+  remains pending until the first CDC table is enabled. When the value changes,
+  the engine runs `sys.sp_cdc_change_job`, restarts only the cleanup job with
+  `sys.sp_cdc_stop_job`/`sys.sp_cdc_start_job`, confirms retention before any
+  BCP operation, and reuses the result for subsequent tables. The `capture` job
+  is not restarted.
+- `tables[].source_database` and `tables[].destination_database`: inherit the
+  endpoint databases when omitted and, in this version, must match them; they do
+  not create independent per-table connections.
+- `tables[].partition_column`: optional `DATETIME2(7)` column for monthly
+  destination partitioning. The GUI enables `dh_carga` by default for a newly
+  added table; omitting `partition_column` in JSON disables partitioning.
+- `perimeter`: exact global enum `DESENVOLVIMENTO`, `HOMOLOGAÇÃO`, or `PRODUÇÃO`; default
+  `DESENVOLVIMENTO`.
+- `tables[].destination_area`, when present, must be `bronze`. Landing is
+  generated by its structure profile and does not participate in row imports.
+- Secret providers `env` and `windows_credential_manager` had no aliases in the
+  preliminary example; use these V2 values directly.
+- `odbc_dsn`: optional DSN per endpoint. It does not replace the endpoint's
+  other connection data and does not carry a password.
+- `estimates.on_unavailable`: selects `stop` or `warn` when an estimate cannot
+  be obtained.
 
-Quando `partition_column` é informado, o perfil cria particionamento mensal
-`RANGE RIGHT` do mês corrente até dezembro do ano corrente mais seis anos. A PK
-técnica passa a `NONCLUSTERED`, e a coluna escolhida recebe o índice
-`CLUSTERED`. O motor não converte silenciosamente uma tabela existente de não
-particionada para particionada (nem o inverso).
+When `partition_column` is provided, the profile creates monthly `RANGE RIGHT`
+partitioning from the current month through December of the current year plus
+six years. The technical primary key becomes `NONCLUSTERED`, and the selected
+column receives the `CLUSTERED` index. The engine does not silently convert an
+existing nonpartitioned table to partitioned form, or the reverse.
 
-O destino de uma tabela omitido passa a ser
-`<source_database>_<source_table>` em minúsculas, usando o banco efetivo da
-tabela (herdado de `source.database`). `source.read_database`
-omitido recebe `source.database`. Para `execute_import: false`, o endpoint de
-destino e `destination_sql_directory` podem ser omitidos, não há conexão com o
-destino e os arquivos são preservados.
+An omitted table destination becomes `<source_database>_<source_table>` in
+lowercase, using the table's effective source database inherited from
+`source.database`. An omitted `source.read_database` receives
+`source.database`. With `execute_import: false`, the destination endpoint and
+`destination_sql_directory` may be omitted; the destination is not contacted
+and files are preserved.
 
-## Defaults e apresentação em português
+## Defaults and Brazilian Portuguese presentation
 
-Os principais defaults do contrato são: perímetro `DREADS`, destino de dados
-Bronze, importação habilitada, criação automática de estrutura habilitada, lote
-de 200.000 linhas, arquivo máximo de 157.286.400 bytes, limite sem chave de
-5.000.000, fator de segurança `1.25`, schema de controle `dbo`, evolução de
-schema desabilitada, retenção CDC de 262.800 minutos, CDC desabilitado por
-tabela, estimativa por metadados, índices antes da carga, TLS criptografado e
-certificado não confiado automaticamente. No formulário de uma tabela nova, a
-GUI sugere particionamento por `dh_carga`; no JSON, omitir `partition_column`
-continua desabilitando o particionamento.
+The contract's principal defaults are: `DESENVOLVIMENTO` perimeter, Bronze data
+destination, import enabled, automatic structure creation enabled, 200,000 rows
+per block, maximum file size of 157,286,400 bytes, keyless limit of 5,000,000,
+safety factor `1.25`, `dbo` control schema, schema evolution disabled, CDC
+retention of 262,800 minutes, per-table CDC disabled, metadata estimates,
+indexes before load, encrypted TLS, and no automatic trust of the server
+certificate. For a new table, the GUI suggests partitioning by `dh_carga`; in
+JSON, omitting `partition_column` continues to disable partitioning.
 
-Na interface, esses valores aparecem em português, por exemplo:
+The GUI displays these values in Portuguese, for example:
 
-| Interface pt-BR | Valor persistido no JSON |
+| pt-BR interface | Value persisted in JSON |
 |---|---|
-| `DREADS` / `HOMOLOGAÇÃO` / `CAPGV` | mesmo valor exato em `perimeter` |
+| `DESENVOLVIMENTO` / `HOMOLOGAÇÃO` / `PRODUÇÃO` | same exact value in `perimeter` |
 | `Bronze` | `bronze` |
-| `Sim` / caixa marcada | `true` |
-| `Não` / caixa desmarcada | `false` |
+| `Sim` / selected checkbox | `true` |
+| `Não` / cleared checkbox | `false` |
 | `Metadados (aproximado)` | `metadata` |
 | `Após a carga da tabela` | `after_table_load` |
 | `Antes da carga` | `before_load` |
 | `Solicitar ao executar` | `prompt` |
 | `Variável de ambiente` | `env` |
 
-O cenário do laboratório usa deliberadamente lote de 1.500 linhas e outros
-limites menores para homologação. Isso é um preenchimento pt-BR do laboratório,
-não altera os defaults gerais do contrato.
+The laboratory scenario deliberately uses 1,500 rows per block and lower limits
+for validation. That is a laboratory-specific pt-BR configuration and does not
+change the general contract defaults.
 
-## Exemplo V2 sem segredo
+## Secret-free V2 example
 
 ```json
 {
   "config_version": 2,
   "perimeter": "HOMOLOGAÇÃO",
-  "scope": "Exemplo de migração",
+  "scope": "Migration example",
   "source": {
     "instance": "SQL-ORIGEM\\INST01",
     "port": 1433,
@@ -352,23 +354,23 @@ não altera os defaults gerais do contrato.
 }
 ```
 
-A referência de variável de ambiente não é a senha. Defina o valor apenas no
-contexto da execução e não o grave no JSON, em linha de comando ou em logs.
+The environment-variable reference is not the password. Define the value only
+in the execution context, and never store it in JSON, a command line, or logs.
 
-## Validar antes de executar
+## Validate before execution
 
-1. Valide somente o contrato local, sem conexão SQL:
+1. Validate only the local contract, without opening a SQL connection:
 
    ```powershell
-   python -c "from bcp_engine.config import read_config; read_config(r'.\config.v2.json'); print('Configuração V2 válida')"
+   python -c "from bcp_engine.config import read_config; read_config(r'.\config.v2.json'); print('Valid V2 configuration')"
    ```
 
    ```bash
-   python -c 'from bcp_engine.config import read_config; read_config("./config.v2.json"); print("Configuração V2 válida")'
+   python -c 'from bcp_engine.config import read_config; read_config("./config.v2.json"); print("Valid V2 configuration")'
    ```
 
-2. Execute o plano somente leitura e revise origem, destino, estratégia de
-   chave, prova da marca, quantidade de blocos, espaço e diagnósticos:
+2. Run the read-only plan and review source, destination, key strategy,
+   watermark proof, block count, space, and diagnostics:
 
    ```powershell
    .\scripts\launchers\invoke-bcp.ps1 plan --config .\config.v2.json
@@ -378,7 +380,7 @@ contexto da execução e não o grave no JSON, em linha de comando ou em logs.
    ./scripts/launchers/invoke-bcp.sh plan --config ./config.v2.json
    ```
 
-3. Só depois execute a carga com confirmação explícita:
+3. Only then run the load with explicit confirmation:
 
    ```powershell
    .\scripts\launchers\invoke-bcp.ps1 run --config .\config.v2.json --confirm-load
@@ -388,8 +390,7 @@ contexto da execução e não o grave no JSON, em linha de comando ou em logs.
    ./scripts/launchers/invoke-bcp.sh run --config ./config.v2.json --confirm-load
    ```
 
-Não mantenha simultaneamente a chave antiga e a nova: a validação V2 rejeita a
-chave antiga. Ela também rejeita campos de autenticação conflitantes, nomes de
-destino duplicados, perímetros fora do enum exato, `active_destination`
-diferente de `bronze` e overrides de tabela que tentem direcionar dados à
-Landing.
+Do not keep both the old and new key in the same file: V2 validation rejects the
+old key. It also rejects conflicting authentication fields, duplicate
+destination names, perimeters outside the exact enum, an `active_destination`
+other than `bronze`, and table overrides that attempt to route data to Landing.

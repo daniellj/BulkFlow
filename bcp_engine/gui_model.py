@@ -851,7 +851,7 @@ def default_gui_config(project_root: Path | None = None) -> dict[str, Any]:
     control_directory = str(control_path)
     raw: dict[str, Any] = {
         "config_version": 2,
-        "perimeter": "DREADS",
+        "perimeter": "DESENVOLVIMENTO",
         "source": {
             "instance": "SERVIDOR_ORIGEM",
             "port": 1433,

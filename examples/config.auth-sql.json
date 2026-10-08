@@ -1,6 +1,6 @@
 {
   "config_version": 2,
-  "perimeter": "DREADS",
+  "perimeter": "DESENVOLVIMENTO",
   "scope": "Exemplo SQL independente por endpoint",
   "source": {
     "instance": "SQL-ORIGEM\\INST01",
@@ -40,9 +40,9 @@
   "active_destination": "bronze",
   "execute_import": true,
   "cdc_retention_minutes": 262800,
-  "executor_directory": "C:\\CAMINHO_DO_PROJETO\\Local\\MotorDados\\bcp-data",
+  "executor_directory": "C:\\CAMINHO_DO_PROJETO\\Local\\BulkFlow\\bcp-data",
   "destination_sql_directory": "\\\\SERVIDOR_ARQUIVOS\\COMPARTILHAMENTO\\bcp-data",
-  "local_control_directory": "C:\\CAMINHO_DO_PROJETO\\Local\\MotorDados\\.bcp-control",
+  "local_control_directory": "C:\\CAMINHO_DO_PROJETO\\Local\\BulkFlow\\.bcp-control",
   "tables": [
     {"source_table": "TABELA_ORIGEM_01", "destination_table": "bd_origem_tabela_origem_01", "watermark": null}
   ]

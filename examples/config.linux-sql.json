@@ -1,6 +1,6 @@
 {
   "config_version": 2,
-  "perimeter": "DREADS",
+  "perimeter": "DESENVOLVIMENTO",
   "scope": "Exemplo de executor Linux com autenticação SQL",
   "source": {
     "instance": "sql-source.example.internal",

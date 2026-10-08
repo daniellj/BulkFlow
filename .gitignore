@@ -44,12 +44,14 @@ dist/
 .eggs/
 
 # Runtime artifacts and temporary files
-/Local/MotorDados/.bcp-control/**
-!/Local/MotorDados/.bcp-control/.gitkeep
-/Local/MotorDados/bcp-data/**
-!/Local/MotorDados/bcp-data/.gitkeep
-/Local/MotorDados/ddl/**
-!/Local/MotorDados/ddl/.gitkeep
+/Local/BulkFlow/.bcp-control/**
+!/Local/BulkFlow/.bcp-control/.gitkeep
+/Local/BulkFlow/bcp-data/**
+!/Local/BulkFlow/bcp-data/.gitkeep
+/Local/BulkFlow/ddl/**
+!/Local/BulkFlow/ddl/.gitkeep
+/Local/BulkFlow/config/**
+!/Local/BulkFlow/config/.gitkeep
 /artifacts/
 /control/
 /bcp-data/

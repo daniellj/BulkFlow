@@ -1,28 +1,32 @@
-# Uso da CLI por PowerShell e shell Linux
+**English** | [Português (Brasil)](USO_CLI_POWERSHELL_LINUX.pt-BR.md)
 
-Os launchers desta página chamam a mesma CLI Python usada pelo motor. Eles podem
-ser executados a partir de qualquer diretório, encaminham cada argumento sem
-remontar a linha de comando e devolvem o código de saída do motor.
+# Using the CLI from PowerShell and a Linux shell
 
-No Windows, `BulkFlowCLI.exe` expõe exatamente os mesmos subcomandos e já
-incorpora Python e os pacotes do projeto. Ele não incorpora o Driver ODBC nem o
-BCP, que continuam instalados no executor.
+The launchers described on this page invoke the same Python CLI used by the
+engine. They can run from any directory, forward every argument without
+reconstructing the command line, and return the engine's exit code.
 
-O contrato atual possui uma única rota de dados: origem configurada → endpoint
-Bronze. O endpoint Landing é exclusivamente estrutural, usado por `ddl --area
-landing` ou `ddl --area both`; `run`, `resume` e `import` nunca inserem linhas
-nele. `BD_ORIGEM`, `DBRO684`, `DLAN684`, Docker e as portas documentadas no guia
-de integração são somente a fixture local de testes, não requisitos da CLI.
+On Windows, `BulkFlowCLI.exe` exposes exactly the same subcommands and already
+includes Python and the project's packages. It does not include the ODBC Driver
+or BCP; those components remain installed on the executor.
 
-O parâmetro global `perimeter` aceita exatamente `DREADS`, `HOMOLOGAÇÃO` ou
-`CAPGV`. Eles sugerem, respectivamente, `u684`, `h684` e `s684` como usuário
-SQL, mas `source`, `bronze_destination` e `landing_destination` mantêm
-instância, porta, banco, schema, usuário e segredo independentes e editáveis.
+The current contract has a single data route: configured source → Bronze
+endpoint. The Landing endpoint is structure-only and is used by `ddl --area
+landing` or `ddl --area both`; `run`, `resume`, and `import` never insert rows
+into it. `BD_ORIGEM`, `DBRO684`, `DLAN684`, Docker, and the ports documented in
+the integration guide are only the local test fixture, not CLI requirements.
 
-O parâmetro global `cdc_retention_minutes` define a retenção do job de cleanup
-CDC na Origem. Seu default é `262800` minutos (seis meses, aproximadamente
-182,5 dias). Use um inteiro de `1` a `52494800`, sem ponto separador de milhar,
-por exemplo:
+The global `perimeter` parameter accepts exactly `DESENVOLVIMENTO`, `HOMOLOGAÇÃO`, or
+`PRODUÇÃO`; its default is `DESENVOLVIMENTO`. These values suggest `u684`,
+`h684`, and `s684`, respectively, as the SQL username, but `source`,
+`bronze_destination`, and `landing_destination` retain
+independent, editable instance, port, database, schema, username, and secret
+settings.
+
+The global `cdc_retention_minutes` parameter defines the retention period for
+the CDC cleanup job on the Source. Its default is `262800` minutes (six months,
+approximately 182.5 days). Use an integer from `1` through `52494800`, without
+a thousands separator, for example:
 
 ```json
 {
@@ -33,25 +37,27 @@ por exemplo:
 }
 ```
 
-O driver ODBC e o BCP são instalados no host que realmente executa a CLI, não
-nas instâncias SQL Server. Python e os pacotes também são instalados quando os
-scripts/launchers forem usados; `BulkFlowCLI.exe` já os incorpora. Antes dos
-exemplos abaixo, siga o guia de [Pré-requisitos do executor](PRE_REQUISITOS.md),
-que também relaciona as dependências de cada comando.
+The ODBC driver and BCP are installed on the host that actually runs the CLI,
+not on the SQL Server instances. Python and the packages are also installed
+when the scripts/launchers are used; `BulkFlowCLI.exe` already includes them.
+Before running the examples below, follow the
+[Executor prerequisites](PRE_REQUISITOS.md) guide, which also lists the
+dependencies of each command.
 
-Uma configuração salva pela GUI é o mesmo JSON consumido pela CLI. Não existe
-etapa de conversão ou exportação adicional.
+A configuration saved by the GUI is the same JSON consumed by the CLI. There
+is no conversion or additional export step.
 
-Os campos opcionais `tables[].source_database` e
-`tables[].destination_database` tornam o mapeamento salvo pela GUI explícito,
-mas não abrem conexões independentes por tabela nesta versão. Quando presentes,
-devem coincidir com `source.database` e `bronze_destination.database`. O motor
-rejeita a configuração se houver divergência. Para processar outro banco, use
-outro arquivo de configuração e outra execução.
+The optional `tables[].source_database` and
+`tables[].destination_database` fields make the mapping saved by the GUI
+explicit, but do not open independent per-table connections in this version.
+When present, they must match `source.database` and
+`bronze_destination.database`. The engine rejects a configuration when they
+differ. To process another database, use another configuration file and a
+separate execution.
 
 ## PowerShell
 
-Na raiz do projeto:
+From the project root:
 
 ```powershell
 & .\scripts\launchers\invoke-bcp.ps1 prerequisites --config .\examples\config.full.json
@@ -61,7 +67,7 @@ Na raiz do projeto:
 $engineExitCode = $LASTEXITCODE
 ```
 
-Com os binários distribuídos em `release/`:
+With the binaries distributed under `release/`:
 
 ```powershell
 .\release\BulkFlowCLI.exe prerequisites --config .\config.v2.json
@@ -70,13 +76,19 @@ Com os binários distribuídos em `release/`:
 .\release\BulkFlowCLI.exe run --config .\config.v2.json --confirm-load
 ```
 
-O EXE pode ser copiado para outra pasta. Perfis `bronze` e `landing` e o schema
-V2 estão incorporados; arquivos de configuração, perfis customizados e
-diretórios operacionais continuam externos e devem usar caminhos válidos no
+When `ddl --output` is omitted, the DDL directory defaults to
+`<project root>\Local\BulkFlow\ddl` both from source and from a portable EXE
+inside this project's `release` directory. An installed or standalone EXE
+uses `%LOCALAPPDATA%\BulkFlow\ddl`. Supplying `--output` explicitly continues
+to override this default.
+
+The EXE can be copied to another directory. The V2 schema and the `bronze` and
+`landing` profiles are embedded; configuration files, custom profiles, and
+operational directories remain external and must use paths valid on the
 executor.
 
-Para abrir a interface gráfica no Windows, use o mesmo ambiente Python ou o
-EXE:
+To open the graphical interface on Windows, use the same Python environment or
+the EXE:
 
 ```powershell
 python .\bcp_gui.py
@@ -84,9 +96,9 @@ python .\bcp_gui.py --config .\caminho\config.v2.json
 .\release\BulkFlowGUI.exe --config .\caminho\config.v2.json
 ```
 
-Quando o JSON usar o provedor `env`, capture cada senha sem eco antes dos
-comandos. O exemplo abaixo mantém referências separadas, mesmo quando o valor do
-laboratório é igual:
+When the JSON uses the `env` provider, capture each password without echoing it
+before running commands. The example below keeps separate references even when
+the lab uses the same value:
 
 ```powershell
 $sourceSecure = Read-Host 'Senha SQL da origem' -AsSecureString
@@ -102,9 +114,9 @@ Remove-Item Env:\BCP_SOURCE_SQL_PASSWORD, Env:\BCP_BRONZE_SQL_PASSWORD, Env:\BCP
 Remove-Variable sourceSecure, bronzeSecure, landingSecure
 ```
 
-Também é possível chamar o arquivo por caminho absoluto ou com `powershell
--File`/`pwsh -File`. Se o Python 3.10+ não estiver no `PATH`, indique somente o
-executável, sem opções adicionais:
+You can also invoke the file by absolute path or with `powershell
+-File`/`pwsh -File`. If Python 3.10+ is not on `PATH`, specify only the
+executable, with no additional options:
 
 ```powershell
 $env:BCP_PYTHON = "$PWD\.venv\Scripts\python.exe"
@@ -113,37 +125,37 @@ $env:BCP_PYTHON = "$PWD\.venv\Scripts\python.exe"
     --execution-id 12345678-1234-5678-9234-567812345678
 ```
 
-## Shell Linux
+## Linux shell
 
-Pré-requisitos do executor Linux:
+Linux executor prerequisites:
 
-- Python 3.10+ e as dependências de `requirements.txt`;
-- Microsoft ODBC Driver 18 (`msodbcsql18`) e, preferencialmente, BCP 18 ou
-  superior; uma build BCP 17 somente é aceita se oferecer `-Y` e `-u`. Nas
-  distribuições suportadas, o BCP é fornecido por `mssql-tools18`;
-- autenticação SQL por referência de segredo para o caminho homologado nesta
-  entrega.
+- Python 3.10+ and the dependencies in `requirements.txt`;
+- Microsoft ODBC Driver 18 (`msodbcsql18`) and preferably BCP 18 or later; a
+  BCP 17 build is accepted only if it provides `-Y` and `-u`. On supported
+  distributions, BCP is provided by `mssql-tools18`;
+- SQL authentication through a secret reference for the path qualified in this
+  release.
 
-O exemplo [`examples/config.linux-sql.json`](../examples/config.linux-sql.json)
-usa somente paths POSIX e referências de variáveis de ambiente. Ajuste os
-endpoints, usuários, tabelas e mounts antes de executar. Em particular:
+The [`examples/config.linux-sql.json`](../examples/config.linux-sql.json)
+example uses only POSIX paths and environment-variable references. Adjust its
+endpoints, users, tables, and mounts before execution. In particular:
 
-- `executor_directory` é o path gravável visto pelo processo Python;
-- `local_control_directory` é um path local e durável para o SQLite;
-- `destination_sql_directory` é a visão, pelo SQL Server de destino, dos mesmos
-  bytes de `executor_directory`. Em contêineres, normalmente são dois lados do
-  mesmo bind mount.
+- `executor_directory` is the writable path seen by the Python process;
+- `local_control_directory` is a local, durable path for SQLite;
+- `destination_sql_directory` is the destination SQL Server's view of the same
+  bytes in `executor_directory`. In containers, these are normally the two
+  sides of the same bind mount.
 
-Para execução Linux, comece pelo exemplo versionável
-[`examples/config.linux-sql.json`](../examples/config.linux-sql.json) e adapte
-endpoints, credenciais e caminhos ao ambiente real. Se o executor estiver em um
-contêiner, `executor_directory` e `destination_sql_directory` devem representar
-os dois lados do mesmo volume compartilhado. Mantenha `local_control_directory`
-em armazenamento local durável quando a execução precisar sobreviver à
-recriação do contêiner. Sem essa equivalência de mounts, a pré-validação de
-importação falha antes da carga.
+For Linux execution, start from the versionable
+[`examples/config.linux-sql.json`](../examples/config.linux-sql.json) example
+and adapt its endpoints, credentials, and paths to the actual environment. If
+the executor runs in a container, `executor_directory` and
+`destination_sql_directory` must represent both sides of the same shared
+volume. Keep `local_control_directory` on durable local storage when an
+execution must survive container recreation. Without equivalent mounts,
+import prevalidation fails before the load.
 
-Na raiz do projeto:
+From the project root:
 
 ```sh
 ./scripts/launchers/invoke-bcp.sh prerequisites --config ./examples/config.linux-sql.json
@@ -153,13 +165,13 @@ Na raiz do projeto:
 engine_exit_code=$?
 ```
 
-Em um desktop Linux com Tk e `DISPLAY` disponíveis, a interface também pode ser
-aberta com `python3 ./bcp_gui.py` ou `python3 ./bcp_gui.py --config
-./config.v2.json`. Em servidor sem sessão gráfica, use a CLI.
+On a Linux desktop with Tk and `DISPLAY` available, the interface can also be
+opened with `python3 ./bcp_gui.py` or `python3 ./bcp_gui.py --config
+./config.v2.json`. Use the CLI on a server without a graphical session.
 
-Se o arquivo ainda não tiver permissão de execução após ser copiado, aplique uma
-vez `chmod +x scripts/launchers/invoke-bcp.sh`. Para selecionar um ambiente
-virtual explicitamente:
+If the file is not executable after being copied, run
+`chmod +x scripts/launchers/invoke-bcp.sh` once. To select a virtual
+environment explicitly:
 
 ```sh
 BCP_PYTHON="$PWD/.venv/bin/python" \
@@ -169,9 +181,9 @@ BCP_PYTHON="$PWD/.venv/bin/python" \
   --output ./ddl
 ```
 
-Para autenticação SQL não interativa, injete as variáveis referenciadas no JSON
-por um gerenciador de segredos do executor. Para uma sessão Bash interativa, uma
-opção que evita registrar o valor no histórico é:
+For noninteractive SQL authentication, inject the variables referenced in the
+JSON through the executor's secret manager. For an interactive Bash session,
+one option that keeps the value out of shell history is:
 
 ```bash
 read -r -s -p 'Senha SQL da origem: ' BCP_SOURCE_SQL_PASSWORD; printf '\n'
@@ -184,146 +196,146 @@ export BCP_LANDING_SQL_PASSWORD
 unset BCP_SOURCE_SQL_PASSWORD BCP_BRONZE_SQL_PASSWORD BCP_LANDING_SQL_PASSWORD
 ```
 
-No Linux, o motor omite `-P` e responde ao prompt mascarado do `bcp` por uma
-PTY privada. A senha não entra em argv, no ambiente do processo `bcp`, em
-arquivo temporário ou no log; a redação central também cobre uma eventual
-saída indevida do utilitário. Senhas vazias, com NUL ou quebra de linha são
-recusadas antes de iniciar o processo. O modo `windows_credentials` permanece
-exclusivo do Windows; autenticação integrada no Linux depende de uma instalação
-Kerberos/ODBC homologada e não é presumida por este exemplo.
+On Linux, the engine omits `-P` and responds to the masked `bcp` password
+prompt through a private PTY. The password does not appear in argv, the `bcp`
+process environment, a temporary file, or the log; centralized redaction also
+covers any accidental utility output. Empty passwords and passwords containing
+a NUL or newline are rejected before the process starts. The
+`windows_credentials` mode remains Windows-only; integrated authentication on
+Linux depends on a qualified Kerberos/ODBC installation and is not assumed by
+this example.
 
-Instruções oficiais de instalação:
+Official installation instructions:
 
-- [ODBC e ferramentas `sqlcmd`/`bcp` no Linux](https://learn.microsoft.com/sql/linux/install-upgrade/setup-tools);
-- [guia completo de pré-requisitos e verificação deste motor](PRE_REQUISITOS.md);
-- [prompt seguro de senha do `bcp` sem `-P`](https://learn.microsoft.com/sql/tools/bcp-utility#-p-password).
+- [ODBC and the `sqlcmd`/`bcp` tools on Linux](https://learn.microsoft.com/sql/linux/install-upgrade/setup-tools);
+- [complete prerequisite and verification guide for this engine](PRE_REQUISITOS.md);
+- [secure `bcp` password prompt without `-P`](https://learn.microsoft.com/sql/tools/bcp-utility#-p-password).
 
-`BCP_PYTHON` aceita o nome ou o caminho de um único executável. Não inclua
-opções, aspas literais ou uma linha de comando nessa variável.
+`BCP_PYTHON` accepts the name or path of a single executable. Do not include
+options, literal quotation marks, or a command line in that variable.
 
-## Contrato operacional e segredos
+## Operational contract and secrets
 
-Os argumentos são os da CLI Python: `prerequisites`, `plan`, `ddl`, `run`,
-`resume`, `import`, `status` e `migrate-control`. Use `--help` no launcher para a lista principal e
-`<comando> --help` para os parâmetros de cada operação. A opção global
-`--verbose`, quando usada, deve aparecer antes do comando.
+The arguments are those of the Python CLI: `prerequisites`, `plan`, `ddl`,
+`run`, `resume`, `import`, `status`, and `migrate-control`. Use `--help` on the
+launcher for the main list and `<command> --help` for each operation's
+parameters. When used, the global `--verbose` option must appear before the
+command.
 
-O controle SQL da Bronze não é temporário: no laboratório, o contrato exclusivo
-é `DBRO684.dbo.execucao`, `DBRO684.dbo.execucao_tabela`,
-`DBRO684.dbo.execucao_lote` e a tabela técnica
-`DBRO684.dbo.versao_esquema`. O estado local
-usa `controle_transferencia.sqlite3`, `PRAGMA user_version=5` e as tabelas
-`metadados`, `execucao`, `execucao_tabela`, `execucao_lote` e
+Bronze SQL control is not temporary: in the lab, the exclusive contract is
+`DBRO684.dbo.execucao`, `DBRO684.dbo.execucao_tabela`,
+`DBRO684.dbo.execucao_lote`, and the technical table
+`DBRO684.dbo.versao_esquema`. Local state uses
+`controle_transferencia.sqlite3`, `PRAGMA user_version=5`, and the tables
+`metadados`, `execucao`, `execucao_tabela`, `execucao_lote`, and
 `tentativa_lote`.
 
-Em executor Windows, informe em `artifact_reader_sids` somente os SIDs
-específicos das contas de serviço SQL que realmente precisem ler os mesmos
-arquivos. O default é uma lista vazia; executor, SYSTEM e Administradores já são
-implícitos. Grupos como Everyone, Authenticated Users e BUILTIN\Users são
-rejeitados. Se uma conexão SMB usa uma identidade efetiva diferente do SID do
-processo local (por exemplo, conta de máquina), informe exclusivamente esse SID
-confiável em `artifact_writer_sids`; ele recebe controle total e passa a compor
-a fronteira de confiança. A permissão de share/UNC continua sendo uma
-configuração externa, e o diretório pai de `executor_directory` não pode
-permitir sua substituição por terceiros.
+On a Windows executor, specify in `artifact_reader_sids` only the specific SIDs
+of SQL service accounts that actually need to read the same files. The default
+is an empty list; the executor, SYSTEM, and Administrators are already
+implicit. Groups such as Everyone, Authenticated Users, and BUILTIN\Users are
+rejected. If an SMB connection uses an effective identity other than the local
+process SID (for example, a machine account), specify only that trusted SID in
+`artifact_writer_sids`; it receives full control and becomes part of the trust
+boundary. Share/UNC permissions remain an external configuration, and third
+parties must not be able to replace the parent of `executor_directory`.
 
-No POSIX, use um diretório dedicado, pertencente ao executor, sem escrita de
-grupo/terceiros. Se o SQL usa outro UID, pré-provisione um GID compartilhado e
-`setgid`, por exemplo modo `2750`; arquivos publicados ficam `0440`. O motor
-preserva o bit `setgid`, mas não executa `chgrp`. Executor e SQL precisam ver o
-mesmo GID/ACL, inclusive através de bind mount. CIFS/NFS que ignore ou recuse
-`chmod`, ownership, locks ou semântica de rename falha fechado e deve ser
-homologado no ambiente real.
+On POSIX, use a dedicated executor-owned directory without group/other write
+access. If SQL uses another UID, pre-provision a shared GID and `setgid`, for
+example mode `2750`; published files use `0440`. The engine preserves the
+`setgid` bit but does not run `chgrp`. The executor and SQL must see the same
+GID/ACL, including through a bind mount. CIFS/NFS storage that ignores or
+rejects `chmod`, ownership, locks, or rename semantics fails closed and must be
+qualified in the actual environment.
 
-Os launchers não imprimem a lista de argumentos. Mesmo assim, nunca passe senha,
-token ou outro segredo pela linha de comando: a linha pode ficar visível no
-histórico do shell e na lista de processos. A CLI não possui parâmetro de senha.
-Configure apenas uma referência a segredo no JSON (`prompt`, `env` ou
-`windows_credential_manager`), conforme os exemplos de autenticação do projeto.
-O último provedor é exclusivo do Windows. Variável de ambiente não equivale a
-criptografia; limite sua vida útil e remova-a após a execução.
+The launchers do not print the argument list. Even so, never pass a password,
+token, or other secret on the command line: it may remain visible in shell
+history and the process list. The CLI has no password parameter. Configure
+only a secret reference in the JSON (`prompt`, `env`, or
+`windows_credential_manager`), as shown in the project's authentication
+examples. The last provider is Windows-only. An environment variable is not
+encryption; limit its lifetime and remove it after execution.
 
-No laboratório, os três endpoints usam `u684`, mas não reutilizam a mesma
-referência por contrato: use `BCP_SOURCE_SQL_PASSWORD`,
-`BCP_BRONZE_SQL_PASSWORD` e `BCP_LANDING_SQL_PASSWORD`. Em ambientes reais,
-cada referência pode resolver para uma senha completamente diferente.
+In the lab, all three endpoints use `u684`, but they do not share one reference
+by contract: use `BCP_SOURCE_SQL_PASSWORD`, `BCP_BRONZE_SQL_PASSWORD`, and
+`BCP_LANDING_SQL_PASSWORD`. In actual environments, each reference may resolve
+to an entirely different password.
 
-Os códigos são preservados sem conversão:
+Exit codes are preserved without conversion:
 
-- `0`: sucesso;
-- `1`: falha global ou execução interrompida;
-- `2`: resultado parcial, estado ainda não concluído ou argumentos inválidos;
-- `127`: o próprio launcher não encontrou o Python ou a entrada da CLI.
+- `0`: success;
+- `1`: global failure or interrupted execution;
+- `2`: partial result, state not yet complete, or invalid arguments;
+- `127`: the launcher itself could not find Python or the CLI entry point.
 
-Para `prerequisites`, código `2` também indica que o Driver ODBC configurado ou
-o BCP compatível não foi encontrado. O comando imprime um relatório JSON e não
-abre conexão com SQL Server.
+For `prerequisites`, code `2` also indicates that the configured ODBC Driver or
+a compatible BCP was not found. The command prints a JSON report and does not
+open a SQL Server connection.
 
-## Ordem operacional
+## Operational sequence
 
-1. Execute `prerequisites`.
-2. Execute `plan` e revise usuário, instância, porta e banco de Origem, Landing
-   e Bronze, além da estratégia por tabela.
-3. Gere e revise `ddl`; aplique-o com `--apply --confirm` em `both` quando a
-   Landing também precisar da estrutura.
-4. Execute `run --confirm-load` e preserve o `execution_id` impresso.
-5. Em caso de pane, use `resume` com o mesmo UUID.
+1. Run `prerequisites`.
+2. Run `plan` and review the effective Source, Landing, and Bronze username,
+   instance, port, and database, as well as each table's strategy.
+3. Generate and review `ddl`; apply it with `--apply --confirm` for `both` when
+   Landing also requires the structure.
+4. Run `run --confirm-load` and retain the printed `execution_id`.
+5. After a disruption, use `resume` with the same UUID.
 
-Com `create_structure_if_needed=true` — default — a estrutura Bronze é criada
-ou completada de forma idempotente durante `run`; com `false`, o motor apenas
-valida a estrutura existente e falha/pula a tabela se faltarem objetos. A etapa
-DDL explícita é recomendada para revisão e é a responsável pela estrutura
-Landing. A sequência completa está em
-[Ordem do processamento](ORDEM_PROCESSAMENTO.md).
+With `create_structure_if_needed=true`—the default—the Bronze structure is
+created or completed idempotently during `run`; with `false`, the engine only
+validates the existing structure and fails/skips the table when objects are
+missing. The explicit DDL step is recommended for review and is responsible
+for the Landing structure. The full sequence is documented in
+[Processing sequence](ORDEM_PROCESSAMENTO.md).
 
-## Comportamentos relevantes à automação
+## Automation-relevant behavior
 
-- `enable_cdc=true` é avaliado por tabela. O CDC do banco é
-  verificado/habilitado uma única vez e apenas quando ao menos uma tabela o
-  solicita. Se o job de cleanup já existir, a retenção é ajustada/confirmada
-  nesse preflight. Sem tabela marcada, não há consulta ou alteração de
-  CDC/retenção.
-- se o job ainda não existir em um banco recém-habilitado, a retenção fica
-  pendente até a primeira tabela CDC ser habilitada. O ajuste e a confirmação
-  acontecem imediatamente depois e antes de qualquer BCP; as demais tabelas
-  usam o resultado em cache.
-- quando a retenção muda, o motor chama `sys.sp_cdc_change_job`, reinicia
-  somente o job `cleanup` por `sys.sp_cdc_stop_job`/`sys.sp_cdc_start_job` e
-  confirma o novo valor antes do BCP. O job `capture` não é reiniciado.
-- a CLI registra `cdc_database`, `cdc_retention` e `cdc_table`; o relatório JSON
-  mantém a evidência consolidada em `cdc_database`.
-- se o preflight CDC ou a confirmação de `cdc_retention_minutes` falhar, as
-  tabelas com `enable_cdc=true` afetadas são puladas e registradas, mas as
-  tabelas sem CDC continuam sendo processadas. Uma falha isolada na ativação
-  de uma tabela pula somente essa tabela.
-- `partition_column` é opcional por tabela. A GUI sugere `dh_carga` e deixa a
-  opção habilitada ao adicionar uma tabela. Quando presente, gera o contrato
-  mensal de particionamento nos DDLs Bronze e Landing; quando ausente, nenhum
-  objeto de particionamento é criado.
-- nos perfis padrão Bronze e Landing, `dh_carga` usa explicitamente o horário
-  civil de Brasília (`E. South America Standard Time`) obtido a partir de UTC e
-  convertido para `DATETIME2(7)`, sem depender do fuso do SQL Server. Um perfil
-  customizado pode definir outra expressão e permanece agnóstico a fuso.
-- os defaults operacionais atuais incluem `max_file_bytes=157286400`,
-  `control_schema=dbo` (único valor aceito) e
+- `enable_cdc=true` is evaluated per table. Database CDC is checked/enabled
+  once and only when at least one table requests it. If the cleanup job already
+  exists, retention is adjusted/confirmed in this preflight. Without a marked
+  table, no CDC/retention query or change occurs.
+- If the job does not yet exist in a newly enabled database, retention remains
+  pending until the first CDC table is enabled. Adjustment and confirmation
+  occur immediately afterward and before any BCP operation; the remaining
+  tables use the cached result.
+- When retention changes, the engine calls `sys.sp_cdc_change_job`, restarts
+  only the `cleanup` job through `sys.sp_cdc_stop_job`/`sys.sp_cdc_start_job`,
+  and confirms the new value before BCP. The `capture` job is not restarted.
+- The CLI records `cdc_database`, `cdc_retention`, and `cdc_table`; the JSON
+  report retains consolidated evidence under `cdc_database`.
+- If CDC preflight or confirmation of `cdc_retention_minutes` fails, affected
+  tables with `enable_cdc=true` are skipped and recorded, while non-CDC tables
+  continue processing. An isolated table-enablement failure skips only that
+  table.
+- `partition_column` is optional per table. The GUI suggests `dh_carga` and
+  enables the option when adding a table. When present, it generates the
+  monthly partitioning contract in the Bronze and Landing DDL; when absent, no
+  partitioning object is created.
+- In the standard Bronze and Landing profiles, `dh_carga` explicitly uses
+  Brasília civil time (`E. South America Standard Time`), derived from UTC and
+  converted to `DATETIME2(7)`, independently of the SQL Server time zone. A
+  custom profile may define another expression and remains time-zone agnostic.
+- Current operational defaults include `max_file_bytes=157286400`,
+  `control_schema=dbo` (the only accepted value), and
   `structure.secondary_indexes_phase=before_load`.
-- `DIRECT_KEYLESS` usa contagem aproximada por metadados para pré-admissão, sem
-  `COUNT_BIG` na Origem. O número real do BCP é validado contra o limite global
-  antes da importação.
-- antes de carregar cada tabela, o motor verifica o espaço dos volumes da
-  Bronze individualmente; dados e log não têm suas capacidades somadas. A menor
-  disponibilidade é a limitante e todos os volumes precisam comportar o
-  requisito. Insuficiência comprovada registra a tabela como pulada e segue
-  para a próxima. Isso também vale para `import --manifest`: somente os bytes
-  reais dos blocos ainda não confirmados, acrescidos do fator de segurança, são
-  validados antes de criar controle SQL, aplicar DDL ou executar `OPENROWSET`.
-- `run`, `resume` e `import` nunca carregam a Landing.
+- `DIRECT_KEYLESS` uses an approximate metadata row count for pre-admission,
+  without `COUNT_BIG` on the Source. The actual BCP count is checked against
+  the global limit before import.
+- Before loading each table, the engine checks Bronze volumes individually;
+  data and log capacity are not added together. The least available volume is
+  the constraint, and every volume must satisfy the requirement. Confirmed
+  insufficiency records the table as skipped and proceeds to the next one.
+  This also applies to `import --manifest`: only the actual bytes of blocks not
+  yet confirmed, plus the safety factor, are checked before creating SQL
+  control, applying DDL, or executing `OPENROWSET`.
+- `run`, `resume`, and `import` never load Landing.
 
-## Falha e retomada
+## Failure and resume
 
-Depois de uma falha de `run`, não execute outro `run`: preserve o SQLite, os
-artefatos e o controle SQL e use `resume` com o mesmo UUID. O `status` consulta
-o controle local; `query_control.sql` comprova os commits na Bronze.
+After a `run` failure, do not run another `run`: preserve SQLite, the
+artifacts, and SQL control, then use `resume` with the same UUID. `status`
+queries local control; `query_control.sql` proves the commits in Bronze.
 
 ```powershell
 & .\scripts\launchers\invoke-bcp.ps1 status --config .\config.v2.json --execution-id UUID
@@ -335,7 +347,7 @@ o controle local; `query_control.sql` comprova os commits na Bronze.
 ./scripts/launchers/invoke-bcp.sh resume --config ./config.v2.json --execution-id UUID --confirm-load
 ```
 
-Uma falha no BCP refaz o bloco lógico incompleto; ela não continua de um byte
-ou linha dentro do `.partial`. Na carga, dados, registro do bloco e checkpoint
-são confirmados ou revertidos juntos. Consulte o runbook completo em
-[Falhas, checkpoints e retomada](FALHAS_E_RETOMADA.md).
+A BCP failure retries the incomplete logical block; it does not continue from
+a byte or row inside the `.partial` file. During load, data, block record, and
+checkpoint are committed or rolled back together. See the complete runbook in
+[Failures, checkpoints, and resume](FALHAS_E_RETOMADA.md).

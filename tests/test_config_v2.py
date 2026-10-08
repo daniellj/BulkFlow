@@ -32,7 +32,7 @@ class ConfigExamplesTests(unittest.TestCase):
             with self.subTest(path=path.name):
                 config = read_config(path)
                 self.assertEqual(config["config_version"], CONFIG_VERSION)
-                self.assertEqual(config["perimeter"], "DREADS")
+                self.assertEqual(config["perimeter"], "DESENVOLVIMENTO")
                 self.assertEqual(config["active_destination"], "bronze")
                 self.assertEqual(validate_config(config), config)
 
@@ -259,23 +259,43 @@ class ConfigValidationTests(unittest.TestCase):
                 with self.assertRaisesRegex(ConfigError, "desconhecido|desconhecidos"):
                     validate_config(value)
 
-    def test_perimeter_defaults_to_dreads_and_requires_exact_enum(self):
+    def test_perimeter_defaults_to_development_and_requires_exact_enum(self):
         value = copy.deepcopy(self.full)
         value.pop("perimeter")
-        self.assertEqual(validate_config(value)["perimeter"], "DREADS")
+        self.assertEqual(validate_config(value)["perimeter"], "DESENVOLVIMENTO")
 
-        for invalid in ("dreads", "Homologação", "HOMOLOGACAO", "CAPGV ", "OUTRO"):
+        for invalid in (
+            "desenvolvimento",
+            "Homologação",
+            "HOMOLOGACAO",
+            "produção",
+            "PRODUCAO",
+            "PRODUÇÃO ",
+            "OUTRO",
+        ):
             with self.subTest(invalid=invalid):
                 rejected = copy.deepcopy(self.full)
                 rejected["perimeter"] = invalid
                 with self.assertRaisesRegex(ConfigError, "perimeter"):
                     validate_config(rejected)
 
+    def test_previous_perimeter_values_are_not_accepted(self):
+        previous_values = (
+            "".join(map(chr, (68, 82, 69, 65, 68, 83))),
+            "".join(map(chr, (67, 65, 80, 71, 86))),
+        )
+        for previous_value in previous_values:
+            with self.subTest(previous_value=previous_value):
+                rejected = copy.deepcopy(self.full)
+                rejected["perimeter"] = previous_value
+                with self.assertRaisesRegex(ConfigError, "perimeter"):
+                    validate_config(rejected)
+
     def test_perimeter_supplies_only_missing_sql_usernames(self):
         expected_by_perimeter = {
-            "DREADS": "u684",
+            "DESENVOLVIMENTO": "u684",
             "HOMOLOGAÇÃO": "h684",
-            "CAPGV": "s684",
+            "PRODUÇÃO": "s684",
         }
         sql_example = read_config(EXAMPLES / "config.auth-sql.json")
         endpoints = ("source", "bronze_destination", "landing_destination")
@@ -292,7 +312,7 @@ class ConfigValidationTests(unittest.TestCase):
                 )
 
         custom = copy.deepcopy(sql_example)
-        custom["perimeter"] = "CAPGV"
+        custom["perimeter"] = "PRODUÇÃO"
         custom["source"]["authentication"]["username"] = "custom_source"
         custom["bronze_destination"]["authentication"]["username"] = "custom_bronze"
         custom["landing_destination"]["authentication"]["username"] = "custom_landing"

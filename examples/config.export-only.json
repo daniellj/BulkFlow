@@ -1,6 +1,6 @@
 {
   "config_version": 2,
-  "perimeter": "DREADS",
+  "perimeter": "DESENVOLVIMENTO",
   "scope": "Exemplo somente exportação sem destino",
   "source": {
     "instance": "SQL-ORIGEM\\INST01",
@@ -13,8 +13,8 @@
   "active_destination": "bronze",
   "execute_import": false,
   "cdc_retention_minutes": 262800,
-  "executor_directory": "C:\\CAMINHO_DO_PROJETO\\Local\\MotorDados\\bcp-data",
-  "local_control_directory": "C:\\CAMINHO_DO_PROJETO\\Local\\MotorDados\\.bcp-control",
+  "executor_directory": "C:\\CAMINHO_DO_PROJETO\\Local\\BulkFlow\\bcp-data",
+  "local_control_directory": "C:\\CAMINHO_DO_PROJETO\\Local\\BulkFlow\\.bcp-control",
   "delete_confirmed_files": true,
   "tables": [
     {"source_table": "TABELA_ORIGEM_01", "destination_table": "bd_origem_tabela_origem_01", "structure_profile": "bronze", "watermark": null},

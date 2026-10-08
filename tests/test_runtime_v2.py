@@ -21,7 +21,7 @@ class RuntimePathTests(unittest.TestCase):
     def test_source_execution_preserves_explicit_project_root(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            expected = root.resolve() / "Local" / "MotorDados"
+            expected = root.resolve() / "Local" / "BulkFlow"
             self.assertEqual(runtime_data_root(root), expected)
             self.assertEqual(
                 runtime_control_directory(root), expected / ".bcp-control"
@@ -33,7 +33,7 @@ class RuntimePathTests(unittest.TestCase):
     def test_default_source_directories_are_created_idempotently(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            expected_root = root.resolve() / "Local" / "MotorDados"
+            expected_root = root.resolve() / "Local" / "BulkFlow"
             expected = (
                 expected_root / ".bcp-control",
                 expected_root / "bcp-data",
@@ -55,10 +55,35 @@ class RuntimePathTests(unittest.TestCase):
                 ):
                     ddl = runtime_ddl_directory()
                     config = runtime_config_directory()
-        expected = (local_app_data / "MotorDados").resolve()
+        expected = (local_app_data / "BulkFlow").resolve()
         self.assertEqual(root, expected)
         self.assertEqual(ddl, expected / "ddl")
         self.assertEqual(config, expected / "config")
+
+    def test_frozen_release_in_source_tree_uses_exact_project_local_defaults(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            project_root = Path(temporary) / "BulkFlow"
+            release_directory = project_root / "release"
+            release_directory.mkdir(parents=True)
+            (project_root / "bcp_bronze.py").touch()
+            (project_root / "templates").mkdir()
+            (project_root / "schemas").mkdir()
+            executable = release_directory / "BulkFlowGUI.exe"
+            executable.touch()
+
+            with patch.object(sys, "frozen", True, create=True), patch.object(
+                sys, "executable", str(executable)
+            ):
+                control, export, ddl = ensure_runtime_directories()
+                root = runtime_data_root()
+                config = runtime_config_directory()
+            expected_root = project_root.resolve() / "Local" / "BulkFlow"
+            self.assertEqual(root, expected_root)
+            self.assertEqual(control, expected_root / ".bcp-control")
+            self.assertEqual(export, expected_root / "bcp-data")
+            self.assertEqual(ddl, expected_root / "ddl")
+            self.assertEqual(config, expected_root / "config")
+            self.assertTrue(all(path.is_dir() for path in (control, export, ddl)))
 
 
 class BcpResolutionTests(unittest.TestCase):

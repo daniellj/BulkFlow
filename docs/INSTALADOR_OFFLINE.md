@@ -1,71 +1,71 @@
-# Instalador offline para Windows
+**English** | [Português (Brasil)](INSTALADOR_OFFLINE.pt-BR.md)
 
-## Resultado para o usuário final
+# Offline installer for Windows
 
-`Setup-BulkFlow.exe` é o pacote recomendado para uma estação Windows x64
-nova ou sem os clientes SQL necessários. Ele reúne, em um único arquivo:
+## End-user outcome
 
-- `BulkFlowGUI.exe` e `BulkFlowCLI.exe`, já com Python, Tk e as bibliotecas
-  Python do projeto;
+`Setup-BulkFlow.exe` is the recommended package for a new Windows x64
+workstation or one without the required SQL clients. It combines the following
+components in a single file:
+
+- `BulkFlowGUI.exe` and `BulkFlowCLI.exe`, with Python, Tk, and the project's
+  Python libraries already included;
 - Microsoft ODBC Driver 18 for SQL Server;
-- Microsoft Command Line Utilities, que fornece o utilitário `bcp`.
+- Microsoft Command Line Utilities, which provides the `bcp` utility.
 
-O instalador funciona sem acesso à internet. Os componentes Microsoft ficam
-incorporados como instaladores oficiais e são instalados no Windows; eles não
-são copiados para dentro dos executáveis da aplicação nem alterados pelo
-projeto.
+The installer works without internet access. The Microsoft components are
+embedded as official installers and installed in Windows; they are not copied
+into the application executables or modified by the project.
 
-Depois da instalação, o operador não precisa instalar Python, executar `pip`
-ou localizar manualmente o BCP. O Driver ODBC e o BCP continuam sendo
-componentes nativos do sistema, agora provisionados pelo próprio pacote
-offline.
+After installation, the operator does not need to install Python, run `pip`, or
+locate BCP manually. The ODBC Driver and BCP remain native system components,
+now provisioned by the offline package itself.
 
-Os dois EXEs avulsos continuam disponíveis para distribuição portátil. Nessa
-modalidade, o administrador ainda precisa instalar o Driver ODBC e o BCP por
-outro meio.
+The two standalone EXEs remain available for portable distribution. In that
+mode, an administrator must still install the ODBC Driver and BCP separately.
 
-## Componentes fixados nesta entrega
+## Components pinned in this release
 
-| Componente | Versão do pacote offline |
+| Component | Offline package version |
 |---|---:|
 | BulkFlow | 2.0.0 |
 | Microsoft ODBC Driver 18 for SQL Server (x64) | 18.7.1.1 |
 | Microsoft Command Line Utilities/BCP (x64) | 17.0.4055.5 |
 
-A build 17 do BCP incluída nesta entrega foi selecionada porque sua ajuda
-comprova os controles de segurança TLS `-Y` e `-u` exigidos pelo motor. O
-instalador não baixa versões mais recentes durante a execução. Atualizar um
-componente exige gerar e homologar uma nova entrega.
+BCP build 17 included in this release was selected because its help output
+confirms support for the `-Y` and `-u` TLS security controls required by the
+engine. The installer does not download newer versions while it runs. Updating
+a component requires building and qualifying a new release.
 
-Fontes oficiais:
+Official sources:
 
-- [Download do Microsoft ODBC Driver for SQL Server](https://learn.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server?view=sql-server-ver17);
-- [requisitos, instalação, licença e propriedade `APPGUID` do Driver ODBC](https://learn.microsoft.com/en-us/sql/connect/odbc/windows/system-requirements-installation-and-driver-files?view=sql-server-ver17);
-- [download e instalação do utilitário BCP](https://learn.microsoft.com/en-us/sql/tools/bcp/bcp-download-install?view=sql-server-ver17).
+- [Download Microsoft ODBC Driver for SQL Server](https://learn.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server?view=sql-server-ver17);
+- [ODBC Driver requirements, installation, license, and `APPGUID` property](https://learn.microsoft.com/en-us/sql/connect/odbc/windows/system-requirements-installation-and-driver-files?view=sql-server-ver17);
+- [Download and install the BCP utility](https://learn.microsoft.com/en-us/sql/tools/bcp/bcp-download-install?view=sql-server-ver17).
 
-## Instalação interativa
+## Interactive installation
 
-1. Copie `Setup-BulkFlow.exe` para a estação Windows x64 por um canal
-   controlado.
-2. Confira o hash SHA-256 publicado com a entrega.
-3. Execute o instalador e confirme a solicitação do Controle de Conta de
-   Usuário (UAC). A elevação é necessária para instalar em `Program Files` e
-   registrar os componentes Microsoft para a máquina.
-4. Leia e aceite os termos de licença exibidos pelo instalador.
-5. Selecione **Instalar** e aguarde a confirmação de conclusão.
-6. Abra a interface pelo atalho **BulkFlow** ou use `BulkFlowCLI.exe` em um
-   terminal.
-7. Antes do primeiro planejamento, execute **Verificar pré-requisitos** na GUI
-   ou o comando `prerequisites` da CLI.
+1. Copy `Setup-BulkFlow.exe` to the Windows x64 workstation through a
+   controlled channel.
+2. Verify the SHA-256 hash published with the release.
+3. Run the installer and approve the User Account Control (UAC) prompt.
+   Elevation is required to install under `Program Files` and register the
+   Microsoft components for the machine.
+4. Read and accept the license terms displayed by the installer.
+5. Select **Install** and wait for confirmation that installation is complete.
+6. Open the interface through the **BulkFlow** shortcut, or run
+   `BulkFlowCLI.exe` in a terminal.
+7. Before the first planning operation, select **Check prerequisites** in the
+   GUI or run the CLI `prerequisites` command.
 
-Nenhuma senha de banco é pedida ou armazenada pelo instalador. As credenciais
-de Origem, Bronze e Landing continuam sendo solicitadas em tempo de operação,
-com a senha mascarada e independente para cada conexão.
+The installer does not request or store database passwords. Source, Bronze,
+and Landing credentials continue to be requested at operation time, with an
+independent masked password for each connection.
 
-## Instalação silenciosa
+## Silent installation
 
-Abra PowerShell ou o prompt de comando com a política de elevação apropriada e
-execute:
+Open PowerShell or Command Prompt with the appropriate elevation policy and
+run:
 
 ```powershell
 New-Item -ItemType Directory -Force C:\Logs\BulkFlow | Out-Null
@@ -74,77 +74,77 @@ New-Item -ItemType Directory -Force C:\Logs\BulkFlow | Out-Null
 $exitCode = $LASTEXITCODE
 ```
 
-Interprete os códigos de retorno do instalador e dos pacotes MSI:
+Interpret installer and MSI package return codes as follows:
 
-- `0`: concluído sem solicitação de reinicialização;
-- `3010`: concluído; reinicialização necessária;
-- `1641`: concluído; reinicialização iniciada pelo instalador;
-- qualquer outro valor: falha; consulte o log indicado.
+- `0`: completed without a restart request;
+- `3010`: completed; a restart is required;
+- `1641`: completed; the installer initiated a restart;
+- any other value: failure; review the specified log.
 
-Em implantação silenciosa, a organização que distribui o pacote é responsável
-por revisar e aceitar previamente os termos de licença dos componentes
-Microsoft. Não use o modo silencioso como forma de omitir essa aprovação.
+For silent deployment, the organization distributing the package is
+responsible for reviewing and accepting the Microsoft component license terms
+in advance. Do not use silent mode as a way to bypass that approval.
 
-O instalador é integralmente offline: ausência de rede não muda o conteúdo nem
-faz a instalação procurar pacotes externos.
+The installer is fully offline: lack of network connectivity does not change
+its contents or cause it to search for external packages.
 
-## Diretórios e dados preservados
+## Directories and retained data
 
-Arquivos imutáveis da aplicação são instalados, por padrão, em:
+Immutable application files are installed by default under:
 
 ```text
 C:\Program Files\BulkFlow\
 ```
 
-Arquivos mutáveis do usuário ficam fora de `Program Files`, por padrão em:
+Mutable user files remain outside `Program Files`, by default under:
 
 ```text
-%LOCALAPPDATA%\MotorDados\
+%LOCALAPPDATA%\BulkFlow\
 ├── bcp-data\
 ├── .bcp-control\
 ├── ddl\
 └── config\
 ```
 
-Esse layout é específico da aplicação congelada/instalada. Ao executar a GUI
-diretamente pelo código-fonte, os três diretórios operacionais equivalentes
-ficam em `<raiz do projeto>\Local\MotorDados`; assim, o layout do workspace não
-força o executável instalado a gravar em `Program Files`.
+This layout applies to the installed application or to a standalone frozen
+copy. When the GUI runs directly from source—or when the portable EXE is run
+from that source tree's `release` directory—the three equivalent operational
+directories are under `<project root>\Local\BulkFlow`. This prevents an
+installed executable from attempting to write under `Program Files`.
 
-Essa separação permite executar a aplicação sem conceder escrita na pasta do
-programa. A configuração ainda pode apontar diretórios operacionais para outro
-local autorizado, inclusive o compartilhamento exigido pelo SQL Server Bronze.
+This separation allows the application to run without write access to its
+program directory. Configuration may still point operational directories to
+another authorized location, including the share required by the Bronze SQL
+Server.
 
-Reparo, atualização e desinstalação preservam os artefatos operacionais em
-`%LOCALAPPDATA%\MotorDados`, inclusive configurações, manifestos, arquivos BCP
-e checkpoints. A desinstalação remove a aplicação, mas não remove
-automaticamente o Driver ODBC e as Command Line Utilities compartilhadas com
-outros programas. Para apagar dados de trabalho, faça uma revisão explícita e
-uma remoção separada depois de confirmar que não existe execução retomável.
+Repair, upgrade, and uninstall operations preserve operational artifacts under
+`%LOCALAPPDATA%\BulkFlow`, including configurations, manifests, BCP files, and
+checkpoints. Uninstall removes the application, but does not automatically
+remove the ODBC Driver and Command Line Utilities shared with other programs.
+To delete working data, review and remove it separately only after confirming
+that no resumable execution remains.
 
-## Reparo, atualização e desinstalação
+## Repair, upgrade, and uninstall
 
-- **Reparo:** execute novamente o mesmo `Setup-BulkFlow.exe` ou use
-  **Aplicativos instalados** no Windows. O reparo recompõe arquivos da
-  aplicação sem apagar os dados do usuário.
-- **Atualização:** execute o instalador da nova entrega. O pacote aplica as
-  regras de versão e não deve permitir substituir silenciosamente uma versão
-  mais nova por uma antiga.
-- **Desinstalação:** use **Configurações > Aplicativos > Aplicativos
-  instalados**. Os clientes Microsoft compartilhados e os dados operacionais
-  são preservados conforme descrito acima.
+- **Repair:** run the same `Setup-BulkFlow.exe` again, or use **Installed
+  apps** in Windows. Repair restores application files without deleting user
+  data.
+- **Upgrade:** run the installer from the new release. The package applies its
+  version rules and must not silently replace a newer version with an older
+  one.
+- **Uninstall:** use **Settings > Apps > Installed apps**. Shared Microsoft
+  clients and operational data are preserved as described above.
 
-Homologue explicitamente os três caminhos antes de distribuir uma atualização.
-Não considere a simples sobreposição manual dos EXEs uma atualização do produto
-instalado.
+Explicitly qualify all three paths before distributing an upgrade. Do not
+treat manually overwriting the EXEs as an upgrade of the installed product.
 
-## Logs e diagnóstico
+## Logs and diagnostics
 
-Para uma instalação assistida, o bootstrapper cria seus logs no diretório
-temporário do Windows. Para suporte e automação, prefira informar `/log` e um
-caminho protegido e persistente, como no exemplo de instalação silenciosa.
+For an attended installation, the bootstrapper creates its logs in the Windows
+temporary directory. For support and automation, prefer specifying `/log` and
+a protected, persistent path, as shown in the silent installation example.
 
-Um diagnóstico mínimo deve registrar:
+A minimum diagnostic record should include:
 
 ```powershell
 Get-OdbcDriver | Where-Object Name -eq 'ODBC Driver 18 for SQL Server'
@@ -155,69 +155,68 @@ bcp -?
     --config .\config.v2.json
 ```
 
-O instalador registra no sistema o caminho do BCP provisionado. O motor prefere
-esse caminho conhecido quando a configuração usa apenas `bcp`; um caminho
-absoluto explicitamente configurado continua tendo precedência.
+The installer records the provisioned BCP path in the system. The engine
+prefers that known path when configuration specifies only `bcp`; an explicitly
+configured absolute path still takes precedence.
 
-## Segurança e autenticidade
+## Security and authenticity
 
-- Distribua o setup e seu arquivo de hashes pelo repositório corporativo ou
-  outro canal autenticado.
-- Verifique SHA-256 antes de executar. Um hash confirma integridade apenas
-  quando o valor de referência veio de um canal confiável.
-- Os MSIs Microsoft incorporados devem manter assinatura Authenticode válida da
-  Microsoft Corporation. A rotina de build recusa pacotes com hash diferente
-  do valor fixado.
-- Não inclua senhas, arquivos de configuração com segredos, certificados
-  privados ou artefatos BCP no instalador.
-- Restrinja os diretórios operacionais conforme o modelo descrito em
-  [Pré-requisitos](PRE_REQUISITOS.md); a instalação não concede permissões de
-  banco, não abre firewall e não cria compartilhamentos.
+- Distribute the setup and its checksum file through the corporate repository
+  or another authenticated channel.
+- Verify SHA-256 before execution. A hash confirms integrity only when the
+  reference value came from a trusted channel.
+- Embedded Microsoft MSIs must retain a valid Authenticode signature from
+  Microsoft Corporation. The build routine rejects packages whose hash differs
+  from the pinned value.
+- Do not include passwords, configuration files containing secrets, private
+  certificates, or BCP artifacts in the installer.
+- Restrict operational directories according to the model described in
+  [Prerequisites](PRE_REQUISITOS.md); installation does not grant database
+  permissions, open firewall ports, or create shares.
 
-O artefato produzido neste laboratório não possui certificado de assinatura de
-código do publicador. Por isso, o Windows pode mostrar **Publicador
-desconhecido** no UAC ou no Microsoft Defender SmartScreen. Isso não deve ser
-ocultado: para distribuição de produção, assine o EXE do instalador, o MSI da
-aplicação e os EXEs da GUI/CLI com um certificado corporativo de assinatura de
-código e valide a assinatura depois do empacotamento. Até lá, use somente o
-hash publicado por um canal confiável e restrinja a entrega à homologação.
+The artifact produced in this lab does not have a publisher code-signing
+certificate. Windows may therefore show **Unknown publisher** in UAC or
+Microsoft Defender SmartScreen. Do not conceal this condition: for production
+distribution, sign the installer EXE, the application MSI, and the GUI/CLI EXEs
+with a corporate code-signing certificate, then validate the signatures after
+packaging. Until then, rely only on a hash published through a trusted channel
+and limit distribution to qualification environments.
 
-## Checklist de homologação em VM limpa e offline
+## Qualification checklist for a clean offline VM
 
-Use uma VM Windows x64 suportada, com snapshot anterior ao teste e rede
-desconectada. Registre evidências de cada item.
+Use a supported Windows x64 VM, with a pre-test snapshot and networking
+disconnected. Record evidence for every item.
 
-- [ ] Confirmar que Python, ODBC Driver 18 e BCP não estão instalados.
-- [ ] Validar o SHA-256 do `Setup-BulkFlow.exe` antes da execução.
-- [ ] Instalar interativamente, aceitar o UAC/licenças e confirmar conclusão sem
-      download ou acesso à internet.
-- [ ] Confirmar a instalação em `C:\Program Files\BulkFlow` e os atalhos.
-- [ ] Abrir GUI e CLI sem Python no `PATH`.
-- [ ] Confirmar `ODBC Driver 18 for SQL Server` e executar `bcp -v`/`bcp -?`.
-- [ ] Executar `prerequisites`, `plan`, geração/aplicação de DDL e uma carga de
-      teste com Origem, Landing e Bronze configurados.
-- [ ] Confirmar que os arquivos mutáveis são criados em `%LOCALAPPDATA%` ou nos
-      caminhos configurados, nunca em `Program Files`.
-- [ ] Repetir o setup com as mesmas versões e comprovar idempotência/reparo.
-- [ ] Testar sobre uma VM que já tenha as mesmas versões dos componentes
-      Microsoft.
-- [ ] Testar sobre uma VM que já tenha versões compatíveis mais novas; nenhuma
-      versão deve ser rebaixada.
-- [ ] Corromper uma cópia de laboratório de um pacote e comprovar que a
-      validação de integridade impede a entrega/instalação.
-- [ ] Testar `/quiet /norestart /log`, capturar o código de saída e revisar os
+- [ ] Confirm that Python, ODBC Driver 18, and BCP are not installed.
+- [ ] Validate the SHA-256 of `Setup-BulkFlow.exe` before execution.
+- [ ] Install interactively, accept UAC/licenses, and confirm completion
+      without a download or internet access.
+- [ ] Confirm installation under `C:\Program Files\BulkFlow` and verify the
+      shortcuts.
+- [ ] Open the GUI and CLI with no Python on `PATH`.
+- [ ] Confirm `ODBC Driver 18 for SQL Server` and run `bcp -v`/`bcp -?`.
+- [ ] Run `prerequisites`, `plan`, DDL generation/application, and a test load
+      with Source, Landing, and Bronze configured.
+- [ ] Confirm that mutable files are created under `%LOCALAPPDATA%` or the
+      configured paths, never under `Program Files`.
+- [ ] Run setup again with the same versions and prove idempotency/repair.
+- [ ] Test on a VM that already has the same Microsoft component versions.
+- [ ] Test on a VM that already has newer compatible versions; no component
+      may be downgraded.
+- [ ] Corrupt a lab copy of a package and prove that integrity validation
+      prevents delivery/installation.
+- [ ] Test `/quiet /norestart /log`, capture the exit code, and review the
       logs.
-- [ ] Simular falta de espaço e uma falha de pacote; confirmar mensagem, código
-      não zero e ausência de estado parcial enganoso.
-- [ ] Executar reparo e confirmar que configurações/checkpoints permanecem.
-- [ ] Atualizar a aplicação e comprovar preservação dos dados e bloqueio de
-      downgrade.
-- [ ] Desinstalar e confirmar remoção do aplicativo, preservação dos dados do
-      usuário e dos clientes Microsoft compartilhados.
-- [ ] Validar uma retomada real depois de reinstalação/reparo.
-- [ ] Confirmar que logs, registro do Windows, atalhos e diretórios instalados
-      não contêm senhas.
+- [ ] Simulate insufficient space and a package failure; confirm the message,
+      nonzero exit code, and absence of misleading partial state.
+- [ ] Run repair and confirm that configurations/checkpoints remain intact.
+- [ ] Upgrade the application and prove data retention and downgrade blocking.
+- [ ] Uninstall and confirm removal of the application while retaining user
+      data and shared Microsoft clients.
+- [ ] Validate an actual resume after reinstall/repair.
+- [ ] Confirm that logs, the Windows registry, shortcuts, and installed
+      directories contain no passwords.
 
-Somente promova o pacote depois de concluir esse roteiro em uma VM realmente
-limpa. Extração administrativa, inspeção estática do MSI e testes na estação de
-build são complementares, mas não substituem essa homologação.
+Promote the package only after completing this procedure on a genuinely clean
+VM. Administrative extraction, static MSI inspection, and tests on the build
+workstation complement this qualification but do not replace it.

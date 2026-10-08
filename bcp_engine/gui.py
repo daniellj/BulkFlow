@@ -997,7 +997,10 @@ class BcpGuiApplication:
         perimeter.grid(row=row, column=1, sticky="ew", pady=5)
         _attach_help(perimeter, "perimeter")
         self._register_default_widget(
-            perimeter, self.global_variables["perimeter"], "DREADS", "combobox"
+            perimeter,
+            self.global_variables["perimeter"],
+            "DESENVOLVIMENTO",
+            "combobox",
         )
         perimeter.bind("<<ComboboxSelected>>", self._on_perimeter_selected)
         row += 1

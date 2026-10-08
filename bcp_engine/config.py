@@ -28,9 +28,9 @@ MAX_CDC_RETENTION_MINUTES = 52_494_800
 DESTINATION_KEYS = {"bronze": "bronze_destination", "landing": "landing_destination"}
 DEFAULT_PROFILES = {"bronze": "templates/bronze.json", "landing": "templates/landing.json"}
 PERIMETER_DEFAULT_USERNAMES = {
-    "DREADS": "u684",
+    "DESENVOLVIMENTO": "u684",
     "HOMOLOGAÇÃO": "h684",
-    "CAPGV": "s684",
+    "PRODUÇÃO": "s684",
 }
 
 ROOT_KEYS = {
@@ -62,7 +62,7 @@ TABLE_KEYS = {
 DEFAULTS: dict[str, Any] = {
     # Infrastructure-neutral contract default. The exact uppercase enum only
     # supplies a login when a SQL endpoint omits it.
-    "perimeter": "DREADS",
+    "perimeter": "DESENVOLVIMENTO",
     "active_destination": "bronze",
     "execute_import": True,
     "create_structure_if_needed": True,
@@ -663,7 +663,7 @@ def validate_config(value: Any) -> dict[str, Any]:
     cfg["perimeter"] = _nonempty(cfg.get("perimeter"), "perimeter")
     if cfg["perimeter"] not in PERIMETER_DEFAULT_USERNAMES:
         raise ConfigError(
-            "perimeter deve ser exatamente DREADS, HOMOLOGAÇÃO ou CAPGV"
+            "perimeter deve ser exatamente DESENVOLVIMENTO, HOMOLOGAÇÃO ou PRODUÇÃO"
         )
     cfg["active_destination"] = cfg.get("active_destination")
     if cfg["active_destination"] != "bronze":

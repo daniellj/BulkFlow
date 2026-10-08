@@ -20,6 +20,76 @@ from bcp_engine.connections import WindowsCredentialAdapter
 
 
 class OutputLimitTests(unittest.TestCase):
+    def test_runner_propagates_non_counted_operation_to_private_console(self):
+        observed = {}
+
+        class RecordingConsole:
+            def available(self):
+                return True
+
+            def run(
+                self,
+                _invocation,
+                _timeout,
+                *,
+                monitor_path=None,
+                maximum_bytes=0,
+                minimum_free=0,
+                expect_row_count=True,
+            ):
+                observed.update(
+                    monitor_path=monitor_path,
+                    maximum_bytes=maximum_bytes,
+                    minimum_free=minimum_free,
+                    expect_row_count=expect_row_count,
+                )
+                return 0, "Format file generated.\r\n"
+
+        invocation = BcpInvocation(
+            endpoint_name="source",
+            executable="bcp.exe",
+            arguments=("format", "nul", "-U", "login"),
+            authentication_type="sql",
+            password_channel=SecretValue("secret"),
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            result = BcpRunner(private_console=RecordingConsole()).run(
+                invocation,
+                Path(temporary) / "format.log",
+                minimum_free=0,
+                expect_row_count=False,
+            )
+
+        self.assertIsNone(result.rows_copied)
+        self.assertIs(observed["expect_row_count"], False)
+
+    def test_real_progress_only_output_is_rejected_without_final_count(self):
+        fixture = (
+            Path(__file__).parent / "fixtures" / "bcp_winpty_progress_only_en.txt"
+        ).read_text(encoding="utf-8")
+
+        with self.assertRaisesRegex(RuntimeError, "contagem real"):
+            parse_rows_copied(fixture)
+
+    def test_row_count_parser_accepts_supported_languages_and_grouping(self):
+        samples = {
+            "1,500 rows copied.": 1500,
+            "1.500 linhas copiadas.": 1500,
+            "1 500 filas copiadas.": 1500,
+            "1\u00a0500 rows copied.": 1500,
+            "1\u202f500 linhas copiadas.": 1500,
+            "1'500 filas copiadas.": 1500,
+        }
+        for output, expected in samples.items():
+            with self.subTest(output=output):
+                self.assertEqual(parse_rows_copied(output), expected)
+
+    def test_row_count_parser_never_accepts_suffix_after_unknown_separator(self):
+        for output in ("1_500 rows copied.", "1-500 rows copied.", "1💥500 rows copied."):
+            with self.subTest(output=output):
+                with self.assertRaisesRegex(RuntimeError, "contagem real"):
+                    parse_rows_copied(output)
+
     def test_row_count_parser_ignores_terminal_cursor_sequences(self):
         output = "\x1b[?25lStarting copy...\x1b[6;1H3 rows copied.\r\n"
         self.assertEqual(parse_rows_copied(output), 3)
@@ -482,6 +552,55 @@ class WinPtyMonitorTests(unittest.TestCase):
         self.assertGreater(process._read_number, 4)
         self.assertEqual(parse_rows_copied(output), 1500)
 
+    def test_counted_export_waits_past_current_grace_for_final_count(self):
+        process = _DelayedExitTailPtyProcess(tail_delay=0.10)
+
+        class PtyProcess:
+            @staticmethod
+            def spawn(_argv, **_kwargs):
+                return process
+
+        started = time.monotonic()
+        with (
+            patch.object(WinPtyConsole, "available", return_value=True),
+            patch("bcp_engine.bcp.WINPTY_EXIT_DRAIN_GRACE_SECONDS", 0.05),
+            patch("bcp_engine.bcp.WINPTY_EXIT_DRAIN_HARD_TIMEOUT_SECONDS", 0.5),
+            patch.dict(sys.modules, {"winpty": SimpleNamespace(PtyProcess=PtyProcess)}),
+        ):
+            code, output = WinPtyConsole().run(
+                self._invocation(), timeout=1, expect_row_count=True
+            )
+        elapsed = time.monotonic() - started
+
+        self.assertEqual(code, 0)
+        self.assertGreaterEqual(elapsed, 0.10)
+        self.assertLess(elapsed, 0.5)
+        self.assertEqual(parse_rows_copied(output), 1500)
+
+    def test_non_counted_operation_keeps_short_exit_grace(self):
+        process = _DelayedExitTailPtyProcess(tail_delay=1.0)
+
+        class PtyProcess:
+            @staticmethod
+            def spawn(_argv, **_kwargs):
+                return process
+
+        started = time.monotonic()
+        with (
+            patch.object(WinPtyConsole, "available", return_value=True),
+            patch("bcp_engine.bcp.WINPTY_EXIT_DRAIN_GRACE_SECONDS", 0.05),
+            patch("bcp_engine.bcp.WINPTY_EXIT_DRAIN_HARD_TIMEOUT_SECONDS", 0.5),
+            patch.dict(sys.modules, {"winpty": SimpleNamespace(PtyProcess=PtyProcess)}),
+        ):
+            code, output = WinPtyConsole().run(
+                self._invocation(), timeout=1, expect_row_count=False
+            )
+        elapsed = time.monotonic() - started
+
+        self.assertEqual(code, 0)
+        self.assertLess(elapsed, 0.5)
+        self.assertNotIn("1500 rows copied", output)
+
     def test_exit_drain_without_final_tail_is_bounded_and_fails_closed(self):
         process = _DelayedExitTailPtyProcess(tail_delay=None)
 
@@ -501,6 +620,7 @@ class WinPtyMonitorTests(unittest.TestCase):
         elapsed = time.monotonic() - started
 
         self.assertEqual(code, 0)
+        self.assertGreaterEqual(elapsed, 0.45)
         self.assertLess(elapsed, 1)
         with self.assertRaisesRegex(RuntimeError, "contagem real"):
             parse_rows_copied(output)
@@ -519,7 +639,9 @@ class WinPtyMonitorTests(unittest.TestCase):
             patch("bcp_engine.bcp.WINPTY_EXIT_DRAIN_HARD_TIMEOUT_SECONDS", 0.05),
             patch.dict(sys.modules, {"winpty": SimpleNamespace(PtyProcess=PtyProcess)}),
         ):
-            code, output = WinPtyConsole().run(self._invocation(), timeout=1)
+            code, output = WinPtyConsole().run(
+                self._invocation(), timeout=1, expect_row_count=False
+            )
         elapsed = time.monotonic() - started
 
         self.assertEqual(code, 0)

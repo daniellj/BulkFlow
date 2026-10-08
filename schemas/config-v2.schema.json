@@ -15,8 +15,8 @@
     "config_version": {"const": 2},
     "scope": {"type": "string", "minLength": 1},
     "perimeter": {
-      "enum": ["DREADS", "HOMOLOGAÇÃO", "CAPGV"],
-      "default": "DREADS",
+      "enum": ["DESENVOLVIMENTO", "HOMOLOGAÇÃO", "PRODUÇÃO"],
+      "default": "DESENVOLVIMENTO",
       "description": "Perímetro operacional global. Define apenas o usuário SQL sugerido; cada endpoint permanece editável e independente."
     },
     "source": {"$ref": "#/$defs/sourceEndpoint"},

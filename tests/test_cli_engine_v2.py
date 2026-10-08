@@ -53,6 +53,28 @@ class ParserTests(unittest.TestCase):
                 self.assertEqual(parsed.command, command)
                 self.assertEqual(parsed.config, Path("cfg.json"))
 
+    def test_ddl_default_output_uses_exact_project_local_bulkflow_directory(self):
+        expected = ROOT.resolve() / "Local" / "BulkFlow" / "ddl"
+        parsed = cli.build_parser().parse_args(
+            ["ddl", "--config", "cfg.json", "--area", "both"]
+        )
+        self.assertEqual(parsed.output, expected)
+        self.assertTrue(expected.is_dir())
+
+        explicit = Path("custom-ddl")
+        overridden = cli.build_parser().parse_args(
+            [
+                "ddl",
+                "--config",
+                "cfg.json",
+                "--area",
+                "both",
+                "--output",
+                str(explicit),
+            ]
+        )
+        self.assertEqual(overridden.output, explicit)
+
     def test_parser_rejects_removed_portuguese_machine_flags_and_values(self):
         parser = cli.build_parser()
         rejected = [

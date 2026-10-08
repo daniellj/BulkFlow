@@ -1,8 +1,10 @@
-# Migração não destrutiva do controle SQLite legado
+**English** | [Português (Brasil)](MIGRACAO_CONTROLE_SQLITE.pt-BR.md)
 
-O controle local vigente é persistente e usa o arquivo
-`controle_transferencia.sqlite3`. Sua assinatura física contém somente nomes em
-português:
+# Nondestructive migration of legacy SQLite control state
+
+Current local control state is persistent and uses the
+`controle_transferencia.sqlite3` file. Its physical signature contains only
+Portuguese names:
 
 - `metadados`;
 - `execucao`;
@@ -10,92 +12,93 @@ português:
 - `execucao_lote`;
 - `tentativa_lote`.
 
-A versão local é `PRAGMA user_version=5`. `versao_esquema` é a tabela técnica
-de versão do controle SQL Server e não uma tabela nem uma chave do SQLite.
+The local version is `PRAGMA user_version=5`. `versao_esquema` is the technical
+version table for SQL Server control state; it is neither a SQLite table nor a
+SQLite key.
 
-## Migração automática do legado v4
+## Automatic migration from legacy v4
 
-Ao abrir o controle, o motor reconhece somente a assinatura v4 exata. Se o
-arquivo legado `bcp_control_v2.sqlite3` estiver no diretório, publica uma cópia
-v5 validada como `controle_transferencia.sqlite3` e preserva o legado intacto.
-Se o layout v4 já estiver no nome novo, a rotina cria
-`controle_transferencia.sqlite3.v4.backup` antes da substituição atômica.
+When control state is opened, the engine recognizes only the exact v4
+signature. If the legacy `bcp_control_v2.sqlite3` file is present in the
+directory, the engine publishes a validated v5 copy as
+`controle_transferencia.sqlite3` and preserves the legacy file unchanged. If a
+v4 layout already uses the new filename, the routine creates
+`controle_transferencia.sqlite3.v4.backup` before the atomic replacement.
 
-A reabertura do layout v5 é idempotente. Versões 0, 1 e 2, versão futura,
-estrutura desconhecida, parcial ou adulterada falham fechadas sem publicar nem
-alterar um controle.
+Reopening a v5 layout is idempotent. Versions 0, 1, and 2, a future version, or
+an unknown, partial, or tampered structure fail closed without publishing or
+modifying control state.
 
-## Migração explícita do legado v3
+## Explicit migration from legacy v3
 
-Para v3, pare todos os processos que usam o diretório e execute:
+For v3, stop every process that uses the directory and run:
 
 ```powershell
 python .\bcp_bronze.py migrate-control `
-  --control-directory C:\caminho\controle
+  --control-directory C:\path\to\control
 ```
 
 ```bash
 python3 ./bcp_bronze.py migrate-control \
-  --control-directory /caminho/controle
+  --control-directory /path/to/control
 ```
 
-Para escolher o local do backup v3, acrescente `--backup-path CAMINHO`. O
-destino não pode ser o arquivo de origem nem `controle_transferencia.sqlite3` e
-nunca é sobrescrito.
+To select the v3 backup location, add `--backup-path PATH`. The destination
+cannot be the source file or `controle_transferencia.sqlite3`, and it is never
+overwritten.
 
-O comando `migrate-control` converte v3 diretamente para v5 e preserva o backup
-v3 completo, inclusive a tabela legada `index_states`. O backup nunca é
-sobrescrito; se o caminho escolhido já contiver outro arquivo, a operação falha
-sem modificar a origem.
+The `migrate-control` command converts v3 directly to v5 and preserves the
+complete v3 backup, including the legacy `index_states` table. A backup is
+never overwritten; if the selected path already contains another file, the
+operation fails without modifying the source.
 
-## Garantias comuns
+## Common guarantees
 
-A rotina reconhece a assinatura legada suportada, copia todos os registros para
-um candidato novo, valida a equivalência lógica e somente então publica
-`controle_transferencia.sqlite3`. A origem legada não é apagada nem
-sobrescrita. Estrutura desconhecida, parcial ou adulterada falha fechada, sem
-publicar um destino incompleto.
+The routine recognizes the supported legacy signature, copies every record to
+a new candidate, validates logical equivalence, and only then publishes
+`controle_transferencia.sqlite3`. The legacy source is neither deleted nor
+overwritten. An unknown, partial, or tampered structure fails closed without
+publishing an incomplete destination.
 
-Antes da publicação, a rotina:
+Before publication, the routine:
 
-1. abre o legado em modo controlado e valida sua assinatura integral;
-2. cria o candidato com `metadados`, `execucao`, `execucao_tabela`,
-   `execucao_lote` e `tentativa_lote`;
-3. converte nomes e relacionamentos sem alterar UUIDs, checkpoints, contagens,
-   cursores, tentativas ou estados;
-4. executa `PRAGMA integrity_check` e compara as quantidades e chaves entre
-   origem e candidato;
-5. publica o novo arquivo por substituição atômica e mantém o legado para
-   auditoria/recuperação.
+1. opens the legacy file in a controlled mode and validates its complete
+   signature;
+2. creates the candidate with `metadados`, `execucao`, `execucao_tabela`,
+   `execucao_lote`, and `tentativa_lote`;
+3. converts names and relationships without changing UUIDs, checkpoints,
+   counts, cursors, attempts, or states;
+4. runs `PRAGMA integrity_check` and compares counts and keys between the source
+   and candidate;
+5. publishes the new file through atomic replacement and retains the legacy
+   file for audit and recovery.
 
-Se `controle_transferencia.sqlite3` já existir, ele deve possuir a assinatura
-v5 exata e representar o mesmo estado. Uma segunda execução sobre uma migração
-concluída é idempotente; divergência entre legado e destino é erro e nenhum
-arquivo é corrigido por suposição.
+If `controle_transferencia.sqlite3` already exists, it must have the exact v5
+signature and represent the same state. Running the process again after a
+completed migration is idempotent. A mismatch between legacy and destination
+state is an error, and no file is repaired by assumption.
 
-## Nomes legados
+## Legacy names
 
-Somente esta seção cita os identificadores anteriores para permitir localizar e
-auditar uma instalação antiga. O arquivo era
-`bcp_control_v2.sqlite3`, com tabelas internas `meta`, `executions`,
-`table_runs`, `blocks` e `attempts`; versões ainda mais antigas podiam conter
-`index_states`. Esses nomes não são usados na nova estrutura e não devem ser
-criados manualmente.
+Only this section mentions the previous identifiers so an old installation can
+be located and audited. The file was named `bcp_control_v2.sqlite3`, with the
+internal tables `meta`, `executions`, `table_runs`, `blocks`, and `attempts`;
+still older versions could also contain `index_states`. These names are not
+used by the new structure and must not be created manually.
 
-Depois da migração, preserve o arquivo legado durante o período de homologação.
-Não o renomeie para o nome novo: o motor diferencia os contratos pela assinatura
-física, não apenas pelo nome do arquivo.
+After migration, retain the legacy file throughout the validation period. Do
+not rename it to the new filename: the engine distinguishes contracts by their
+physical signatures, not only by filenames.
 
-## Configurações anteriores
+## Previous configurations
 
-O comando migra somente o estado SQLite local. Ele não converte arquivos JSON
-de configuração nem os objetos SQL persistentes do destino. Recrie
-configurações anteriores a partir dos exemplos atuais e valide-as com `plan`.
-No SQL Server Bronze, o contrato vigente usa exclusivamente
-`DBRO684.dbo.execucao`, `DBRO684.dbo.execucao_tabela`,
-`DBRO684.dbo.execucao_lote` e a tabela técnica
-`DBRO684.dbo.versao_esquema`. A remoção de um schema SQL legado deve ocorrer
-somente em uma migração administrativa explícita; o motor não apaga histórico
-automaticamente. A regra de preservação desta página continua valendo para os
-arquivos SQLite, inclusive para o legado `bcp_control_v2.sqlite3`. A Landing não
-recebe tabelas de controle.
+The command migrates only local SQLite state. It does not convert JSON
+configuration files or persistent destination SQL objects. Recreate older
+configurations from the current examples and validate them with `plan`. In
+Bronze SQL Server, the current contract uses only `DBRO684.dbo.execucao`,
+`DBRO684.dbo.execucao_tabela`, `DBRO684.dbo.execucao_lote`, and the technical
+table `DBRO684.dbo.versao_esquema`. A legacy SQL schema may be removed only
+during an explicit administrative migration; the engine never deletes history
+automatically. The preservation rule on this page continues to apply to SQLite
+files, including legacy `bcp_control_v2.sqlite3`. Landing does not receive
+control tables.
