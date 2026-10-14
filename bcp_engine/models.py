@@ -292,7 +292,7 @@ def _validate_metadata_mapping(value: Any, *, profile: str) -> None:
         raise ValueError(
             "metadata_mapping contem colunas nao suportadas: " + ", ".join(unknown)
         )
-    if profile.casefold() == "landing":
+    if profile.casefold() in {"landing", "landing_with_aud"}:
         missing = sorted(_LANDING_METADATA_COLUMNS - keys)
         if missing:
             raise ValueError(
@@ -667,7 +667,12 @@ class BlockManifest:
             _validate_endpoint_snapshot(
                 self.destination, field_name="destination", destination=True
             )
-            if self.profile.casefold() != str(self.destination["area"]).casefold():
+            profile = self.profile.casefold()
+            area = str(self.destination["area"]).casefold()
+            if profile != area and not (
+                area == "landing"
+                and profile in {"landing_with_aud", "landing_without_aud"}
+            ):
                 raise ValueError("profile diverge da area de destino do manifesto")
         authentication = _strict_object(
             self.authentication,

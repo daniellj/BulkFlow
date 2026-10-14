@@ -1,6 +1,6 @@
 {
   "profile_version": 1,
-  "name": "landing",
+  "name": "landing_with_aud",
   "table_name": "{destination_table}",
   "technical_column": {
     "name": "id_{source_table}",

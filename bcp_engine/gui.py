@@ -479,7 +479,12 @@ class TableDialog:
             "write", self._on_destination_table_changed
         )
 
-        if destination_area == "landing":
+        effective_profile = str(
+            values.get("structure_profile") or default_structure_profile
+        ).replace("\\", "/").rsplit("/", 1)[-1].removesuffix(".json").casefold()
+        if destination_area == "landing" and effective_profile in {
+            "landing", "landing_with_aud"
+        }:
             landing = ttk.Labelframe(
                 body,
                 text="Mapeamento do Destino 02 (obrigatório)",
@@ -898,6 +903,12 @@ class BcpGuiApplication:
         self.import_disk_assessment = tk.StringVar(
             value="Importação: aguardando planejamento."
         )
+        self.destination_disk_assessment = tk.StringVar(
+            value="Destino 01: aguardando planejamento."
+        )
+        self.disk_operator_warning = tk.StringVar()
+        self.general_export_free = tk.StringVar(value="Livre: aguardando planejamento.")
+        self.general_import_free = tk.StringVar(value="Livre: aguardando planejamento.")
 
         for name in ("max_file_bytes", "minimum_free_space_bytes"):
             self.global_variables[name].trace_add(
@@ -1088,6 +1099,9 @@ class BcpGuiApplication:
             browse="directory",
             help_key="executor_directory",
         )
+        ttk.Label(
+            storage, textvariable=self.general_export_free, bootstyle="secondary"
+        ).grid(row=row - 1, column=3, sticky="w", padx=(6, 0), pady=5)
         row = self._form_entry(
             storage,
             row,
@@ -1095,6 +1109,9 @@ class BcpGuiApplication:
             self.global_variables["destination_sql_directory"],
             help_key="destination_sql_directory",
         )
+        ttk.Label(
+            storage, textvariable=self.general_import_free, bootstyle="secondary"
+        ).grid(row=row - 1, column=2, columnspan=2, sticky="w", padx=(6, 0), pady=5)
         row = self._form_entry(
             storage,
             row,
@@ -1483,7 +1500,7 @@ class BcpGuiApplication:
                 "instance": "SERVIDOR_LANDING",
                 "port": "1433",
                 "database": "DLAN684",
-                "structure_profile": "landing",
+                "structure_profile": "landing_without_aud",
             },
         }[key]
 
@@ -1940,12 +1957,17 @@ class BcpGuiApplication:
         ).grid(row=5, column=0, columnspan=3, sticky="w", padx=4, pady=2)
         ttk.Label(
             prerequisites,
+            textvariable=self.destination_disk_assessment,
+            wraplength=1130,
+        ).grid(row=6, column=0, columnspan=3, sticky="w", padx=4, pady=2)
+        ttk.Label(
+            prerequisites,
             text=(
                 "Exportação e importação são duas visões dos mesmos arquivos BCP; "
                 "o espaço nunca é somado duas vezes."
             ),
             bootstyle="secondary",
-        ).grid(row=6, column=0, columnspan=3, sticky="w", padx=4, pady=(2, 4))
+        ).grid(row=7, column=0, columnspan=3, sticky="w", padx=4, pady=(2, 4))
 
         projection_columns = (
             "source",
@@ -1953,11 +1975,12 @@ class BcpGuiApplication:
             "raw_bytes",
             "protected_bytes",
             "projection_state",
+            "source_used_bytes",
         )
         projection_frame = ttk.Frame(prerequisites)
         projection_frame.columnconfigure(0, weight=1)
         projection_frame.grid(
-            row=7, column=0, columnspan=3, sticky="ew", padx=4, pady=(2, 4)
+            row=8, column=0, columnspan=3, sticky="ew", padx=4, pady=(2, 4)
         )
         self.disk_projection_tree = ttk.Treeview(
             projection_frame,
@@ -1971,6 +1994,7 @@ class BcpGuiApplication:
             "raw_bytes": "BCP bruto",
             "protected_bytes": "BCP + margem",
             "projection_state": "Estimativa",
+            "source_used_bytes": "Espaço total na origem",
         }
         projection_widths = {
             "source": 360,
@@ -1978,6 +2002,7 @@ class BcpGuiApplication:
             "raw_bytes": 140,
             "protected_bytes": 140,
             "projection_state": 210,
+            "source_used_bytes": 170,
         }
         for name in projection_columns:
             self.disk_projection_tree.heading(name, text=projection_headings[name])
@@ -1995,6 +2020,12 @@ class BcpGuiApplication:
         )
         projection_scroll.grid(row=0, column=1, sticky="ns")
         self.disk_projection_tree.configure(yscrollcommand=projection_scroll.set)
+        ttk.Label(
+            prerequisites,
+            textvariable=self.disk_operator_warning,
+            bootstyle="danger",
+            wraplength=1130,
+        ).grid(row=9, column=0, columnspan=3, sticky="w", padx=4, pady=(4, 2))
 
         planning = ttk.Labelframe(
             tab, text="2. Informar credenciais e planejar", padding=10
@@ -2180,6 +2211,8 @@ class BcpGuiApplication:
         overview = getattr(self, "disk_projection_overview", None)
         export = getattr(self, "export_disk_assessment", None)
         import_ = getattr(self, "import_disk_assessment", None)
+        destination = getattr(self, "destination_disk_assessment", None)
+        warning = getattr(self, "disk_operator_warning", None)
         if overview is not None:
             overview.set(
                 "Projeção de disco: execute Planejar para recalcular todas as tabelas."
@@ -2188,6 +2221,16 @@ class BcpGuiApplication:
             export.set("Exportação: aguardando planejamento.")
         if import_ is not None:
             import_.set("Importação: aguardando planejamento.")
+        if destination is not None:
+            destination.set("Destino 01: aguardando planejamento.")
+        if warning is not None:
+            warning.set("")
+        general_export = getattr(self, "general_export_free", None)
+        general_import = getattr(self, "general_import_free", None)
+        if general_export is not None:
+            general_export.set("Livre: aguardando planejamento.")
+        if general_import is not None:
+            general_import.set("Livre: aguardando planejamento.")
         tree = getattr(self, "disk_projection_tree", None)
         if tree is not None:
             for item in tree.get_children():
@@ -2249,6 +2292,9 @@ class BcpGuiApplication:
                 f"{label} (visão do executor): "
                 f"{value.get('path') or '<não informado>'} | "
                 f"livre {format_bytes(value.get('free_bytes'))} | "
+                f"saldo após BCP bruto {format_bytes(value.get('balance_after_total_raw_bytes'))} | "
+                f"BCP bruto: "
+                f"{'SUFICIENTE' if value.get('total_raw_fits') is True else 'INSUFICIENTE' if value.get('total_raw_fits') is False else 'NÃO FOI POSSÍVEL CAPTURAR'} | "
                 f"saldo operacional após pico e reserva "
                 f"{format_bytes(value.get('balance_after_peak_bytes'))} | "
                 f"saldo se todos os arquivos protegidos forem retidos "
@@ -2267,6 +2313,55 @@ class BcpGuiApplication:
         self.import_disk_assessment.set(
             render_directory("Importação", directories.get("import") or {})
         )
+        for variable_name, directory_name in (
+            ("general_export_free", "export"),
+            ("general_import_free", "import"),
+        ):
+            variable = getattr(self, variable_name, None)
+            if variable is not None:
+                evidence = directories.get(directory_name) or {}
+                fit = evidence.get("total_raw_fits")
+                fit_text = (
+                    "SUFICIENTE" if fit is True else "INSUFICIENTE" if fit is False
+                    else "NÃO FOI POSSÍVEL CAPTURAR"
+                )
+                variable.set(
+                    f"Livre: {format_bytes(evidence.get('free_bytes'))} | "
+                    f"BCP bruto: {fit_text}"
+                )
+        destination = summary.get("destination_os") or {}
+        capacity = destination.get("capacity_ok")
+        capacity_text = (
+            "SUPORTA"
+            if capacity is True
+            else "NÃO SUPORTA"
+            if capacity is False
+            else "NÃO FOI POSSÍVEL CAPTURAR"
+        )
+        destination_text = (
+            "Destino 01 (discos do SQL Server): livre mínimo "
+            f"{format_bytes(destination.get('free_bytes'))} | espaço total das tabelas "
+            f"de origem {format_bytes(destination.get('required_bytes'))} | "
+            f"avaliação: {capacity_text}"
+        )
+        if destination.get("error"):
+            destination_text += " — " + redact_text(str(destination["error"]))
+        destination_variable = getattr(self, "destination_disk_assessment", None)
+        if destination_variable is not None:
+            destination_variable.set(destination_text)
+        export_path = (directories.get("export") or {}).get("path") or "<não informado>"
+        import_path = (directories.get("import") or {}).get("path") or "<não informado>"
+        instance_var = getattr(self, "endpoint_variables", {}).get(
+            "bronze_destination", {}
+        ).get("instance", "")
+        instance = instance_var.get() if hasattr(instance_var, "get") else str(instance_var)
+        warning_variable = getattr(self, "disk_operator_warning", None)
+        if warning_variable is not None:
+            warning_variable.set(
+                "ATENÇÃO: o operador deve verificar se há espaço em disco disponível para "
+                f"armazenar os arquivos BCP nas pastas {export_path} e {import_path}, "
+                f"e na instância {instance or '<não informada>'}."
+            )
 
         tree = getattr(self, "disk_projection_tree", None)
         if tree is None:
@@ -2293,6 +2388,7 @@ class BcpGuiApplication:
                     format_bytes(row.get("raw_bytes")),
                     protected_text,
                     state_text,
+                    format_bytes(row.get("source_table_used_bytes")),
                 ),
                 tags=("unavailable",) if state != "available" else (),
             )

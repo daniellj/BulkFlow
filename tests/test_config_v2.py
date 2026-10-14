@@ -87,7 +87,7 @@ class ConfigExamplesTests(unittest.TestCase):
         self.assertEqual(config["landing_destination"]["database"], "BD_DESTINO_02")
         self.assertEqual(
             config["landing_destination"]["structure_profile"],
-            "../templates/landing.json",
+            "../templates/landing_without_aud.json",
         )
         self.assertNotIn("metadata_mapping", config["tables"][0])
 
@@ -123,7 +123,7 @@ class ConfigExamplesTests(unittest.TestCase):
                     first["destination"]["structure_profile"],
                     directory=path.parent,
                 )
-                self.assertIn(profile["name"], {"bronze", "landing"})
+                self.assertIn(profile["name"], {"bronze", "landing_without_aud"})
 
     def test_table_defaults_and_overrides_are_effective(self):
         config = read_config(EXAMPLES / "config.watermark-composite.json")

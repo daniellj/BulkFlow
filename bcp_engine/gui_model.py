@@ -299,6 +299,10 @@ def build_disk_projection_summary(
             "peak_bytes": peak_bytes,
             "projection_state": projection_state,
             "peak_state": peak_state,
+            "source_table_used_bytes": _projected_bytes(
+                plan.get("source_table_total_used_bytes")
+            ),
+            "source_table_storage_error": plan.get("source_table_storage_error"),
         }
         table_rows.append(row)
         if included:
@@ -326,6 +330,14 @@ def build_disk_projection_summary(
     predicted_peak_bytes = (
         max((int(row["peak_bytes"]) for row in included_rows), default=0)
         if included_rows and unknown_peak_table_count == 0
+        else None
+    )
+    source_space_available = bool(included_rows) and all(
+        row["source_table_used_bytes"] is not None for row in included_rows
+    )
+    total_source_table_used_bytes = (
+        sum(int(row["source_table_used_bytes"]) for row in included_rows)
+        if source_space_available
         else None
     )
 
@@ -367,6 +379,11 @@ def build_disk_projection_summary(
             if not applicable or free_bytes is None or total_protected_bytes is None
             else free_bytes - minimum_free_bytes - total_protected_bytes
         )
+        raw_balance = (
+            None
+            if not applicable or free_bytes is None or total_raw_bytes is None
+            else free_bytes - total_raw_bytes
+        )
         return {
             "role": role,
             "path": path,
@@ -378,11 +395,14 @@ def build_disk_projection_summary(
             "total_protected_fits": (
                 None if total_balance is None else total_balance >= 0
             ),
+            "balance_after_total_raw_bytes": raw_balance,
+            "total_raw_fits": None if raw_balance is None else raw_balance >= 0,
             "state": state,
             "error": error,
             "measurement_scope": "executor_filesystem",
         }
 
+    first_plan = plans[0] if plans else {}
     return {
         "safety_factor": float(safety_factor),
         "minimum_free_bytes": minimum_free_bytes,
@@ -399,6 +419,14 @@ def build_disk_projection_summary(
             else total_protected_bytes - total_raw_bytes
         ),
         "predicted_peak_bytes": predicted_peak_bytes,
+        "total_source_table_used_bytes": total_source_table_used_bytes,
+        "destination_os": {
+            "free_bytes": _projected_bytes(first_plan.get("destination_os_free_bytes")),
+            "required_bytes": total_source_table_used_bytes,
+            "capacity_ok": first_plan.get("destination_os_capacity_ok"),
+            "volumes": list(first_plan.get("destination_os_volumes") or []),
+            "error": first_plan.get("destination_os_space_error"),
+        },
         "same_path_view": same_path_view,
         "paths_are_artifact_views": True,
         "directories": {
@@ -737,7 +765,12 @@ def build_table(
         if not partition_column:
             raise ValueError("Coluna de particionamento é obrigatória quando ativada")
         result["partition_column"] = partition_column
-    if destination_area == "landing":
+    effective_profile = (structure_profile or inherited_profile).replace(
+        "\\", "/"
+    ).rsplit("/", 1)[-1].removesuffix(".json").casefold()
+    if destination_area == "landing" and effective_profile in {
+        "landing", "landing_with_aud"
+    }:
         result["metadata_mapping"] = build_landing_metadata(values)
     return result
 
@@ -912,7 +945,7 @@ def default_gui_config(project_root: Path | None = None) -> dict[str, Any]:
             "port": 1433,
             "database": "DLAN684",
             "schema": "dbo",
-            "structure_profile": "landing",
+            "structure_profile": "landing_without_aud",
             "authentication": {
                 "type": "sql",
                 "username": "u684",

@@ -449,7 +449,8 @@ also confirms `BINARY(10) NOT NULL` in the catalog.
 ### BD_DESTINO_02
 
 By default, `BD_DESTINO_02` uses the compatible internal area `landing` and the
-`templates/landing.json` profile. It can be selected by `ddl --area
+`templates/landing_without_aud.json` profile. The former profile was renamed to
+`templates/landing_with_aud.json`. It can be selected by `ddl --area
 landing|both` and creates:
 
 - `id_{source_table}` as `BIGINT IDENTITY(1,1)`;
@@ -473,7 +474,8 @@ validation and never creates/evolves objects or indexes. The `ddl --area both`
 command still uses the compatible area IDs to address both destinations.
 
 These time-zone rules belong only to the default `templates/bronze.json` and
-`templates/landing.json` profiles. A custom profile remains agnostic and can
+`templates/landing_with_aud.json` and `templates/landing_without_aud.json`
+profiles. A custom profile remains agnostic and can
 define a different fill/default expression for `dh_carga`, taking full
 responsibility for that contract.
 

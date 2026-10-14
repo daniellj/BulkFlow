@@ -153,7 +153,7 @@ class GuiModelTests(unittest.TestCase):
         self.assertEqual(config["bronze_destination"]["port"], 1433)
         self.assertEqual(config["landing_destination"]["port"], 1433)
         self.assertEqual(config["bronze_destination"]["structure_profile"], "bronze")
-        self.assertEqual(config["landing_destination"]["structure_profile"], "landing")
+        self.assertEqual(config["landing_destination"]["structure_profile"], "landing_without_aud")
         self.assertEqual(config["source"]["role"], "data_provider")
         self.assertEqual(
             config["bronze_destination"]["role"], "structure_and_data"
@@ -1037,7 +1037,7 @@ class GuiConstructionTests(unittest.TestCase):
                 switched_defaults["default_destination_database"], "DLAN684"
             )
             self.assertEqual(
-                switched_defaults["default_structure_profile"], "landing"
+                switched_defaults["default_structure_profile"], "landing_without_aud"
             )
             application.endpoint_variables["bronze_destination"]["role"].set(
                 "estrutura e dados"

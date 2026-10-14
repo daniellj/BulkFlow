@@ -41,6 +41,7 @@ from bcp_engine.planner import (  # noqa: E402
     build_plan,
     inspect_destination_space,
     inspect_source_database_storage,
+    inspect_source_table_storage,
 )
 from bcp_engine.profiles import (  # noqa: E402
     ColumnDefinition,
@@ -226,6 +227,20 @@ def index_row(
 
 
 class DestinationInspectionTests(unittest.TestCase):
+    def test_source_table_space_uses_read_only_catalog_and_returns_total_used(self):
+        connection = QueueConnection([{"total_used_bytes": 81_920}])
+        measured = inspect_source_table_storage(connection, "s999", "T1")
+        self.assertEqual(measured.total_used_bytes, 81_920)
+        self.assertIsNone(measured.error)
+        sql, params = connection.calls[0]
+        self.assertIn("sys.allocation_units", sql)
+        self.assertEqual(params, ("s999", "T1"))
+
+    def test_source_table_space_failure_is_informational(self):
+        measured = inspect_source_table_storage(QueueConnection(), "s999", "T1")
+        self.assertIsNone(measured.total_used_bytes)
+        self.assertIsNotNone(measured.error)
+
     def test_destination_space_requires_each_distinct_volume_to_fit(self):
         connection = QueueConnection(
             [

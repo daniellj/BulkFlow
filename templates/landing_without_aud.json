@@ -1,0 +1,67 @@
+{
+  "profile_version": 1,
+  "name": "landing_without_aud",
+  "table_name": "{destination_table}",
+  "technical_column": {
+    "name": "id_{source_table}",
+    "sql_type": "BIGINT",
+    "nullable": false,
+    "identity": true,
+    "identity_seed": 1,
+    "identity_increment": 1,
+    "generation": "destination_identity"
+  },
+  "business_columns": {
+    "mode": "auto_discovery",
+    "preserve_order": true,
+    "materialize_identity": true,
+    "materialize_computed": true
+  },
+  "additional_columns": [
+    {"name": "bi_lsn_evento", "sql_type": "BINARY(10)", "nullable": false, "fill": "CONVERT(BINARY(10),0)"},
+    {"name": "bi_sequencia_evento", "sql_type": "BINARY(10)", "nullable": false, "fill": "CONVERT(BINARY(10),0)"},
+    {"name": "cd_operacao", "sql_type": "INT", "nullable": false, "fill": "2"},
+    {
+      "name": "dh_carga",
+      "sql_type": "DATETIME2(7)",
+      "nullable": false,
+      "default": "(CONVERT(DATETIME2(7), ((SYSUTCDATETIME() AT TIME ZONE 'UTC') AT TIME ZONE 'E. South America Standard Time')))",
+      "default_name": "df_{destination_table}_dh_carga",
+      "fill": "destination_default"
+    },
+    {"name": "dh_atualizacao", "sql_type": "DATETIME2(7)", "nullable": true, "fill": "NULL"}
+  ],
+  "sequence": null,
+  "partitioning": {
+    "sql_type": "DATETIME2(7)", "range_direction": "RIGHT", "interval": "month",
+    "future_years": 6, "filegroup": "PRIMARY",
+    "function_name": "pf_{partition_column}_{partition_descriptor}",
+    "scheme_name": "ps_{partition_column}_{partition_descriptor}",
+    "clustered_index_name": "ix_{destination_table}_{partition_column}_clustered"
+  },
+  "primary_key": {
+    "name": "pk_{destination_table}", "clustered": false,
+    "columns": [{"name": "id_{source_table}", "direction": "ASC"}]
+  },
+  "indexes": [
+    {
+      "name": "ix_{source_table}_01", "clustered": true, "unique": false, "phase": "base",
+      "columns": [
+        {"name": "bi_lsn_evento", "direction": "ASC"},
+        {"name": "bi_sequencia_evento", "direction": "ASC"},
+        {"name": "cd_operacao", "direction": "ASC"}
+      ]
+    },
+    {
+      "name": "ix_{source_table}_04", "clustered": false, "unique": false, "phase": "secondary",
+      "columns": [
+        {"name": "bi_lsn_evento", "direction": "ASC"},
+        {"name": "bi_sequencia_evento", "direction": "ASC"}
+      ]
+    },
+    {
+      "name": "ix_{source_table}_05", "clustered": false, "unique": false, "phase": "secondary",
+      "columns": [{"name": "dh_carga", "direction": "DESC"}]
+    }
+  ]
+}

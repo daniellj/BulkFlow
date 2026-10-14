@@ -39,7 +39,7 @@ from .estimates import (
 )
 from .inspection import inspect_destination_catalog
 from .models import TableStatus
-from .profiles import TableLayout, resolve_profile
+from .profiles import TableLayout, profile_matches_area, resolve_profile
 from .projection import build_import_plan
 from .source import validate_source_columns
 from .sql import fetch_dicts
@@ -51,6 +51,12 @@ class SourceDatabaseStorage:
     data_used_bytes: int | None
     data_allocated_bytes: int | None
     log_allocated_bytes: int | None
+
+
+@dataclass(frozen=True)
+class SourceTableStorage:
+    total_used_bytes: int | None
+    error: str | None = None
 
 
 @dataclass(frozen=True)
@@ -102,6 +108,12 @@ class TablePlan:
     source_database_used_bytes: int | None = None
     source_database_allocated_bytes: int | None = None
     source_database_log_allocated_bytes: int | None = None
+    source_table_total_used_bytes: int | None = None
+    source_table_storage_error: str | None = None
+    destination_os_free_bytes: int | None = None
+    destination_os_capacity_ok: bool | None = None
+    destination_os_volumes: list[dict[str, Any]] = field(default_factory=list)
+    destination_os_space_error: str | None = None
     destination_data_bytes: int | None = None
     destination_log_bytes: int | None = None
     destination_catalog_state: str | None = None
@@ -164,6 +176,35 @@ FROM sys.database_files AS df;
         data_allocated_bytes=optional("data_allocated_bytes"),
         log_allocated_bytes=optional("log_allocated_bytes"),
     )
+
+
+def inspect_source_table_storage(
+    connection: Any, schema: str, table: str
+) -> SourceTableStorage:
+    """Read total allocated pages in use by a table and all of its indexes."""
+
+    try:
+        rows = fetch_dicts(
+            connection,
+            """
+SELECT SUM(CONVERT(bigint, au.used_pages)) * 8192 AS total_used_bytes
+FROM sys.tables AS t
+JOIN sys.schemas AS s ON s.schema_id = t.schema_id
+JOIN sys.indexes AS i ON i.object_id = t.object_id
+JOIN sys.partitions AS p
+  ON p.object_id = i.object_id AND p.index_id = i.index_id
+JOIN sys.allocation_units AS au
+  ON au.container_id = CASE WHEN au.type IN (1, 3) THEN p.hobt_id ELSE p.partition_id END
+WHERE s.name = ? AND t.name = ?;
+""",
+            (schema, table),
+        )
+        value = rows[0].get("total_used_bytes") if rows else None
+        if value is None:
+            return SourceTableStorage(None, "SOURCE_TABLE_SPACE_UNAVAILABLE")
+        return SourceTableStorage(int(value))
+    except Exception as exc:
+        return SourceTableStorage(None, redacted_exception(exc))
 
 
 def inspect_destination_space(
@@ -367,6 +408,7 @@ def build_plan(
     row_count_estimator: Callable[..., RowCountEstimate] = estimate_row_count,
     row_size_estimator: Callable[..., RowSizeEstimate] = estimate_row_size,
     source_storage_inspector: Callable[[Any], SourceDatabaseStorage] = inspect_source_database_storage,
+    source_table_storage_inspector: Callable[..., SourceTableStorage] = inspect_source_table_storage,
     destination_inspector: Callable[..., dict[str, Any]] = inspect_destination_catalog,
     profile_resolver: Callable[..., Any] = resolve_profile,
     catalog_comparer: Callable[..., Any] = compare_catalog,
@@ -641,7 +683,7 @@ def build_plan(
                     directory=profile_directory,
                 )
                 profile_name = getattr(layout, "profile_name", destination["area"])
-                if str(profile_name).casefold() != str(destination["area"]).casefold():
+                if not profile_matches_area(str(profile_name), str(destination["area"])):
                     raise RuntimeError(
                         f"Perfil {profile_name!r} não corresponde à área "
                         f"de destino {destination['area']!r}."
@@ -759,6 +801,45 @@ def build_plan(
             else:
                 retained_planning_bytes += space.planning_reserve_bytes
 
+    # Informational storage evidence never changes execution eligibility.
+    for plan in results:
+        try:
+            measured = source_table_storage_inspector(
+                source_connection,
+                str(plan.source["schema"]),
+                str(plan.source["table"]),
+            )
+        except Exception as exc:
+            measured = SourceTableStorage(None, redacted_exception(exc))
+        plan.source_table_total_used_bytes = measured.total_used_bytes
+        plan.source_table_storage_error = measured.error
+        if measured.total_used_bytes is None:
+            plan.warnings.append("SOURCE_TABLE_SPACE_UNAVAILABLE")
+
+    source_total = (
+        sum(int(plan.source_table_total_used_bytes) for plan in results)
+        if results and all(plan.source_table_total_used_bytes is not None for plan in results)
+        else None
+    )
+    # The operator explicitly needs the host capacity of Destino 01 (bronze),
+    # independently from which destination currently receives data.
+    active_connection = (destination_connections or {}).get("bronze")
+    destination_space = (
+        inspect_destination_space(active_connection, source_total)
+        if active_connection is not None and source_total is not None
+        else DestinationSpaceAssessment(
+            required_bytes=source_total or 0,
+            available_bytes=None,
+            sufficient=None,
+            error="DESTINATION_SPACE_UNAVAILABLE",
+        )
+    )
+    for plan in results:
+        plan.destination_os_free_bytes = destination_space.available_bytes
+        plan.destination_os_capacity_ok = destination_space.sufficient
+        plan.destination_os_volumes = [dict(item) for item in destination_space.volumes]
+        plan.destination_os_space_error = destination_space.error
+
     return PlanningResult(
         generated_at=_utc_now(),
         executor_directory=directory,
@@ -774,10 +855,12 @@ plan_tables = build_plan
 
 __all__ = [
     "SourceDatabaseStorage",
+    "SourceTableStorage",
     "DestinationSpaceAssessment",
     "TablePlan",
     "PlanningResult",
     "inspect_source_database_storage",
+    "inspect_source_table_storage",
     "inspect_destination_space",
     "build_plan",
     "plan_tables",

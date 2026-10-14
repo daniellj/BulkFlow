@@ -432,6 +432,11 @@ def load_profile(
         loaded = json.loads(json.dumps(profile, ensure_ascii=False))
     else:
         path = Path(profile)
+        # Compatibility for configurations created before the profile split.
+        if str(profile).casefold() == "landing":
+            path = Path("landing_with_aud")
+        elif path.name.casefold() == "landing.json":
+            path = path.with_name("landing_with_aud.json")
         if not path.suffix and not path.is_absolute() and path.parent == Path("."):
             configured_candidate = (
                 directory / f"{path.name}.json" if directory is not None else None
@@ -837,6 +842,17 @@ def resolve_profile(
 build_layout = resolve_profile
 
 
+def profile_matches_area(profile_name: str, area: str) -> bool:
+    """Return whether a concrete profile belongs to a stable destination area."""
+
+    profile = str(profile_name).casefold()
+    target = str(area).casefold()
+    return profile == target or (
+        target == "landing"
+        and profile in {"landing_with_aud", "landing_without_aud"}
+    )
+
+
 __all__ = [
     "ALLOWED_PLACEHOLDERS",
     "ColumnDefinition",
@@ -853,5 +869,6 @@ __all__ = [
     "build_layout",
     "load_profile",
     "resolve_profile",
+    "profile_matches_area",
     "validate_profile",
 ]

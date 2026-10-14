@@ -75,13 +75,24 @@ def bronze_layout(*, partitioned: bool = False):
 
 def landing_layout(*, partitioned: bool = False):
     return resolve_profile(
-        "landing",
+        "landing_with_aud",
         [source_column("codigo")],
         source_database="BD_ORIGEM",
         source_table="TABELA_ORIGEM_01",
         destination_table="bd_origem_tabela_origem_01",
         destination_schema="s344",
         partition_column="dh_carga" if partitioned else None,
+    )
+
+
+def landing_without_aud_layout():
+    return resolve_profile(
+        "landing_without_aud",
+        [source_column("codigo")],
+        source_database="BD_ORIGEM",
+        source_table="TABELA_ORIGEM_01",
+        destination_table="bd_origem_tabela_origem_01",
+        destination_schema="s344",
     )
 
 
@@ -419,6 +430,23 @@ class ProfileTests(unittest.TestCase):
         )
         self.assertNotIn("de_operacao", [column.name for column in layout.columns])
         self.assertEqual(len(layout.indexes), 5)
+
+    def test_landing_without_aud_has_regular_event_columns_and_no_audit_columns(self):
+        layout = landing_without_aud_layout()
+        by_name = {column.name: column for column in layout.columns}
+        self.assertNotIn("aud_ccid", by_name)
+        self.assertNotIn("aud_cntrrn", by_name)
+        self.assertNotIn("aud_enttyp", by_name)
+        self.assertEqual(by_name["bi_lsn_evento"].sql_type, "BINARY(10)")
+        self.assertEqual(by_name["bi_sequencia_evento"].sql_type, "BINARY(10)")
+        self.assertEqual(by_name["cd_operacao"].sql_type, "INT")
+        for name in ("bi_lsn_evento", "bi_sequencia_evento", "cd_operacao"):
+            self.assertFalse(by_name[name].nullable)
+            self.assertIsNone(by_name[name].computed_expression)
+        fills = {rule.column: rule.value for rule in layout.fill_rules}
+        self.assertEqual(fills["bi_lsn_evento"], "CONVERT(BINARY(10),0)")
+        self.assertEqual(fills["bi_sequencia_evento"], "CONVERT(BINARY(10),0)")
+        self.assertEqual(fills["cd_operacao"], "2")
 
     def test_business_collision_with_profile_metadata_is_rejected(self):
         with self.assertRaisesRegex(ProfileError, "Colisão de coluna"):

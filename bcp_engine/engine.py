@@ -73,7 +73,7 @@ from .estimates import calculate_space_plan, estimate_row_count, estimate_row_si
 from .importer import DestinationImporter
 from .models import BlockManifest, ExecutionReport, TableResult, TableStatus
 from .planner import DestinationSpaceAssessment, build_plan, inspect_destination_space
-from .profiles import TableLayout, resolve_profile
+from .profiles import TableLayout, profile_matches_area, resolve_profile
 from .projection import (
     build_import_plan,
     layout_contract,
@@ -479,7 +479,7 @@ class BcpEngine:
                 else None
             ),
         )
-        if layout.profile_name.casefold() != target_area.casefold():
+        if not profile_matches_area(layout.profile_name, target_area):
             raise RuntimeError(
                 f"O perfil {layout.profile_name!r} não corresponde à área "
                 f"de destino {target_area!r}."
@@ -2219,7 +2219,7 @@ class BcpEngine:
     ) -> TableLayout:
         destination_info = configured["destination"]
         area = str(destination_info["area"])
-        if manifest.profile.casefold() != area.casefold():
+        if not profile_matches_area(manifest.profile, area):
             raise RuntimeError("Perfil do manifesto diverge da area de destino")
 
         # O snapshot embutido e evidencia auditavel, nunca codigo confiavel.
@@ -2243,7 +2243,7 @@ class BcpEngine:
         )
         if layout.table.casefold() != str(destination_info["table"]).casefold():
             raise RuntimeError("Snapshot de layout aponta para tabela de destino divergente")
-        if layout.profile_name.casefold() != area.casefold():
+        if not profile_matches_area(layout.profile_name, area):
             raise RuntimeError("Perfil local diverge da área de destino")
         physical = layout_contract(layout)
         projection = projection_contract(layout, manifest.projection)

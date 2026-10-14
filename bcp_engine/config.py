@@ -26,7 +26,10 @@ CONFIG_VERSION = 2
 DEFAULT_CDC_RETENTION_MINUTES = 262_800
 MAX_CDC_RETENTION_MINUTES = 52_494_800
 DESTINATION_KEYS = {"bronze": "bronze_destination", "landing": "landing_destination"}
-DEFAULT_PROFILES = {"bronze": "templates/bronze.json", "landing": "templates/landing.json"}
+DEFAULT_PROFILES = {
+    "bronze": "templates/bronze.json",
+    "landing": "templates/landing_without_aud.json",
+}
 SOURCE_ROLE_DATA_PROVIDER = "data_provider"
 DESTINATION_ROLE_STRUCTURE_AND_DATA = "structure_and_data"
 DESTINATION_ROLE_STRUCTURE_ONLY = "structure_only"
@@ -615,13 +618,21 @@ def _validate_table(value: Any, index: int, cfg: Mapping[str, Any]) -> dict[str,
         )
     if "destination_area" in item:
         result["destination_area"] = area
+    effective_profile = str(
+        result.get("structure_profile")
+        or cfg[DESTINATION_KEYS[area]].get("structure_profile")
+        or DEFAULT_PROFILES[area]
+    ).replace("\\", "/").rsplit("/", 1)[-1].removesuffix(".json").casefold()
+    requires_aud_mapping = area == "landing" and effective_profile in {
+        "landing", "landing_with_aud"
+    }
     if "metadata_mapping" in item:
         if area != "landing":
             raise ConfigError(f"{field}.metadata_mapping só se aplica ao perfil Landing")
         result["metadata_mapping"] = _validate_metadata_mapping(
             item["metadata_mapping"], f"{field}.metadata_mapping"
         )
-    if area == "landing":
+    if requires_aud_mapping:
         missing = {"aud_ccid", "aud_cntrrn", "aud_enttyp"} - set(
             result.get("metadata_mapping", {})
         )

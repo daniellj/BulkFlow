@@ -441,7 +441,8 @@ linhas e também confirma no catálogo `BINARY(10) NOT NULL`.
 ### BD_DESTINO_02
 
 Por default, `BD_DESTINO_02` usa a área interna compatível `landing` e o perfil
-`templates/landing.json`. Ele pode ser selecionado por `ddl --area
+`templates/landing_without_aud.json`. O perfil legado foi renomeado para
+`templates/landing_with_aud.json`. Ele pode ser selecionado por `ddl --area
 landing|both` e cria:
 
 - `id_{source_table}` `BIGINT IDENTITY(1,1)`;
@@ -466,7 +467,8 @@ e nunca cria/evolui objetos ou índices. O comando `ddl --area both` continua
 usando os IDs de área compatíveis para endereçar ambos os destinos.
 
 Essas regras de fuso pertencem somente aos perfis padrão
-`templates/bronze.json` e `templates/landing.json`. Um perfil customizado
+`templates/bronze.json`, `templates/landing_with_aud.json` e
+`templates/landing_without_aud.json`. Um perfil customizado
 continua agnóstico e pode definir outra expressão de preenchimento/default para
 `dh_carga`, assumindo integralmente esse contrato.
 

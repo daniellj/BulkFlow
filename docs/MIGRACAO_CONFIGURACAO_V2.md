@@ -339,7 +339,7 @@ change the general contract defaults.
     "port": 1433,
     "database": "BD_DESTINO_02",
     "schema": "fonte_a",
-    "structure_profile": "templates/landing.json",
+    "structure_profile": "templates/landing_without_aud.json",
     "authentication": {
       "type": "sql",
       "username": "login_estrutura",

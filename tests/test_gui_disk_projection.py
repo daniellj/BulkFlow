@@ -42,6 +42,12 @@ def _plan(
         "estimated_bcp_total_bytes": raw,
         "planning_reserve_bytes": protected,
         "predicted_peak_bytes": peak,
+        "source_table_total_used_bytes": 2_000,
+        "destination_os_free_bytes": 10_000,
+        "destination_os_capacity_ok": True,
+        "destination_os_volumes": [
+            {"volume_mount_point": "/data", "available_bytes": 10_000}
+        ],
     }
 
 
@@ -85,6 +91,11 @@ class GuiDiskProjectionTests(unittest.TestCase):
                 assessment["balance_after_total_protected_bytes"], -10_100
             )
             self.assertFalse(assessment["total_protected_fits"])
+            self.assertEqual(assessment["balance_after_total_raw_bytes"], -7_000)
+            self.assertFalse(assessment["total_raw_fits"])
+        self.assertEqual(summary["total_source_table_used_bytes"], 6_000)
+        self.assertEqual(summary["destination_os"]["free_bytes"], 10_000)
+        self.assertTrue(summary["destination_os"]["capacity_ok"])
 
     def test_unknown_pending_table_never_becomes_a_false_zero_or_approval(self):
         summary = build_disk_projection_summary(

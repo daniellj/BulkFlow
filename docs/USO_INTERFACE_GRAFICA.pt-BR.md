@@ -474,3 +474,8 @@ sessão gráfica.
 ```powershell
 python -m unittest discover -s tests -p "test_gui_v2.py" -v
 ```
+Após **Planejar**, os dois diretórios exibem o espaço livre observado e se a
+soma do BCP bruto cabe no volume. Em **Executar e acompanhar**, a projeção
+também mostra o espaço total usado por cada tabela na origem e a capacidade
+observável dos volumes do Destino 01. Falta de permissão ou metadado aparece
+como indisponível e nunca impede a execução.

@@ -26,7 +26,7 @@
     "port": 1433,
     "database": "BD_DESTINO_02",
     "schema": "esquema_destino",
-    "structure_profile": "landing",
+    "structure_profile": "landing_without_aud",
     "authentication": {"type": "windows_integrated"}
   },
   "active_destination": "bronze",

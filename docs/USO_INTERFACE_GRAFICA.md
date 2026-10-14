@@ -477,3 +477,8 @@ session.
 ```powershell
 python -m unittest discover -s tests -p "test_gui_v2.py" -v
 ```
+After **Planejar**, both directories show observed free space and whether the
+sum of raw BCP bytes fits. **Executar e acompanhar** also shows total storage
+used by each source table and the observable capacity of Destination 01
+volumes. Missing permission or metadata is reported as unavailable and never
+blocks execution.
