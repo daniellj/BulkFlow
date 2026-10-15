@@ -54,6 +54,11 @@
       "default": false,
       "description": "Autoriza apenas ALTER TABLE ADD de colunas de negócio presentes no contrato de origem e ausentes no destino. Nunca remove, renomeia ou altera colunas existentes."
     },
+    "resolve_column_collisions": {
+      "type": "boolean",
+      "default": true,
+      "description": "Preserva colunas homônimas da Origem renomeando a coluna de negócio no destino com o sufixo _origem e emitindo advertência operacional."
+    },
     "artifact_reader_sids": {
       "type": "array",
       "default": [],

@@ -3,7 +3,7 @@
   "name": "landing_with_aud",
   "table_name": "{destination_table}",
   "technical_column": {
-    "name": "id_{source_table}",
+    "name": "id_{destination_table}",
     "sql_type": "BIGINT",
     "nullable": false,
     "identity": true,
@@ -90,7 +90,7 @@
     "name": "pk_{destination_table}",
     "clustered": false,
     "columns": [
-      {"name": "id_{source_table}", "direction": "ASC"}
+      {"name": "id_{destination_table}", "direction": "ASC"}
     ]
   },
   "indexes": [

@@ -406,7 +406,7 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(
             [column.name for column in layout.columns],
             [
-                "id_tabela_origem_01",
+                "id_bd_origem_tabela_origem_01",
                 "codigo",
                 "aud_ccid",
                 "aud_cntrrn",
@@ -449,7 +449,10 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(fills["cd_operacao"], "2")
 
     def test_business_collision_with_profile_metadata_is_rejected(self):
-        with self.assertRaisesRegex(ProfileError, "Colisão de coluna"):
+        with self.assertRaisesRegex(
+            ProfileError,
+            r"db\.dbo\.t\.cd_operacao.*bronze\.db_t\.cd_operacao.*Resolver colisão",
+        ):
             resolve_profile(
                 "bronze",
                 [source_column("cd_operacao")],
@@ -458,6 +461,29 @@ class ProfileTests(unittest.TestCase):
                 destination_table="db_t",
                 destination_schema="bronze",
             )
+
+    def test_business_collision_can_be_resolved_without_losing_source_mapping(self):
+        layout = resolve_profile(
+            "bronze",
+            [source_column("dh_carga", "datetime2", max_length=8, scale=7)],
+            source_database="db",
+            source_schema="origem",
+            source_table="t",
+            destination_table="db_t",
+            destination_schema="bronze",
+            resolve_column_collisions=True,
+        )
+
+        business = next(column for column in layout.columns if column.role == "business")
+        self.assertEqual(business.name, "dh_carga_origem")
+        self.assertEqual(business.source_name, "dh_carga")
+        self.assertEqual(len(layout.collision_resolutions), 1)
+        resolution = layout.collision_resolutions[0]
+        self.assertEqual(resolution.source_column, "db.origem.t.dh_carga")
+        self.assertEqual(
+            resolution.resolved_destination_column,
+            "bronze.db_t.dh_carga_origem",
+        )
 
     def test_bronze_event_id_can_use_configured_sequence_or_source_column(self):
         source = [source_column("evento_id", "bigint", max_length=8)]
@@ -644,7 +670,7 @@ class DdlGenerationTests(unittest.TestCase):
         layout = landing_layout()
         table = create_table_statement(layout)
         sql = build_ddl_plan(layout).ssms_script
-        self.assertIn("[id_tabela_origem_01] BIGINT IDENTITY(1,1) NOT NULL", sql)
+        self.assertIn("[id_bd_origem_tabela_origem_01] BIGINT IDENTITY(1,1) NOT NULL", sql)
         self.assertIn("CAST([aud_ccid] AS BINARY(10))", sql)
         self.assertIn("[cd_operacao] AS (CASE [aud_enttyp]", sql)
         self.assertIn(
@@ -652,7 +678,7 @@ class DdlGenerationTests(unittest.TestCase):
             f"DEFAULT ({BRASILIA_TIMESTAMP_SQL}) NOT NULL",
             table,
         )
-        self.assertIn("PRIMARY KEY NONCLUSTERED ([id_tabela_origem_01] ASC)", sql)
+        self.assertIn("PRIMARY KEY NONCLUSTERED ([id_bd_origem_tabela_origem_01] ASC)", sql)
         self.assertIn("CREATE CLUSTERED INDEX [ix_tabela_origem_01_01]", sql)
         self.assertNotIn("[de_operacao]", sql)
 

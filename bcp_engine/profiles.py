@@ -159,6 +159,14 @@ class FillRule:
 
 
 @dataclass(frozen=True)
+class ColumnCollisionResolution:
+    source_column: str
+    destination_column: str
+    conflicting_role: str
+    resolved_destination_column: str
+
+
+@dataclass(frozen=True)
 class TableLayout:
     profile_name: str
     profile_version: int
@@ -174,6 +182,7 @@ class TableLayout:
     technical_id_source_column: str | None
     fill_rules: tuple[FillRule, ...]
     partition: PartitionDefinition | None = None
+    collision_resolutions: tuple[ColumnCollisionResolution, ...] = ()
 
     @property
     def qualified_name(self) -> str:
@@ -602,6 +611,7 @@ def resolve_profile(
     source_columns: Sequence[Mapping[str, Any]],
     *,
     source_database: str,
+    source_schema: str = "dbo",
     source_table: str,
     destination_schema: str,
     destination_table: str | None = None,
@@ -609,6 +619,7 @@ def resolve_profile(
     directory: Path | None = None,
     bronze_event_id: Mapping[str, Any] | None = None,
     partition_column: str | None = None,
+    resolve_column_collisions: bool = False,
 ) -> TableLayout:
     """Resolve placeholders e intercala colunas autodescobertas na ordem exata."""
 
@@ -633,10 +644,66 @@ def resolve_profile(
         str(rendered["table_name"]), "table_name"
     )
     technical = _column_from_profile(rendered["technical_column"], "technical")
-    business = tuple(_column_from_source(column) for column in source_columns)
     additional = tuple(
         _column_from_profile(column, "metadata") for column in rendered["additional_columns"]
     )
+    reserved: dict[str, ColumnDefinition] = {}
+    for column in (technical,) + additional:
+        folded = column.name.casefold()
+        if folded in reserved:
+            raise ProfileError(
+                f"Perfil {rendered['name']!r} inválido: as colunas reservadas "
+                f"{reserved[folded].name!r} e {column.name!r} colidem."
+            )
+        reserved[folded] = column
+    business_items: list[ColumnDefinition] = []
+    collisions: list[ColumnCollisionResolution] = []
+    used_names = set(reserved)
+    for source_column in source_columns:
+        column = _column_from_source(source_column)
+        folded = column.name.casefold()
+        if folded in used_names:
+            conflict = reserved.get(folded)
+            conflict_role = conflict.role if conflict is not None else "business"
+            source_qualified = (
+                f"{source_database}.{source_schema}.{source_table}.{column.source_name}"
+            )
+            destination_qualified = (
+                f"{context['destination_schema']}.{table}.{column.name}"
+            )
+            if not resolve_column_collisions:
+                raise ProfileError(
+                    "Colisão de coluna detectada: "
+                    f"{source_qualified} produziria {destination_qualified}, que já é "
+                    f"reservada pelo perfil como coluna {conflict_role}. Para preservar "
+                    "ambos os valores, ative 'Resolver colisão de colunas'; a coluna da "
+                    "Origem será materializada com o sufixo '_origem'."
+                )
+            base = _normalize_destination_identifier(
+                f"{column.name}_origem", "coluna de negócio resolvida"
+            )
+            candidate = base
+            suffix = 2
+            while candidate.casefold() in used_names:
+                candidate = _normalize_destination_identifier(
+                    f"{base}_{suffix}", "coluna de negócio resolvida"
+                )
+                suffix += 1
+            collisions.append(
+                ColumnCollisionResolution(
+                    source_column=source_qualified,
+                    destination_column=destination_qualified,
+                    conflicting_role=conflict_role,
+                    resolved_destination_column=(
+                        f"{context['destination_schema']}.{table}.{candidate}"
+                    ),
+                )
+            )
+            column = replace(column, name=candidate)
+            folded = candidate.casefold()
+        used_names.add(folded)
+        business_items.append(column)
+    business = tuple(business_items)
     columns = (technical,) + business + additional
 
     folded_names: dict[str, str] = {}
@@ -836,6 +903,7 @@ def resolve_profile(
         technical_id_source_column=technical_source,
         fill_rules=tuple(fill_rules),
         partition=partition,
+        collision_resolutions=tuple(collisions),
     )
 
 
@@ -856,6 +924,7 @@ def profile_matches_area(profile_name: str, area: str) -> bool:
 __all__ = [
     "ALLOWED_PLACEHOLDERS",
     "ColumnDefinition",
+    "ColumnCollisionResolution",
     "DEFAULT_PROFILE_DIRECTORY",
     "FillRule",
     "IndexDefinition",

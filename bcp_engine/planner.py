@@ -671,6 +671,7 @@ def build_plan(
                     destination["structure_profile"],
                     source_columns,
                     source_database=source["database"],
+                    source_schema=source["schema"],
                     source_table=source["table"],
                     destination_schema=destination["schema"],
                     destination_table=destination["table"],
@@ -681,6 +682,9 @@ def build_plan(
                         else None
                     ),
                     directory=profile_directory,
+                    resolve_column_collisions=bool(
+                        config.get("resolve_column_collisions", True)
+                    ),
                 )
                 profile_name = getattr(layout, "profile_name", destination["area"])
                 if not profile_matches_area(str(profile_name), str(destination["area"])):

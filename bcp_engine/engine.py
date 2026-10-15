@@ -468,6 +468,7 @@ class BcpEngine:
             profile,
             columns,
             source_database=table["source"]["database"],
+            source_schema=table["source"].get("schema", "dbo"),
             source_table=table["source"]["table"],
             destination_schema=target_schema,
             destination_table=table["destination"]["table"],
@@ -477,6 +478,9 @@ class BcpEngine:
                 self.config.get("bronze_event_id")
                 if target_area == "bronze"
                 else None
+            ),
+            resolve_column_collisions=bool(
+                self.config.get("resolve_column_collisions", True)
             ),
         )
         if not profile_matches_area(layout.profile_name, target_area):
@@ -919,6 +923,22 @@ class BcpEngine:
                     validate_source_table(source, src["schema"], src["table"])
                     columns = discover_columns(source, src["schema"], src["table"])
                     layout = self._resolve_layout(table, columns, area=area)
+                    for collision in layout.collision_resolutions:
+                        self.event(
+                            "column_collision_resolved",
+                            {
+                                "source_column": collision.source_column,
+                                "conflicting_destination_column": collision.destination_column,
+                                "resolved_destination_column": collision.resolved_destination_column,
+                                "conflicting_role": collision.conflicting_role,
+                                "message": (
+                                    "O DDL será gerado porque 'Resolver colisão de colunas' "
+                                    "está ativo. A coluna da Origem foi preservada com o "
+                                    "sufixo '_origem'. É responsabilidade do operador revisar "
+                                    "e aceitar este mapeamento."
+                                ),
+                            },
+                        )
                     script = generate_ddl_script(
                         layout,
                         stage=DdlStage.FULL,
@@ -2232,6 +2252,7 @@ class BcpEngine:
             profile_value,
             manifest.projection,
             source_database=str(manifest.source["database"]),
+            source_schema=str(manifest.source["schema"]),
             source_table=str(manifest.source["table"]),
             destination_schema=str(destination_info["schema"]),
             destination_table=str(destination_info["table"]),
@@ -2239,6 +2260,9 @@ class BcpEngine:
             directory=directory,
             bronze_event_id=(
                 self.config.get("bronze_event_id") if area == "bronze" else None
+            ),
+            resolve_column_collisions=bool(
+                self.config.get("resolve_column_collisions", True)
             ),
         )
         if layout.table.casefold() != str(destination_info["table"]).casefold():

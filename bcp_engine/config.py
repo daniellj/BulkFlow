@@ -59,6 +59,7 @@ ROOT_KEYS = {
     "executor_directory", "destination_sql_directory", "local_control_directory",
     "rows_per_block", "max_file_bytes", "minimum_free_space_bytes",
     "keyless_direct_load_max_rows", "allow_schema_evolution",
+    "resolve_column_collisions",
     "delete_confirmed_files", "continue_after_table_error", "estimates",
     "batching", "structure", "bronze_event_id", "tables", "odbc_driver",
     "bcp_executable", "connection_timeout_seconds", "sql_timeout_seconds",
@@ -96,6 +97,7 @@ DEFAULTS: dict[str, Any] = {
     # Operational authorization only.  A source-layout change still changes
     # the structural fingerprint independently of this switch.
     "allow_schema_evolution": False,
+    "resolve_column_collisions": True,
     # Optional Windows principals that need read/traverse access to the BCP
     # files (for example a local SQL Server service SID), plus exceptional
     # writer identities for SMB where the local token SID differs from the
@@ -750,7 +752,7 @@ def validate_config(value: Any) -> dict[str, Any]:
     for key in (
         "execute_import", "create_structure_if_needed",
         "delete_confirmed_files", "continue_after_table_error",
-        "allow_schema_evolution",
+        "allow_schema_evolution", "resolve_column_collisions",
     ):
         cfg[key] = _bool(cfg[key], key)
     cfg["rows_per_block"] = _integer(
@@ -1050,6 +1052,7 @@ def operational_fingerprint(config: Mapping[str, Any]) -> str:
         "execute_import": config["execute_import"],
         "create_structure_if_needed": config["create_structure_if_needed"],
         "allow_schema_evolution": config.get("allow_schema_evolution", False),
+        "resolve_column_collisions": config.get("resolve_column_collisions", True),
         "executor_directory": config["executor_directory"],
         "destination_sql_directory": config.get("destination_sql_directory"),
         "local_control_directory": config["local_control_directory"],

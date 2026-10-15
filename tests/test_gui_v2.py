@@ -509,6 +509,54 @@ class GuiModelTests(unittest.TestCase):
 
 
 class GuiConstructionTests(unittest.TestCase):
+    def test_ddl_area_default_follows_enabled_destinations(self):
+        try:
+            from bcp_engine.gui import BcpGuiApplication
+        except ImportError as error:  # pragma: no cover
+            self.skipTest(f"Dependência gráfica indisponível: {error}")
+
+        class Value:
+            def __init__(self, value=False):
+                self.value = value
+
+            def get(self):
+                return self.value
+
+            def set(self, value):
+                self.value = value
+
+        application = object.__new__(BcpGuiApplication)
+        application.ddl_area = Value()
+        application.endpoint_enabled = {
+            "bronze_destination": Value(),
+            "landing_destination": Value(),
+        }
+        for bronze, landing, expected in (
+            (True, False, "Destino 01"),
+            (False, True, "Destino 02"),
+            (False, False, "Nenhum"),
+            (True, True, "Ambas"),
+        ):
+            application.endpoint_enabled["bronze_destination"].set(bronze)
+            application.endpoint_enabled["landing_destination"].set(landing)
+            application._update_ddl_area_default()
+            self.assertEqual(application.ddl_area.get(), expected)
+
+    def test_configuration_filename_uses_destination_01_schema(self):
+        try:
+            from bcp_engine.gui import _configuration_filename
+        except ImportError as error:  # pragma: no cover
+            self.skipTest(f"Dependência gráfica indisponível: {error}")
+
+        self.assertEqual(
+            _configuration_filename({"bronze_destination": {"schema": "s999"}}),
+            "config_transferencia_s999.json",
+        )
+        self.assertEqual(
+            _configuration_filename({"bronze_destination": {"schema": "s 999/qa"}}),
+            "config_transferencia_s_999_qa.json",
+        )
+
     def test_source_gui_ddl_field_uses_exact_project_local_default(self):
         try:
             from bcp_engine.gui import RUNTIME_DATA_ROOT, RUNTIME_DDL_DIRECTORY
@@ -526,11 +574,14 @@ class GuiConstructionTests(unittest.TestCase):
             self.skipTest(f"Dependência gráfica indisponível: {error}")
 
         class Value:
-            def __init__(self):
-                self.value = ""
+            def __init__(self, value=""):
+                self.value = value
 
             def set(self, value):
                 self.value = value
+
+            def get(self):
+                return self.value
 
         class Tree:
             def __init__(self):
@@ -547,8 +598,11 @@ class GuiConstructionTests(unittest.TestCase):
 
         application = object.__new__(BcpGuiApplication)
         application.disk_projection_overview = Value()
-        application.export_disk_assessment = Value()
-        application.import_disk_assessment = Value()
+        application.destination_disk_assessment = Value()
+        application.disk_operator_warning = Value()
+        application.endpoint_variables = {
+            "bronze_destination": {"instance": Value("SQL-DESTINO")}
+        }
         application.disk_projection_tree = Tree()
         summary = {
             "unknown_table_count": 0,
@@ -579,6 +633,12 @@ class GuiConstructionTests(unittest.TestCase):
                     "error": "sem acesso",
                 },
             },
+            "destination_os": {
+                "free_bytes": 10_000,
+                "required_bytes": 2_000,
+                "capacity_ok": True,
+                "error": None,
+            },
             "tables": [
                 {
                     "source": "D.dbo.t",
@@ -595,10 +655,13 @@ class GuiConstructionTests(unittest.TestCase):
         application._refresh_disk_projection(summary)
 
         self.assertIn("bruto", application.disk_projection_overview.value)
-        self.assertIn("operação: SUFICIENTE", application.export_disk_assessment.value)
-        self.assertIn("retenção integral: SUFICIENTE", application.export_disk_assessment.value)
-        self.assertIn("INDISPONÍVEL", application.import_disk_assessment.value)
+        self.assertNotIn("Pico operacional", application.disk_projection_overview.value)
+        self.assertNotIn("Reserva mínima", application.disk_projection_overview.value)
+        self.assertIn("Destino 01 (SQL-DESTINO)", application.destination_disk_assessment.value)
+        self.assertIn(r"C:\BCP", application.disk_operator_warning.value)
         self.assertEqual(len(application.disk_projection_tree.rows), 1)
+        values, _tags = application.disk_projection_tree.rows["disk-projection-0"]
+        self.assertEqual(len(values), 4)
 
     def test_table_dialog_downloads_prefilled_watermark_validation_script(self):
         try:

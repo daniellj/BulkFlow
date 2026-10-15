@@ -114,6 +114,11 @@ def _event(name: str, payload: Mapping[str, Any]) -> None:
             "Evolução de schema bloqueada sem alteração parcial: %s",
             stable_json(redact_structure(payload)),
         )
+    elif name == "column_collision_resolved":
+        LOG.warning(
+            "ATENÇÃO — colisão de coluna resolvida: %s",
+            stable_json(redact_structure(payload)),
+        )
     elif name == "cdc_database":
         logger = LOG.info if payload.get("success") else LOG.error
         logger("CDC do banco de origem: %s", stable_json(redact_structure(payload)))

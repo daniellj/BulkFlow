@@ -12,6 +12,9 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 import queue
+import re
+import subprocess
+import sys
 import threading
 from typing import Any, Callable, Mapping
 
@@ -198,6 +201,13 @@ FIELD_HELP: dict[str, str] = {
     "partition_enabled": "Habilita particionamento da tabela de destino pela coluna informada.",
     "partition_column": "Coluna datetime2 usada no particionamento mensal; sugestão: dh_carga.",
     "ddl_area": "Seleciona quais destinos recebem os scripts de estrutura.",
+    "resolve_column_collisions": (
+        "Quando marcado, uma coluna da Origem que colide com uma coluna técnica ou de "
+        "metadados do perfil é preservada no destino com o sufixo '_origem'. Exemplo: "
+        "Origem.schema.table.dh_carga e <Destino 01 ou Destino 02>.schema.table.dh_carga. Cada resolução "
+        "é exibida no acompanhamento e deve ser revisada pelo operador. Desmarcado, a "
+        "colisão interrompe a geração do DDL com diagnóstico detalhado."
+    ),
     "ddl_output": "Diretório em que os scripts DDL gerados serão gravados.",
     "execution_id": "UUID usado para consultar ou retomar uma execução existente.",
     "manifest_path": "Manifesto, índice ou diretório para uma importação independente no destino de dados.",
@@ -221,6 +231,16 @@ def _help_label(parent: tk.Misc, text: str, help_key: str) -> ttk.Frame:
         lambda _event: messagebox.showinfo("Ajuda do parâmetro", FIELD_HELP[help_key], parent=parent),
     )
     return container
+
+
+def _configuration_filename(config: Mapping[str, Any]) -> str:
+    """Build the GUI/CLI configuration filename from Destino 01's schema."""
+
+    destination_schema = str(
+        config.get("bronze_destination", {}).get("schema", "")
+    ).strip()
+    safe_schema = re.sub(r"[^0-9A-Za-z_.-]+", "_", destination_schema).strip("._")
+    return f"config_transferencia_{safe_schema or 'sem_esquema'}.json"
 
 
 @dataclass
@@ -832,6 +852,7 @@ class BcpGuiApplication:
             "execute_import": tk.BooleanVar(),
             "create_structure_if_needed": tk.BooleanVar(),
             "allow_schema_evolution": tk.BooleanVar(),
+            "resolve_column_collisions": tk.BooleanVar(value=True),
             "keyless_direct_load_max_rows": tk.StringVar(),
             "executor_directory": tk.StringVar(),
             "destination_sql_directory": tk.StringVar(),
@@ -884,7 +905,7 @@ class BcpGuiApplication:
                 "encrypt": tk.BooleanVar(value=True),
                 "trust_server_certificate": tk.BooleanVar(value=False),
             }
-        self.ddl_area = tk.StringVar(value="Ambos")
+        self.ddl_area = tk.StringVar(value="Ambas")
         self.ddl_output = tk.StringVar(value=str(RUNTIME_DDL_DIRECTORY))
         self.execution_id = tk.StringVar()
         self.manifest_path = tk.StringVar()
@@ -897,18 +918,10 @@ class BcpGuiApplication:
         self.disk_projection_overview = tk.StringVar(
             value="Projeção de disco: execute Planejar para calcular todas as tabelas."
         )
-        self.export_disk_assessment = tk.StringVar(
-            value="Exportação: aguardando planejamento."
-        )
-        self.import_disk_assessment = tk.StringVar(
-            value="Importação: aguardando planejamento."
-        )
         self.destination_disk_assessment = tk.StringVar(
             value="Destino 01: aguardando planejamento."
         )
         self.disk_operator_warning = tk.StringVar()
-        self.general_export_free = tk.StringVar(value="Livre: aguardando planejamento.")
-        self.general_import_free = tk.StringVar(value="Livre: aguardando planejamento.")
 
         for name in ("max_file_bytes", "minimum_free_space_bytes"):
             self.global_variables[name].trace_add(
@@ -963,6 +976,24 @@ class BcpGuiApplication:
                 endpoint[name].trace_add(
                     "write", lambda *_args: self._on_credential_context_changed()
                 )
+        for key in ("bronze_destination", "landing_destination"):
+            self.endpoint_enabled[key].trace_add(
+                "write", lambda *_args: self._update_ddl_area_default()
+            )
+
+    def _update_ddl_area_default(self) -> None:
+        bronze = bool(self.endpoint_enabled["bronze_destination"].get())
+        landing = bool(self.endpoint_enabled["landing_destination"].get())
+        value = (
+            "Ambas"
+            if bronze and landing
+            else "Destino 01"
+            if bronze
+            else "Destino 02"
+            if landing
+            else "Nenhum"
+        )
+        self.ddl_area.set(value)
 
     def _build_window(self) -> None:
         toolbar = ttk.Frame(self.root, padding=(12, 10))
@@ -1098,20 +1129,20 @@ class BcpGuiApplication:
             self.global_variables["executor_directory"],
             browse="directory",
             help_key="executor_directory",
+            entry_width=58,
+            entry_help=False,
+            value_tooltip=True,
         )
-        ttk.Label(
-            storage, textvariable=self.general_export_free, bootstyle="secondary"
-        ).grid(row=row - 1, column=3, sticky="w", padx=(6, 0), pady=5)
         row = self._form_entry(
             storage,
             row,
             "Diretório de importação dos arquivos *",
             self.global_variables["destination_sql_directory"],
             help_key="destination_sql_directory",
+            entry_width=58,
+            entry_help=False,
+            value_tooltip=True,
         )
-        ttk.Label(
-            storage, textvariable=self.general_import_free, bootstyle="secondary"
-        ).grid(row=row - 1, column=2, columnspan=2, sticky="w", padx=(6, 0), pady=5)
         row = self._form_entry(
             storage,
             row,
@@ -1318,13 +1349,27 @@ class BcpGuiApplication:
         default_value: Any | None = None,
         companion: tk.StringVar | None = None,
         highlight_empty_default: bool = False,
+        entry_width: int | None = None,
+        entry_help: bool = True,
+        value_tooltip: bool = False,
     ) -> int:
         _help_label(parent, label, help_key).grid(row=row, column=0, sticky="w", pady=5)
-        entry = ttk.Entry(parent, textvariable=variable)
+        entry = ttk.Entry(parent, textvariable=variable, width=entry_width)
         entry.grid(
             row=row, column=1, sticky="ew", padx=(8, 0), pady=5
         )
-        _attach_help(entry, help_key)
+        if entry_help:
+            _attach_help(entry, help_key)
+        if value_tooltip:
+            tooltip = ToolTip(entry, text=str(variable.get()), wraplength=700, delay=250)
+            entry.bind(
+                "<Enter>",
+                lambda _event, tip=tooltip, value=variable: setattr(
+                    tip, "text", str(value.get()) or "<não informado>"
+                ),
+                add="+",
+            )
+            setattr(entry, "_value_tooltip", tooltip)
         if default_value is not None:
             self._register_default_widget(
                 entry,
@@ -1925,62 +1970,49 @@ class BcpGuiApplication:
         ttk.Label(prerequisites, textvariable=self.bcp_requirement).grid(
             row=1, column=0, sticky="w", padx=4, pady=2
         )
+        install = ttk.Button(
+            prerequisites,
+            text="Instalar pré-requisitos",
+            command=self._install_prerequisites,
+            bootstyle="outline-info",
+        )
+        install.grid(row=0, column=1, rowspan=2, padx=(8, 4), pady=4)
         verify = ttk.Button(
             prerequisites,
             text="Verificar pré-requisitos",
             command=self._verify_prerequisites,
             bootstyle="info",
         )
-        verify.grid(row=0, column=1, rowspan=2, padx=8, pady=4)
+        verify.grid(row=0, column=2, rowspan=2, padx=4, pady=4)
         ttk.Label(
             prerequisites, textvariable=self.prerequisite_status, bootstyle="secondary"
-        ).grid(row=0, column=2, rowspan=2, sticky="w", padx=8)
+        ).grid(row=0, column=3, rowspan=2, sticky="w", padx=8)
 
         ttk.Separator(prerequisites).grid(
-            row=2, column=0, columnspan=3, sticky="ew", padx=4, pady=(8, 6)
+            row=2, column=0, columnspan=4, sticky="ew", padx=4, pady=(8, 6)
         )
         ttk.Label(
             prerequisites,
             textvariable=self.disk_projection_overview,
             wraplength=1130,
             bootstyle="primary",
-        ).grid(row=3, column=0, columnspan=3, sticky="w", padx=4, pady=2)
-        ttk.Label(
-            prerequisites,
-            textvariable=self.export_disk_assessment,
-            wraplength=1130,
-        ).grid(row=4, column=0, columnspan=3, sticky="w", padx=4, pady=2)
-        ttk.Label(
-            prerequisites,
-            textvariable=self.import_disk_assessment,
-            wraplength=1130,
-        ).grid(row=5, column=0, columnspan=3, sticky="w", padx=4, pady=2)
+        ).grid(row=3, column=0, columnspan=4, sticky="w", padx=4, pady=2)
         ttk.Label(
             prerequisites,
             textvariable=self.destination_disk_assessment,
             wraplength=1130,
-        ).grid(row=6, column=0, columnspan=3, sticky="w", padx=4, pady=2)
-        ttk.Label(
-            prerequisites,
-            text=(
-                "Exportação e importação são duas visões dos mesmos arquivos BCP; "
-                "o espaço nunca é somado duas vezes."
-            ),
-            bootstyle="secondary",
-        ).grid(row=7, column=0, columnspan=3, sticky="w", padx=4, pady=(2, 4))
+        ).grid(row=4, column=0, columnspan=4, sticky="w", padx=4, pady=2)
 
         projection_columns = (
             "source",
             "estimated_rows",
             "raw_bytes",
             "protected_bytes",
-            "projection_state",
-            "source_used_bytes",
         )
         projection_frame = ttk.Frame(prerequisites)
         projection_frame.columnconfigure(0, weight=1)
         projection_frame.grid(
-            row=8, column=0, columnspan=3, sticky="ew", padx=4, pady=(2, 4)
+            row=5, column=0, columnspan=4, sticky="ew", padx=4, pady=(2, 4)
         )
         self.disk_projection_tree = ttk.Treeview(
             projection_frame,
@@ -1989,27 +2021,23 @@ class BcpGuiApplication:
             height=4,
         )
         projection_headings = {
-            "source": "Tabela de origem",
-            "estimated_rows": "Linhas estimadas",
-            "raw_bytes": "BCP bruto",
+            "source": "Tabela de origem  |",
+            "estimated_rows": "Linhas estimadas  |",
+            "raw_bytes": "BCP bruto  |",
             "protected_bytes": "BCP + margem",
-            "projection_state": "Estimativa",
-            "source_used_bytes": "Espaço total na origem",
         }
         projection_widths = {
             "source": 360,
             "estimated_rows": 120,
             "raw_bytes": 140,
             "protected_bytes": 140,
-            "projection_state": 210,
-            "source_used_bytes": 170,
         }
         for name in projection_columns:
             self.disk_projection_tree.heading(name, text=projection_headings[name])
             self.disk_projection_tree.column(
                 name,
                 width=projection_widths[name],
-                anchor="w" if name in {"source", "projection_state"} else "e",
+                anchor="w",
             )
         self.disk_projection_tree.tag_configure("unavailable", foreground="#9a6700")
         self.disk_projection_tree.grid(row=0, column=0, sticky="ew")
@@ -2025,7 +2053,7 @@ class BcpGuiApplication:
             textvariable=self.disk_operator_warning,
             bootstyle="danger",
             wraplength=1130,
-        ).grid(row=9, column=0, columnspan=3, sticky="w", padx=4, pady=(4, 2))
+        ).grid(row=6, column=0, columnspan=4, sticky="w", padx=4, pady=(4, 2))
 
         planning = ttk.Labelframe(
             tab, text="2. Informar credenciais e planejar", padding=10
@@ -2050,10 +2078,10 @@ class BcpGuiApplication:
             planning, columns=summary_columns, show="headings", height=3
         )
         summary_headings = {
-            "environment": "Ambiente",
-            "username": "Usuário",
-            "instance": "Instância SQL Server",
-            "port": "Porta",
+            "environment": "Ambiente  |",
+            "username": "Usuário  |",
+            "instance": "Instância SQL Server  |",
+            "port": "Porta  |",
             "database": "Banco de dados",
         }
         summary_widths = {
@@ -2068,7 +2096,7 @@ class BcpGuiApplication:
             self.connection_tree.column(
                 name,
                 width=summary_widths[name],
-                anchor="center" if name in {"environment", "port"} else "w",
+                anchor="w",
             )
         self.connection_tree.grid(
             row=1, column=0, columnspan=3, sticky="ew", padx=4, pady=(6, 2)
@@ -2076,25 +2104,38 @@ class BcpGuiApplication:
 
         ddl = ttk.Labelframe(tab, text="3. Gerar e aplicar a estrutura", padding=10)
         ddl.grid(row=2, column=0, sticky="ew", pady=(0, 8))
-        ddl.columnconfigure(3, weight=1)
+        ddl.columnconfigure(4, weight=1)
+        collision_container = ttk.Frame(ddl)
+        collision_container.grid(row=0, column=0, padx=4, pady=4, sticky="w")
+        ttk.Checkbutton(
+            collision_container,
+            text="Resolver colisão de colunas",
+            variable=self.global_variables["resolve_column_collisions"],
+            bootstyle="round-toggle",
+        ).pack(side="left")
+        collision_help = ttk.Label(
+            collision_container, text=" ? ", bootstyle="info", cursor="hand2"
+        )
+        collision_help.pack(side="left", padx=(3, 0))
+        _attach_help(collision_help, "resolve_column_collisions")
         _help_label(ddl, "Área do DDL", "ddl_area").grid(
-            row=0, column=0, padx=4, pady=4, sticky="w"
+            row=0, column=1, padx=(12, 4), pady=4, sticky="w"
         )
         ddl_area = ttk.Combobox(
             ddl,
             textvariable=self.ddl_area,
-            values=["Destino 01", "Destino 02", "Ambos"],
+            values=["Nenhum", "Destino 01", "Destino 02", "Ambas"],
             state="readonly",
             width=12,
         )
-        ddl_area.grid(row=0, column=1, padx=4, pady=4)
+        ddl_area.grid(row=0, column=2, padx=4, pady=4)
         _attach_help(ddl_area, "ddl_area")
-        self._register_default_widget(ddl_area, self.ddl_area, "Ambos", "combobox")
+        self._register_default_widget(ddl_area, self.ddl_area, "Ambas", "combobox")
         _help_label(ddl, "Diretório dos scripts", "ddl_output").grid(
-            row=0, column=2, padx=(18, 4), pady=4, sticky="w"
+            row=0, column=3, padx=(18, 4), pady=4, sticky="w"
         )
         ddl_output = ttk.Entry(ddl, textvariable=self.ddl_output, width=36)
-        ddl_output.grid(row=0, column=3, padx=4, pady=4, sticky="ew")
+        ddl_output.grid(row=0, column=4, padx=4, pady=4, sticky="ew")
         _attach_help(ddl_output, "ddl_output")
         self._register_default_widget(
             ddl_output, self.ddl_output, str(RUNTIME_DDL_DIRECTORY), "entry"
@@ -2103,13 +2144,13 @@ class BcpGuiApplication:
             ddl, text="Gerar DDL", command=lambda: self._ddl(False), bootstyle="secondary"
         )
         generate.grid(
-            row=0, column=4, padx=4, pady=4
+            row=0, column=5, padx=4, pady=4
         )
         apply_ddl = ttk.Button(
             ddl, text="Aplicar DDL", command=lambda: self._ddl(True), bootstyle="warning"
         )
         apply_ddl.grid(
-            row=0, column=5, padx=4, pady=4
+            row=0, column=6, padx=4, pady=4
         )
 
         transfer = ttk.Labelframe(
@@ -2201,7 +2242,7 @@ class BcpGuiApplication:
         ).grid(row=1, column=0, sticky="e", pady=(8, 0))
 
         self.action_buttons.extend(
-            [verify, plan, generate, apply_ddl, run, resume, status, import_manifests]
+            [install, verify, plan, generate, apply_ddl, run, resume, status, import_manifests]
         )
         self._update_prerequisite_descriptions()
 
@@ -2209,28 +2250,16 @@ class BcpGuiApplication:
         """Discard stale sizing evidence without touching disk or SQL."""
 
         overview = getattr(self, "disk_projection_overview", None)
-        export = getattr(self, "export_disk_assessment", None)
-        import_ = getattr(self, "import_disk_assessment", None)
         destination = getattr(self, "destination_disk_assessment", None)
         warning = getattr(self, "disk_operator_warning", None)
         if overview is not None:
             overview.set(
                 "Projeção de disco: execute Planejar para recalcular todas as tabelas."
             )
-        if export is not None:
-            export.set("Exportação: aguardando planejamento.")
-        if import_ is not None:
-            import_.set("Importação: aguardando planejamento.")
         if destination is not None:
             destination.set("Destino 01: aguardando planejamento.")
         if warning is not None:
             warning.set("")
-        general_export = getattr(self, "general_export_free", None)
-        general_import = getattr(self, "general_import_free", None)
-        if general_export is not None:
-            general_export.set("Livre: aguardando planejamento.")
-        if general_import is not None:
-            general_import.set("Livre: aguardando planejamento.")
         tree = getattr(self, "disk_projection_tree", None)
         if tree is not None:
             for item in tree.get_children():
@@ -2248,9 +2277,7 @@ class BcpGuiApplication:
         unknown = int(summary.get("unknown_table_count", 0))
         raw = summary.get("total_raw_bytes")
         protected = summary.get("total_protected_bytes")
-        peak = summary.get("predicted_peak_bytes")
         factor = summary.get("safety_factor")
-        minimum = summary.get("minimum_free_bytes")
         if raw is None or protected is None:
             self.disk_projection_overview.set(
                 "Projeção consolidada INDISPONÍVEL: "
@@ -2259,76 +2286,13 @@ class BcpGuiApplication:
                 f"{format_bytes(summary.get('known_protected_bytes'))} com margem."
             )
         else:
-            peak_text = format_bytes(peak)
-            if peak is None:
-                peak_text += " (incompleto por dependência anterior)"
             self.disk_projection_overview.set(
                 "Projeção consolidada: "
                 f"bruto {format_bytes(raw)} | com fator {factor:g}: "
-                f"{format_bytes(protected)} | pico operacional {peak_text} | "
-                f"reserva mínima {format_bytes(minimum)}."
+                f"{format_bytes(protected)}."
             )
-
-        state_labels = {
-            "sufficient": "SUFICIENTE",
-            "insufficient": "INSUFICIENTE",
-            "unavailable": "INDISPONÍVEL",
-            "not_applicable": "NÃO APLICÁVEL",
-        }
-
-        def render_directory(label: str, value: Mapping[str, Any]) -> str:
-            state = str(value.get("state", "unavailable"))
-            total_fits = value.get("total_protected_fits")
-            retention_state = (
-                "NÃO APLICÁVEL"
-                if state == "not_applicable"
-                else "INDISPONÍVEL"
-                if total_fits is None
-                else "SUFICIENTE"
-                if total_fits
-                else "INSUFICIENTE"
-            )
-            text = (
-                f"{label} (visão do executor): "
-                f"{value.get('path') or '<não informado>'} | "
-                f"livre {format_bytes(value.get('free_bytes'))} | "
-                f"saldo após BCP bruto {format_bytes(value.get('balance_after_total_raw_bytes'))} | "
-                f"BCP bruto: "
-                f"{'SUFICIENTE' if value.get('total_raw_fits') is True else 'INSUFICIENTE' if value.get('total_raw_fits') is False else 'NÃO FOI POSSÍVEL CAPTURAR'} | "
-                f"saldo operacional após pico e reserva "
-                f"{format_bytes(value.get('balance_after_peak_bytes'))} | "
-                f"saldo se todos os arquivos protegidos forem retidos "
-                f"{format_bytes(value.get('balance_after_total_protected_bytes'))} | "
-                f"retenção integral: {retention_state} | operação: "
-                f"{state_labels.get(state, state.upper())}"
-            )
-            if value.get("error"):
-                text += " — " + redact_text(str(value["error"]))
-            return text
 
         directories = summary.get("directories") or {}
-        self.export_disk_assessment.set(
-            render_directory("Exportação", directories.get("export") or {})
-        )
-        self.import_disk_assessment.set(
-            render_directory("Importação", directories.get("import") or {})
-        )
-        for variable_name, directory_name in (
-            ("general_export_free", "export"),
-            ("general_import_free", "import"),
-        ):
-            variable = getattr(self, variable_name, None)
-            if variable is not None:
-                evidence = directories.get(directory_name) or {}
-                fit = evidence.get("total_raw_fits")
-                fit_text = (
-                    "SUFICIENTE" if fit is True else "INSUFICIENTE" if fit is False
-                    else "NÃO FOI POSSÍVEL CAPTURAR"
-                )
-                variable.set(
-                    f"Livre: {format_bytes(evidence.get('free_bytes'))} | "
-                    f"BCP bruto: {fit_text}"
-                )
         destination = summary.get("destination_os") or {}
         capacity = destination.get("capacity_ok")
         capacity_text = (
@@ -2339,7 +2303,8 @@ class BcpGuiApplication:
             else "NÃO FOI POSSÍVEL CAPTURAR"
         )
         destination_text = (
-            "Destino 01 (discos do SQL Server): livre mínimo "
+            f"Destino 01 ({self.endpoint_variables['bronze_destination']['instance'].get() or '<não informada>'}) "
+            "(discos do SQL Server): livre mínimo "
             f"{format_bytes(destination.get('free_bytes'))} | espaço total das tabelas "
             f"de origem {format_bytes(destination.get('required_bytes'))} | "
             f"avaliação: {capacity_text}"
@@ -2357,10 +2322,16 @@ class BcpGuiApplication:
         instance = instance_var.get() if hasattr(instance_var, "get") else str(instance_var)
         warning_variable = getattr(self, "disk_operator_warning", None)
         if warning_variable is not None:
+            same_path = bool(summary.get("same_path_view"))
+            path_text = (
+                f"na pasta {export_path}"
+                if same_path
+                else f"nas pastas {export_path} e {import_path}"
+            )
             warning_variable.set(
                 "ATENÇÃO: o operador deve verificar se há espaço em disco disponível para "
-                f"armazenar os arquivos BCP nas pastas {export_path} e {import_path}, "
-                f"e na instância {instance or '<não informada>'}."
+                f"armazenar os arquivos BCP {path_text} e na instância "
+                f"{instance or '<não informada>'}."
             )
 
         tree = getattr(self, "disk_projection_tree", None)
@@ -2373,11 +2344,6 @@ class BcpGuiApplication:
             if row.get("margin_bytes") is not None:
                 protected_text += f" (+{format_bytes(row.get('margin_bytes'))})"
             state = str(row.get("projection_state", "unavailable"))
-            state_text = (
-                "Calculada"
-                if state == "available"
-                else f"Indisponível ({row.get('status') or 'sem estado'})"
-            )
             tree.insert(
                 "",
                 "end",
@@ -2387,8 +2353,6 @@ class BcpGuiApplication:
                     self._format_projection_rows(row.get("estimated_rows")),
                     format_bytes(row.get("raw_bytes")),
                     protected_text,
-                    state_text,
-                    format_bytes(row.get("source_table_used_bytes")),
                 ),
                 tags=("unavailable",) if state != "available" else (),
             )
@@ -2446,6 +2410,44 @@ class BcpGuiApplication:
 
         self._start_worker("Verificando pré-requisitos", operation)
 
+    def _install_prerequisites(self) -> None:
+        """Open Setup-BulkFlow.exe from the packaged or development layout."""
+
+        if self.busy:
+            messagebox.showwarning(
+                "Operação em andamento",
+                "Aguarde a conclusão da operação atual.",
+                parent=self.root,
+            )
+            return
+        executable_directory = Path(sys.executable).resolve().parent
+        project_directory = Path(__file__).resolve().parents[1]
+        candidates = (
+            executable_directory / "Setup-BulkFlow.exe",
+            project_directory / "release" / "Setup-BulkFlow.exe",
+            Path.cwd().resolve() / "release" / "Setup-BulkFlow.exe",
+            Path.cwd().resolve() / "Setup-BulkFlow.exe",
+        )
+        setup = next((path for path in candidates if path.is_file()), None)
+        if setup is None:
+            messagebox.showerror(
+                "Instalador não encontrado",
+                "Não foi possível localizar Setup-BulkFlow.exe. "
+                "Mantenha o instalador na mesma pasta da GUI ou na pasta release.",
+                parent=self.root,
+            )
+            return
+        try:
+            subprocess.Popen([str(setup)], cwd=str(setup.parent))
+        except OSError as error:
+            messagebox.showerror(
+                "Não foi possível abrir o instalador",
+                redacted_exception(error),
+                parent=self.root,
+            )
+            return
+        self._append_log(f"Instalador de pré-requisitos iniciado: {setup}")
+
     def _refresh_connection_summary(self, rows: list[tuple[str, ...]]) -> None:
         tree = getattr(self, "connection_tree", None)
         if tree is None:
@@ -2499,6 +2501,7 @@ class BcpGuiApplication:
             "execute_import",
             "create_structure_if_needed",
             "allow_schema_evolution",
+            "resolve_column_collisions",
             "delete_confirmed_files",
             "continue_after_table_error",
         ):
@@ -2666,6 +2669,7 @@ class BcpGuiApplication:
             "execute_import",
             "create_structure_if_needed",
             "allow_schema_evolution",
+            "resolve_column_collisions",
             "delete_confirmed_files",
             "continue_after_table_error",
         ):
@@ -2738,6 +2742,7 @@ class BcpGuiApplication:
                 self.table_forms.append(form)
         self._refresh_table_tree()
         self._refresh_connection_summary([])
+        self._update_ddl_area_default()
         self.plan_status.set("Planejamento ainda não executado")
 
     def _load_endpoint(
@@ -2834,7 +2839,7 @@ class BcpGuiApplication:
                 parent=self.root,
                 title=f"Salvar configuração para GUI/CLI — {PRODUCT_NAME}",
                 initialdir=str(RUNTIME_CONFIG_DIRECTORY),
-                initialfile="config.transferencia.json",
+                initialfile=_configuration_filename(config),
                 defaultextension=".json",
                 filetypes=[("Configuração JSON", "*.json")],
             )
@@ -2957,10 +2962,18 @@ class BcpGuiApplication:
             return
         area_label = self.ddl_area.get()
         areas = {
+            "Nenhum": (),
             "Destino 01": ("bronze",),
             "Destino 02": ("landing",),
-            "Ambos": ("bronze", "landing"),
+            "Ambas": ("bronze", "landing"),
         }[area_label]
+        if not areas:
+            messagebox.showinfo(
+                "Nenhum destino selecionado",
+                "Ative ao menos um destino na aba Conexões para gerar ou aplicar DDL.",
+                parent=self.root,
+            )
+            return
         output_directory = Path(self.ddl_output.get()).expanduser().resolve()
 
         def operation() -> str:
@@ -3173,6 +3186,7 @@ class BcpGuiApplication:
             "schema_evolution_detected": "Evolução de esquema detectada",
             "schema_evolution_applied": "Evolução de esquema aplicada",
             "schema_evolution_blocked": "Evolução de esquema bloqueada",
+            "column_collision_resolved": "ATENÇÃO — colisão de coluna resolvida",
             "cdc_database": "CDC do banco de origem",
             "cdc_table": "CDC da tabela de origem",
             "cdc_retention": "Retenção do CDC",
