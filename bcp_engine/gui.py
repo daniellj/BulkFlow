@@ -98,6 +98,10 @@ DEFAULT_ENDPOINT_ROLES: dict[str, str] = {
     "bronze_destination": "structure_and_data",
     "landing_destination": "structure_only",
 }
+COLUMN_COLLISION_STRATEGY_LABELS: dict[str, str] = {
+    "Preservar Origem com sufixo _origem": "rename_source",
+    "Manter somente a coluna do destino": "keep_destination",
+}
 DESTINATION_ENDPOINT_KEYS: dict[str, str] = {
     "bronze": "bronze_destination",
     "landing": "landing_destination",
@@ -207,6 +211,12 @@ FIELD_HELP: dict[str, str] = {
         "Origem.schema.table.dh_carga e <Destino 01 ou Destino 02>.schema.table.dh_carga. Cada resolução "
         "é exibida no acompanhamento e deve ser revisada pelo operador. Desmarcado, a "
         "colisão interrompe a geração do DDL com diagnóstico detalhado."
+    ),
+    "column_collision_strategy": (
+        "Define como resolver cada homônimo. '_origem' preserva os dois valores, "
+        "renomeando a coluna da Origem. 'Manter somente a coluna do destino' não "
+        "materializa a homônima da Origem e mantém apenas a coluna técnica ou de "
+        "metadados definida pelo perfil do destino."
     ),
     "ddl_output": "Diretório em que os scripts DDL gerados serão gravados.",
     "execution_id": "UUID usado para consultar ou retomar uma execução existente.",
@@ -853,6 +863,9 @@ class BcpGuiApplication:
             "create_structure_if_needed": tk.BooleanVar(),
             "allow_schema_evolution": tk.BooleanVar(),
             "resolve_column_collisions": tk.BooleanVar(value=True),
+            "column_collision_strategy": tk.StringVar(
+                value="Preservar Origem com sufixo _origem"
+            ),
             "keyless_direct_load_max_rows": tk.StringVar(),
             "executor_directory": tk.StringVar(),
             "destination_sql_directory": tk.StringVar(),
@@ -980,6 +993,9 @@ class BcpGuiApplication:
             self.endpoint_enabled[key].trace_add(
                 "write", lambda *_args: self._update_ddl_area_default()
             )
+        self.global_variables["resolve_column_collisions"].trace_add(
+            "write", lambda *_args: self._update_collision_strategy_state()
+        )
 
     def _update_ddl_area_default(self) -> None:
         bronze = bool(self.endpoint_enabled["bronze_destination"].get())
@@ -994,6 +1010,17 @@ class BcpGuiApplication:
             else "Nenhum"
         )
         self.ddl_area.set(value)
+
+    def _update_collision_strategy_state(self) -> None:
+        widget = getattr(self, "column_collision_strategy_widget", None)
+        if widget is not None:
+            widget.configure(
+                state=(
+                    "readonly"
+                    if self.global_variables["resolve_column_collisions"].get()
+                    else "disabled"
+                )
+            )
 
     def _build_window(self) -> None:
         toolbar = ttk.Frame(self.root, padding=(12, 10))
@@ -1169,6 +1196,9 @@ class BcpGuiApplication:
             browse="directory",
             help_key="local_control_directory",
             default_value=str(RUNTIME_DATA_ROOT / ".bcp-control"),
+            entry_width=58,
+            entry_help=False,
+            value_tooltip=True,
         )
         row = self._form_entry(
             storage,
@@ -2107,17 +2137,41 @@ class BcpGuiApplication:
         ddl.columnconfigure(4, weight=1)
         collision_container = ttk.Frame(ddl)
         collision_container.grid(row=0, column=0, padx=4, pady=4, sticky="w")
+        collision_toggle = ttk.Frame(collision_container)
+        collision_toggle.grid(row=0, column=0, sticky="w")
         ttk.Checkbutton(
-            collision_container,
+            collision_toggle,
             text="Resolver colisão de colunas",
             variable=self.global_variables["resolve_column_collisions"],
             bootstyle="round-toggle",
         ).pack(side="left")
         collision_help = ttk.Label(
-            collision_container, text=" ? ", bootstyle="info", cursor="hand2"
+            collision_toggle, text=" ? ", bootstyle="info", cursor="hand2"
         )
         collision_help.pack(side="left", padx=(3, 0))
         _attach_help(collision_help, "resolve_column_collisions")
+        strategy_label = _help_label(
+            collision_container, "Estratégia", "column_collision_strategy"
+        )
+        strategy_label.grid(row=1, column=0, sticky="w", pady=(4, 1))
+        self.column_collision_strategy_widget = ttk.Combobox(
+            collision_container,
+            textvariable=self.global_variables["column_collision_strategy"],
+            values=list(COLUMN_COLLISION_STRATEGY_LABELS),
+            state="readonly",
+            width=39,
+        )
+        self.column_collision_strategy_widget.grid(row=2, column=0, sticky="w")
+        _attach_help(
+            self.column_collision_strategy_widget, "column_collision_strategy"
+        )
+        self._register_default_widget(
+            self.column_collision_strategy_widget,
+            self.global_variables["column_collision_strategy"],
+            "Preservar Origem com sufixo _origem",
+            "combobox",
+        )
+        self._update_collision_strategy_state()
         _help_label(ddl, "Área do DDL", "ddl_area").grid(
             row=0, column=1, padx=(12, 4), pady=4, sticky="w"
         )
@@ -2506,6 +2560,11 @@ class BcpGuiApplication:
             "continue_after_table_error",
         ):
             candidate[name] = bool(self.global_variables[name].get())
+        candidate["column_collision_strategy"] = code_for_label(
+            COLUMN_COLLISION_STRATEGY_LABELS,
+            str(self.global_variables["column_collision_strategy"].get()),
+            "Estratégia de colisão de colunas",
+        )
         candidate["rows_per_block"] = parse_required_integer(
             str(self.global_variables["rows_per_block"].get()),
             "Linhas por bloco",
@@ -2674,6 +2733,13 @@ class BcpGuiApplication:
             "continue_after_table_error",
         ):
             self.global_variables[name].set(bool(normalized[name]))
+        self.global_variables["column_collision_strategy"].set(
+            label_for_code(
+                COLUMN_COLLISION_STRATEGY_LABELS,
+                str(normalized["column_collision_strategy"]),
+            )
+        )
+        self._update_collision_strategy_state()
         self.global_variables["row_count_method"].set(
             label_for_code(ROW_COUNT_LABELS, str(normalized["estimates"]["row_count_method"]))
         )

@@ -958,6 +958,7 @@ def default_gui_config(project_root: Path | None = None) -> dict[str, Any]:
         "create_structure_if_needed": True,
         "allow_schema_evolution": False,
         "resolve_column_collisions": True,
+        "column_collision_strategy": "rename_source",
         "keyless_direct_load_max_rows": 5_000_000,
         "executor_directory": executor_directory,
         "destination_sql_directory": executor_directory,

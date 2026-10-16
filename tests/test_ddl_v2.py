@@ -484,6 +484,32 @@ class ProfileTests(unittest.TestCase):
             resolution.resolved_destination_column,
             "bronze.db_t.dh_carga_origem",
         )
+        self.assertEqual(resolution.strategy, "rename_source")
+
+    def test_business_collision_can_keep_only_reserved_destination_column(self):
+        layout = resolve_profile(
+            "bronze",
+            [
+                source_column("codigo"),
+                source_column("dh_carga", "datetime2", max_length=8, scale=7),
+            ],
+            source_database="db",
+            source_schema="origem",
+            source_table="t",
+            destination_table="db_t",
+            destination_schema="bronze",
+            resolve_column_collisions=True,
+            column_collision_strategy="keep_destination",
+        )
+
+        self.assertIn("codigo", [column.name for column in layout.columns])
+        self.assertNotIn("dh_carga_origem", [column.name for column in layout.columns])
+        self.assertEqual(
+            sum(column.name == "dh_carga" for column in layout.columns), 1
+        )
+        resolution = layout.collision_resolutions[0]
+        self.assertEqual(resolution.strategy, "keep_destination")
+        self.assertIsNone(resolution.resolved_destination_column)
 
     def test_bronze_event_id_can_use_configured_sequence_or_source_column(self):
         source = [source_column("evento_id", "bigint", max_length=8)]

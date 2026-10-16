@@ -685,6 +685,9 @@ def build_plan(
                     resolve_column_collisions=bool(
                         config.get("resolve_column_collisions", True)
                     ),
+                    column_collision_strategy=str(
+                        config.get("column_collision_strategy", "rename_source")
+                    ),
                 )
                 profile_name = getattr(layout, "profile_name", destination["area"])
                 if not profile_matches_area(str(profile_name), str(destination["area"])):

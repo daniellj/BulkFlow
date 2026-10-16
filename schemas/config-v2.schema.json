@@ -59,6 +59,12 @@
       "default": true,
       "description": "Preserva colunas homônimas da Origem renomeando a coluna de negócio no destino com o sufixo _origem e emitindo advertência operacional."
     },
+    "column_collision_strategy": {
+      "type": "string",
+      "enum": ["rename_source", "keep_destination"],
+      "default": "rename_source",
+      "description": "Define se a coluna homônima da Origem é preservada com sufixo _origem ou se somente a coluna reservada do destino é mantida."
+    },
     "artifact_reader_sids": {
       "type": "array",
       "default": [],

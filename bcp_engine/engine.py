@@ -482,6 +482,9 @@ class BcpEngine:
             resolve_column_collisions=bool(
                 self.config.get("resolve_column_collisions", True)
             ),
+            column_collision_strategy=str(
+                self.config.get("column_collision_strategy", "rename_source")
+            ),
         )
         if not profile_matches_area(layout.profile_name, target_area):
             raise RuntimeError(
@@ -931,10 +934,17 @@ class BcpEngine:
                                 "conflicting_destination_column": collision.destination_column,
                                 "resolved_destination_column": collision.resolved_destination_column,
                                 "conflicting_role": collision.conflicting_role,
+                                "strategy": collision.strategy,
                                 "message": (
                                     "O DDL será gerado porque 'Resolver colisão de colunas' "
-                                    "está ativo. A coluna da Origem foi preservada com o "
-                                    "sufixo '_origem'. É responsabilidade do operador revisar "
+                                    "está ativo. "
+                                    + (
+                                        "A coluna da Origem foi preservada com o sufixo '_origem'. "
+                                        if collision.strategy == "rename_source"
+                                        else "Somente a coluna reservada do destino será mantida; "
+                                        "a homônima da Origem não será materializada. "
+                                    )
+                                    + "É responsabilidade do operador revisar "
                                     "e aceitar este mapeamento."
                                 ),
                             },
@@ -2263,6 +2273,9 @@ class BcpEngine:
             ),
             resolve_column_collisions=bool(
                 self.config.get("resolve_column_collisions", True)
+            ),
+            column_collision_strategy=str(
+                self.config.get("column_collision_strategy", "rename_source")
             ),
         )
         if layout.table.casefold() != str(destination_info["table"]).casefold():

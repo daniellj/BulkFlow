@@ -163,7 +163,8 @@ class ColumnCollisionResolution:
     source_column: str
     destination_column: str
     conflicting_role: str
-    resolved_destination_column: str
+    resolved_destination_column: str | None
+    strategy: str
 
 
 @dataclass(frozen=True)
@@ -620,6 +621,7 @@ def resolve_profile(
     bronze_event_id: Mapping[str, Any] | None = None,
     partition_column: str | None = None,
     resolve_column_collisions: bool = False,
+    column_collision_strategy: str = "rename_source",
 ) -> TableLayout:
     """Resolve placeholders e intercala colunas autodescobertas na ordem exata."""
 
@@ -679,6 +681,22 @@ def resolve_profile(
                     "ambos os valores, ative 'Resolver colisão de colunas'; a coluna da "
                     "Origem será materializada com o sufixo '_origem'."
                 )
+            if column_collision_strategy == "keep_destination":
+                collisions.append(
+                    ColumnCollisionResolution(
+                        source_column=source_qualified,
+                        destination_column=destination_qualified,
+                        conflicting_role=conflict_role,
+                        resolved_destination_column=None,
+                        strategy=column_collision_strategy,
+                    )
+                )
+                continue
+            if column_collision_strategy != "rename_source":
+                raise ProfileError(
+                    "Estratégia de colisão inválida: "
+                    f"{column_collision_strategy!r}."
+                )
             base = _normalize_destination_identifier(
                 f"{column.name}_origem", "coluna de negócio resolvida"
             )
@@ -697,6 +715,7 @@ def resolve_profile(
                     resolved_destination_column=(
                         f"{context['destination_schema']}.{table}.{candidate}"
                     ),
+                    strategy=column_collision_strategy,
                 )
             )
             column = replace(column, name=candidate)

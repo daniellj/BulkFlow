@@ -509,6 +509,37 @@ class GuiModelTests(unittest.TestCase):
 
 
 class GuiConstructionTests(unittest.TestCase):
+    def test_collision_strategy_widget_tracks_resolution_toggle(self):
+        try:
+            from bcp_engine.gui import BcpGuiApplication
+        except ImportError as error:  # pragma: no cover
+            self.skipTest(f"Dependência gráfica indisponível: {error}")
+
+        class Value:
+            def __init__(self, value):
+                self.value = value
+
+            def get(self):
+                return self.value
+
+        class Widget:
+            def __init__(self):
+                self.state = None
+
+            def configure(self, *, state):
+                self.state = state
+
+        application = object.__new__(BcpGuiApplication)
+        application.column_collision_strategy_widget = Widget()
+        application.global_variables = {
+            "resolve_column_collisions": Value(True)
+        }
+        application._update_collision_strategy_state()
+        self.assertEqual(application.column_collision_strategy_widget.state, "readonly")
+        application.global_variables["resolve_column_collisions"].value = False
+        application._update_collision_strategy_state()
+        self.assertEqual(application.column_collision_strategy_widget.state, "disabled")
+
     def test_ddl_area_default_follows_enabled_destinations(self):
         try:
             from bcp_engine.gui import BcpGuiApplication

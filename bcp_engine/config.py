@@ -60,6 +60,7 @@ ROOT_KEYS = {
     "rows_per_block", "max_file_bytes", "minimum_free_space_bytes",
     "keyless_direct_load_max_rows", "allow_schema_evolution",
     "resolve_column_collisions",
+    "column_collision_strategy",
     "delete_confirmed_files", "continue_after_table_error", "estimates",
     "batching", "structure", "bronze_event_id", "tables", "odbc_driver",
     "bcp_executable", "connection_timeout_seconds", "sql_timeout_seconds",
@@ -98,6 +99,7 @@ DEFAULTS: dict[str, Any] = {
     # the structural fingerprint independently of this switch.
     "allow_schema_evolution": False,
     "resolve_column_collisions": True,
+    "column_collision_strategy": "rename_source",
     # Optional Windows principals that need read/traverse access to the BCP
     # files (for example a local SQL Server service SID), plus exceptional
     # writer identities for SMB where the local token SID differs from the
@@ -755,6 +757,13 @@ def validate_config(value: Any) -> dict[str, Any]:
         "allow_schema_evolution", "resolve_column_collisions",
     ):
         cfg[key] = _bool(cfg[key], key)
+    cfg["column_collision_strategy"] = _nonempty(
+        cfg["column_collision_strategy"], "column_collision_strategy"
+    )
+    if cfg["column_collision_strategy"] not in {"rename_source", "keep_destination"}:
+        raise ConfigError(
+            "column_collision_strategy deve ser rename_source ou keep_destination"
+        )
     cfg["rows_per_block"] = _integer(
         cfg["rows_per_block"], "rows_per_block", 1, 5_000_000
     )
@@ -1053,6 +1062,9 @@ def operational_fingerprint(config: Mapping[str, Any]) -> str:
         "create_structure_if_needed": config["create_structure_if_needed"],
         "allow_schema_evolution": config.get("allow_schema_evolution", False),
         "resolve_column_collisions": config.get("resolve_column_collisions", True),
+        "column_collision_strategy": config.get(
+            "column_collision_strategy", "rename_source"
+        ),
         "executor_directory": config["executor_directory"],
         "destination_sql_directory": config.get("destination_sql_directory"),
         "local_control_directory": config["local_control_directory"],
