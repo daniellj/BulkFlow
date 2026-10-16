@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import textwrap
 import time
 import uuid
 from typing import Any, Callable, Iterable, Mapping
@@ -343,12 +344,12 @@ class BcpEngine:
         )
 
         def audit(sql: str, params: Any) -> None:
-            single_line = " ".join(str(sql).split())
+            formatted_sql = textwrap.dedent(str(sql)).strip()
             self.event(
                 "database_command",
                 {
                     "context": context,
-                    "command": single_line,
+                    "command": formatted_sql,
                     "parameters": redact_structure(params),
                 },
             )

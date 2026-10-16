@@ -63,7 +63,7 @@ from .runtime import (
     runtime_data_root,
     runtime_ddl_directory,
 )
-from .util import redact_structure, redact_text, redacted_exception, stable_json
+from .util import redact_structure, redact_text, redacted_exception
 from .watermark_validation import (
     WATERMARK_VALIDATION_GUIDANCE_PT_BR,
     render_watermark_validation_sql,
@@ -1055,6 +1055,24 @@ class BcpGuiApplication:
 
         return bool(normalized(first)) and normalized(first) == normalized(second)
 
+    @staticmethod
+    def _same_server_login(
+        first_instance: str,
+        first_username: str,
+        second_instance: str,
+        second_username: str,
+    ) -> bool:
+        values = tuple(
+            str(value).strip().casefold()
+            for value in (
+                first_instance,
+                first_username,
+                second_instance,
+                second_username,
+            )
+        )
+        return all(values) and values[0] == values[2] and values[1] == values[3]
+
     def _update_contextual_guidance(self) -> None:
         def endpoint_value(key: str, field: str) -> str:
             value = str(self.endpoint_variables[key][field].get()).strip()
@@ -1090,7 +1108,8 @@ class BcpGuiApplication:
 
         disk_lines = [
             "O operador deve avaliar:",
-            f"- espaço disponível na instância de banco de dados {endpoint_value('source', 'instance')} X Projeção de disco",
+            "- Espaço disponível na instância de banco de dados de destino "
+            f"{endpoint_value('bronze_destination', 'instance')} X Projeção de disco",
             f"- espaço disponível em {export_directory} X Projeção de disco",
         ]
         if not self._same_display_path(export_directory, import_directory):
@@ -1103,6 +1122,14 @@ class BcpGuiApplication:
             "É premissa ter o usuário criado nas instâncias conforme permissionamento abaixo:",
             "",
         ]
+        destination_2_permissions = "leitura e escrita; ddl"
+        if self._same_server_login(
+            self.endpoint_variables["bronze_destination"]["instance"].get(),
+            self.endpoint_variables["bronze_destination"]["username"].get(),
+            self.endpoint_variables["landing_destination"]["instance"].get(),
+            self.endpoint_variables["landing_destination"]["username"].get(),
+        ):
+            destination_2_permissions += "; função de servidor: bulkadmin"
         for title, key, permissions in (
             ("ORIGEM", "source", "somente leitura"),
             (
@@ -1113,7 +1140,7 @@ class BcpGuiApplication:
             (
                 "DESTINO 02",
                 "landing_destination",
-                "leitura e escrita; ddl; função de servidor: bulkadmin",
+                destination_2_permissions,
             ),
         ):
             permission_lines.append(
@@ -2262,13 +2289,6 @@ class BcpGuiApplication:
         )
         projection_scroll.grid(row=0, column=1, sticky="ns")
         self.disk_projection_tree.configure(yscrollcommand=projection_scroll.set)
-        ttk.Label(
-            prerequisites,
-            textvariable=self.disk_operator_warning,
-            bootstyle="danger",
-            wraplength=1130,
-        ).grid(row=7, column=0, columnspan=4, sticky="w", padx=4, pady=(4, 2))
-
         planning = ttk.Labelframe(
             tab, text="2. Informar credenciais e planejar", padding=6
         )
@@ -2603,25 +2623,9 @@ class BcpGuiApplication:
         destination_variable = getattr(self, "destination_disk_assessment", None)
         if destination_variable is not None:
             destination_variable.set(destination_text)
-        export_path = (directories.get("export") or {}).get("path") or "<não informado>"
-        import_path = (directories.get("import") or {}).get("path") or "<não informado>"
-        instance_var = getattr(self, "endpoint_variables", {}).get(
-            "bronze_destination", {}
-        ).get("instance", "")
-        instance = instance_var.get() if hasattr(instance_var, "get") else str(instance_var)
         warning_variable = getattr(self, "disk_operator_warning", None)
         if warning_variable is not None:
-            same_path = bool(summary.get("same_path_view"))
-            path_text = (
-                f"na pasta {export_path}"
-                if same_path
-                else f"nas pastas {export_path} e {import_path}"
-            )
-            warning_variable.set(
-                "ATENÇÃO: o operador deve verificar se há espaço em disco disponível para "
-                f"armazenar os arquivos BCP {path_text} e na instância "
-                f"{instance or '<não informada>'}."
-            )
+            warning_variable.set("")
 
         tree = getattr(self, "disk_projection_tree", None)
         if tree is None:
@@ -3504,14 +3508,32 @@ class BcpGuiApplication:
 
     def _format_event(self, name: str, payload: Mapping[str, Any]) -> str:
         safe = redact_structure(payload)
+
+        def pretty_json(value: Any, *, indent: int = 2) -> str:
+            rendered = json.dumps(
+                value,
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+                default=str,
+            )
+            prefix = " " * indent
+            return "\n".join(prefix + line for line in rendered.splitlines())
+
         if name == "bcp_command":
             return f"COMANDO [{safe.get('context')}]: {safe.get('command')}"
         if name == "database_command":
             parameters = safe.get("parameters")
-            suffix = "" if not parameters else " | parâmetros=" + stable_json(parameters)
-            return (
-                f"SQL [{safe.get('context')}]: {safe.get('command')}" + suffix
+            command = str(safe.get("command") or "").strip()
+            indented_command = "\n".join(
+                "  " + line.rstrip() for line in command.splitlines()
             )
+            suffix = (
+                ""
+                if not parameters
+                else "\n  parâmetros:\n" + pretty_json(parameters, indent=4)
+            )
+            return f"SQL [{safe.get('context')}]:\n{indented_command}{suffix}"
         if name == "table_plan" and safe.get("text"):
             return "Panorama antes da tabela:\n" + str(safe["text"])
         labels = {
@@ -3525,7 +3547,7 @@ class BcpGuiApplication:
             "cdc_table": "CDC da tabela de origem",
             "cdc_retention": "Retenção do CDC",
         }
-        return f"{labels.get(name, name)}: {stable_json(safe)}"
+        return f"{labels.get(name, name)}:\n{pretty_json(safe)}"
 
     def _finish_worker(self, *, success: bool, error: str | None = None) -> None:
         self.busy = False

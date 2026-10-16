@@ -509,6 +509,48 @@ class GuiModelTests(unittest.TestCase):
 
 
 class GuiConstructionTests(unittest.TestCase):
+    def test_database_commands_are_rendered_as_indented_sql_blocks(self):
+        try:
+            from bcp_engine.gui import BcpGuiApplication
+        except ImportError as error:  # pragma: no cover
+            self.skipTest(f"Dependência gráfica indisponível: {error}")
+
+        application = object.__new__(BcpGuiApplication)
+        rendered = application._format_event(
+            "database_command",
+            {
+                "context": "Origem | SQL/DB",
+                "command": "SELECT *\nFROM dbo.t\nWHERE id=?;",
+                "parameters": (10,),
+            },
+        )
+        self.assertEqual(
+            rendered,
+            'SQL [Origem | SQL/DB]:\n  SELECT *\n  FROM dbo.t\n  WHERE id=?;\n'
+            '  parâmetros:\n    [\n      10\n    ]',
+        )
+
+        structured = application._format_event(
+            "identity", {"principal": "u684", "roles": ["reader", "writer"]}
+        )
+        self.assertEqual(
+            structured,
+            'Identidade efetiva da origem:\n  {\n    "principal": "u684",\n'
+            '    "roles": [\n      "reader",\n      "writer"\n    ]\n  }',
+        )
+
+    def test_bulkadmin_is_shared_only_for_same_destination_instance_and_user(self):
+        try:
+            from bcp_engine.gui import BcpGuiApplication
+        except ImportError as error:  # pragma: no cover
+            self.skipTest(f"Dependência gráfica indisponível: {error}")
+
+        same = BcpGuiApplication._same_server_login
+        self.assertTrue(same("SQL\\INST01", "u684", "sql\\inst01", "U684"))
+        self.assertFalse(same("SQL\\INST01", "u684", "SQL\\INST02", "u684"))
+        self.assertFalse(same("SQL\\INST01", "u684", "SQL\\INST01", "outro"))
+        self.assertFalse(same("", "u684", "", "u684"))
+
     def test_collision_strategy_widget_tracks_resolution_toggle(self):
         try:
             from bcp_engine.gui import BcpGuiApplication
@@ -736,7 +778,7 @@ class GuiConstructionTests(unittest.TestCase):
         self.assertNotIn("Pico operacional", application.disk_projection_overview.value)
         self.assertNotIn("Reserva mínima", application.disk_projection_overview.value)
         self.assertIn("Destino 01 (SQL-DESTINO)", application.destination_disk_assessment.value)
-        self.assertIn(r"C:\BCP", application.disk_operator_warning.value)
+        self.assertEqual(application.disk_operator_warning.value, "")
         self.assertEqual(len(application.disk_projection_tree.rows), 1)
         values, _tags = application.disk_projection_tree.rows["disk-projection-0"]
         self.assertEqual(len(values), 4)
