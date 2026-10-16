@@ -922,7 +922,7 @@ class BcpGuiApplication:
                 "secret_provider": tk.StringVar(),
                 "secret_reference": tk.StringVar(),
                 "encrypt": tk.BooleanVar(value=True),
-                "trust_server_certificate": tk.BooleanVar(value=False),
+                "trust_server_certificate": tk.BooleanVar(value=True),
             }
         self.ddl_area = tk.StringVar(value="Ambas")
         self.ddl_output = tk.StringVar(value=str(RUNTIME_DDL_DIRECTORY))
@@ -1181,14 +1181,17 @@ class BcpGuiApplication:
         self.connections_tab = ttk.Frame(self.notebook, padding=14)
         self.tables_tab = ttk.Frame(self.notebook, padding=14)
         self.operations_tab = ttk.Frame(self.notebook, padding=14)
+        self.tracking_tab = ttk.Frame(self.notebook, padding=14)
         self.notebook.add(self.general_tab, text="1. Geral")
         self.notebook.add(self.connections_tab, text="2. Conexões")
         self.notebook.add(self.tables_tab, text="3. Tabelas")
-        self.notebook.add(self.operations_tab, text="4. Executar e acompanhar")
+        self.notebook.add(self.operations_tab, text="4. Executar")
+        self.notebook.add(self.tracking_tab, text="5. Acompanhamento")
         self._build_general_tab()
         self._build_connections_tab()
         self._build_tables_tab()
         self._build_operations_tab()
+        self._build_tracking_tab()
 
         footer = ttk.Frame(self.root, padding=(12, 4, 12, 10))
         footer.pack(fill="x")
@@ -1866,13 +1869,13 @@ class BcpGuiApplication:
             "partition": 150,
         }
         for name in columns:
-            self.table_tree.heading(name, text=headings[name])
-            anchor = "center" if name in {"order", "cdc", "batch"} else "w"
+            heading = headings[name] + ("  |" if name != columns[-1] else "")
+            self.table_tree.heading(name, text=heading, anchor="w")
             self.table_tree.column(
                 name,
                 width=widths[name],
                 minwidth=widths[name],
-                anchor=anchor,
+                anchor="w",
                 stretch=name in {"source", "destination", "watermark"},
             )
         self.table_tree.grid(row=0, column=0, sticky="nsew")
@@ -2122,7 +2125,6 @@ class BcpGuiApplication:
     def _build_operations_tab(self) -> None:
         tab = self.operations_tab
         tab.columnconfigure(0, weight=1)
-        tab.rowconfigure(5, weight=1, minsize=120)
 
         prerequisites = ttk.Labelframe(
             tab, text="1. Atender aos pré-requisitos do executor", padding=6
@@ -2215,7 +2217,9 @@ class BcpGuiApplication:
             "protected_bytes": 140,
         }
         for name in projection_columns:
-            self.disk_projection_tree.heading(name, text=projection_headings[name])
+            self.disk_projection_tree.heading(
+                name, text=projection_headings[name], anchor="w"
+            )
             self.disk_projection_tree.column(
                 name,
                 width=projection_widths[name],
@@ -2291,7 +2295,9 @@ class BcpGuiApplication:
             "database": 180,
         }
         for name in summary_columns:
-            self.connection_tree.heading(name, text=summary_headings[name])
+            self.connection_tree.heading(
+                name, text=summary_headings[name], anchor="w"
+            )
             self.connection_tree.column(
                 name,
                 width=summary_widths[name],
@@ -2468,13 +2474,23 @@ class BcpGuiApplication:
             wraplength=1100,
         )
         notice.grid(row=4, column=0, sticky="w", pady=(0, 2))
-        log_frame = ttk.Labelframe(tab, text="Acompanhamento", padding=5)
-        log_frame.grid(row=5, column=0, sticky="nsew")
+
+        self.action_buttons.extend(
+            [install, verify, plan, generate, apply_ddl, run, resume, status, import_manifests]
+        )
+        self._update_prerequisite_descriptions()
+
+    def _build_tracking_tab(self) -> None:
+        tab = self.tracking_tab
+        tab.rowconfigure(0, weight=1)
+        tab.columnconfigure(0, weight=1)
+        log_frame = ttk.Labelframe(tab, text="Acompanhamento", padding=8)
+        log_frame.grid(row=0, column=0, sticky="nsew")
         log_frame.rowconfigure(0, weight=1)
         log_frame.columnconfigure(0, weight=1)
         self.log_text = ScrolledText(
             log_frame,
-            height=3,
+            height=24,
             wrap="word",
             font=("Cascadia Mono", 10),
             state="disabled",
@@ -2490,10 +2506,6 @@ class BcpGuiApplication:
             bootstyle="outline-secondary",
         ).grid(row=1, column=0, sticky="e", pady=(8, 0))
 
-        self.action_buttons.extend(
-            [install, verify, plan, generate, apply_ddl, run, resume, status, import_manifests]
-        )
-        self._update_prerequisite_descriptions()
 
     def _invalidate_disk_projection(self) -> None:
         """Discard stale sizing evidence without touching disk or SQL."""
@@ -3048,7 +3060,7 @@ class BcpGuiApplication:
             "secret_reference": secret.get("reference") or "",
             "encrypt": data.get("tls", {}).get("encrypt", True),
             "trust_server_certificate": data.get("tls", {}).get(
-                "trust_server_certificate", False
+                "trust_server_certificate", True
             ),
         }
         for name, value in values.items():

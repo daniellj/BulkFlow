@@ -1024,6 +1024,25 @@ class GuiConstructionTests(unittest.TestCase):
             root.update_idletasks()
             self.assertEqual(
                 [
+                    application.notebook.tab(index, "text")
+                    for index in range(application.notebook.index("end"))
+                ],
+                [
+                    "1. Geral",
+                    "2. Conexões",
+                    "3. Tabelas",
+                    "4. Executar",
+                    "5. Acompanhamento",
+                ],
+            )
+            log_ancestors = []
+            widget = application.log_text
+            while getattr(widget, "master", None) is not None:
+                widget = widget.master
+                log_ancestors.append(widget)
+            self.assertIn(application.tracking_tab, log_ancestors)
+            self.assertEqual(
+                [
                     application._connections_notebook.tab(index, "text")
                     for index in range(application._connections_notebook.index("end"))
                 ],
@@ -1061,6 +1080,21 @@ class GuiConstructionTests(unittest.TestCase):
                     str(role_widget.cget("style")), "DefaultValue.TCombobox"
                 )
                 self.assertTrue(hasattr(role_widget, "_field_tooltip"))
+                self.assertTrue(
+                    application.endpoint_variables[endpoint][
+                        "trust_server_certificate"
+                    ].get()
+                )
+            for tree in (
+                application.table_tree,
+                application.disk_projection_tree,
+                application.connection_tree,
+            ):
+                columns = tuple(tree.cget("columns"))
+                for index, column in enumerate(columns):
+                    self.assertEqual(str(tree.heading(column, "anchor")), "w")
+                    heading = tree.heading(column, "text")
+                    self.assertEqual(heading.endswith("|"), index < len(columns) - 1)
             self.assertEqual(
                 application.global_variables["destination_sql_directory"].get(),
                 application.global_variables["executor_directory"].get(),

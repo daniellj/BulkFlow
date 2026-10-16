@@ -122,7 +122,7 @@ DEFAULTS: dict[str, Any] = {
     "control_schema": "dbo",
     "tls": {
         "encrypt": True,
-        "trust_server_certificate": False,
+        "trust_server_certificate": True,
         "bcp_switch": "-Ym",
     },
     "estimates": {

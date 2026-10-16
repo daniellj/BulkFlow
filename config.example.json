@@ -51,7 +51,7 @@
   "control_schema": "dbo",
   "tls": {
     "encrypt": true,
-    "trust_server_certificate": false,
+    "trust_server_certificate": true,
     "bcp_switch": "-Ym"
   },
   "estimates": {

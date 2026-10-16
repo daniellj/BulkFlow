@@ -140,6 +140,18 @@ def _windows_security_descriptor(
     return descriptor
 
 
+def _windows_dacl_open_error_message(path: Path) -> str:
+    return (
+        "Não foi possível abrir o caminho completo "
+        f"'{path}' para proteger a DACL. A conta que executa o BulkFlow "
+        "precisa de leitura, gravação e permissão para alterar a DACL nesse "
+        "diretório. Em compartilhamentos de rede, valide também se o Diretório "
+        "de importação representa o mesmo compartilhamento visto pela conta do "
+        "serviço SQL Server; a visibilidade pela instância ainda não foi testada "
+        "porque esta etapa local falhou primeiro."
+    )
+
+
 def _windows_apply_private_dacl(
     path: Path,
     reader_sids: tuple[str, ...],
@@ -203,7 +215,8 @@ def _windows_apply_private_dacl(
         )
         if handle in (None, invalid):
             raise OSError(
-                ctypes.get_last_error(), f"Não foi possível abrir {path.name} para proteger a DACL"
+                ctypes.get_last_error(),
+                _windows_dacl_open_error_message(path),
             )
 
         class FileInformation(ctypes.Structure):
@@ -301,7 +314,10 @@ def _windows_apply_private_dacl(
             None,
         )
         if result != 0:
-            raise OSError(result, f"Não foi possível aplicar a DACL privada em {path.name}")
+            raise OSError(
+                result,
+                f"Não foi possível aplicar a DACL privada no caminho completo '{path}'",
+            )
     finally:
         if handle not in (None, invalid):
             kernel32.CloseHandle(handle)

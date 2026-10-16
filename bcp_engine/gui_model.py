@@ -923,7 +923,7 @@ def default_gui_config(project_root: Path | None = None) -> dict[str, Any]:
                 "username": "u684",
                 "password": {"provider": "prompt", "reference": None},
             },
-            "tls": {"encrypt": True, "trust_server_certificate": False},
+            "tls": {"encrypt": True, "trust_server_certificate": True},
         },
         "bronze_destination": {
             "role": "structure_and_data",
@@ -937,7 +937,7 @@ def default_gui_config(project_root: Path | None = None) -> dict[str, Any]:
                 "username": "u684",
                 "password": {"provider": "prompt", "reference": None},
             },
-            "tls": {"encrypt": True, "trust_server_certificate": False},
+            "tls": {"encrypt": True, "trust_server_certificate": True},
         },
         "landing_destination": {
             "role": "structure_only",
@@ -951,7 +951,7 @@ def default_gui_config(project_root: Path | None = None) -> dict[str, Any]:
                 "username": "u684",
                 "password": {"provider": "prompt", "reference": None},
             },
-            "tls": {"encrypt": True, "trust_server_certificate": False},
+            "tls": {"encrypt": True, "trust_server_certificate": True},
         },
         "active_destination": "bronze",
         "execute_import": True,
