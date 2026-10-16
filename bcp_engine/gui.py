@@ -813,6 +813,10 @@ class BcpGuiApplication:
         # including a useful Acompanhamento pane, on the first render.
         self.root.geometry("1280x980")
         self.root.minsize(1100, 820)
+        try:
+            self.root.state("zoomed")
+        except tk.TclError:
+            pass
         self.root.protocol("WM_DELETE_WINDOW", self._close)
 
         self.style = ttk.Style()
@@ -937,6 +941,10 @@ class BcpGuiApplication:
             value="Destino 01: aguardando planejamento."
         )
         self.disk_operator_warning = tk.StringVar()
+        self.disk_projection_guidance = tk.StringVar()
+        self.credential_permissions_guidance = tk.StringVar()
+        self.process_flow_description = tk.StringVar()
+        self.ddl_none_warning = tk.StringVar()
 
         for name in ("max_file_bytes", "minimum_free_space_bytes"):
             self.global_variables[name].trace_add(
@@ -954,6 +962,9 @@ class BcpGuiApplication:
         self.global_variables["executor_directory"].trace_add(
             "write", self._on_executor_directory_changed
         )
+        self.global_variables["create_structure_if_needed"].trace_add(
+            "write", lambda *_args: self._on_create_structure_changed()
+        )
         for name in (
             "destination_sql_directory",
             "minimum_free_space_bytes",
@@ -966,7 +977,7 @@ class BcpGuiApplication:
             "keyless_direct_load_max_rows",
         ):
             self.global_variables[name].trace_add(
-                "write", lambda *_args: self._invalidate_disk_projection()
+                "write", lambda *_args: self._on_planning_context_changed()
             )
         self.endpoint_variables["bronze_destination"]["schema"].trace_add(
             "write", self._on_bronze_schema_changed
@@ -998,8 +1009,15 @@ class BcpGuiApplication:
         self.global_variables["resolve_column_collisions"].trace_add(
             "write", lambda *_args: self._update_collision_strategy_state()
         )
+        self.ddl_area.trace_add("write", lambda *_args: self._update_ddl_section_state())
 
     def _update_ddl_area_default(self) -> None:
+        create_variable = getattr(self, "global_variables", {}).get(
+            "create_structure_if_needed"
+        )
+        if create_variable is not None and not bool(create_variable.get()):
+            self.ddl_area.set("Destino 02")
+            return
         bronze = bool(self.endpoint_enabled["bronze_destination"].get())
         landing = bool(self.endpoint_enabled["landing_destination"].get())
         value = (
@@ -1013,13 +1031,110 @@ class BcpGuiApplication:
         )
         self.ddl_area.set(value)
 
+    def _on_create_structure_changed(self) -> None:
+        enabled = bool(self.global_variables["create_structure_if_needed"].get())
+        role = "structure_and_data" if enabled else "data_only"
+        self.endpoint_variables["bronze_destination"]["role"].set(
+            label_for_code(DESTINATION_ROLE_LABELS, role)
+        )
+        self._update_ddl_area_default()
+        self._update_contextual_guidance()
+
+    def _on_planning_context_changed(self) -> None:
+        self._invalidate_disk_projection()
+        self._update_contextual_guidance()
+
+    @staticmethod
+    def _same_display_path(first: str, second: str) -> bool:
+        def normalized(value: str) -> str:
+            return value.strip().replace("/", "\\").rstrip("\\").casefold()
+
+        return bool(normalized(first)) and normalized(first) == normalized(second)
+
+    def _update_contextual_guidance(self) -> None:
+        def endpoint_value(key: str, field: str) -> str:
+            value = str(self.endpoint_variables[key][field].get()).strip()
+            return value or "<não informado>"
+
+        source_database = endpoint_value("source", "database")
+        destination_1_database = endpoint_value("bronze_destination", "database")
+        destination_2_database = endpoint_value("landing_destination", "database")
+        export_directory = str(self.global_variables["executor_directory"].get()).strip() or "<não informado>"
+        import_directory = str(self.global_variables["destination_sql_directory"].get()).strip() or "<não informado>"
+
+        create_step = (
+            f"Cria tabelas de destino em {destination_1_database} e {destination_2_database}"
+            if self.global_variables["create_structure_if_needed"].get()
+            else f"Não cria tabelas de destino em {destination_1_database} e {destination_2_database}"
+        )
+        import_step = (
+            f"Importa arquivos BCP em {destination_1_database} de {import_directory}"
+            if self.global_variables["execute_import"].get()
+            else "Não importa os arquivos BCP"
+        )
+        delete_step = (
+            "Exclui arquivos BCP"
+            if self.global_variables["delete_confirmed_files"].get()
+            else "Mantém os arquivos BCP"
+        )
+        self.process_flow_description.set(
+            "Para cada tabela do fluxo\n↓\n"
+            f"{create_step}\n↓\n"
+            f"Exporta arquivos BCP via queryout de {source_database} para {export_directory}\n↓\n"
+            f"{import_step}\n↓\n{delete_step}"
+        )
+
+        disk_lines = [
+            "O operador deve avaliar:",
+            f"- espaço disponível na instância de banco de dados {endpoint_value('source', 'instance')} X Projeção de disco",
+            f"- espaço disponível em {export_directory} X Projeção de disco",
+        ]
+        if not self._same_display_path(export_directory, import_directory):
+            disk_lines.append(
+                f"- espaço disponível em {import_directory} X Projeção de disco."
+            )
+        self.disk_projection_guidance.set("\n".join(disk_lines))
+
+        permission_lines = [
+            "É premissa ter o usuário criado nas instâncias conforme permissionamento abaixo:",
+            "",
+        ]
+        for title, key, permissions in (
+            ("ORIGEM", "source", "somente leitura"),
+            ("DESTINO 01", "bronze_destination", "leitura e escrita; ddl"),
+            ("DESTINO 02", "landing_destination", "leitura e escrita; ddl"),
+        ):
+            permission_lines.append(
+                f"- {title} | Instância: {endpoint_value(key, 'instance')} | "
+                f"Banco: {endpoint_value(key, 'database')} | Usuário: {endpoint_value(key, 'username')} | "
+                f"Permissões necessárias: {permissions}"
+            )
+        self.credential_permissions_guidance.set("\n".join(permission_lines))
+
+        if str(self.ddl_area.get()) == "Nenhum":
+            self.ddl_none_warning.set(
+                f"Cenário configurado não cria tabelas em {destination_1_database} e {destination_2_database}."
+            )
+        else:
+            self.ddl_none_warning.set("")
+
+    def _update_ddl_section_state(self) -> None:
+        inactive = str(self.ddl_area.get()) == "Nenhum"
+        for widget in getattr(self, "ddl_non_area_controls", []):
+            widget.configure(state="disabled" if inactive else "normal")
+        self._update_collision_strategy_state()
+        self._update_contextual_guidance()
+
     def _update_collision_strategy_state(self) -> None:
         widget = getattr(self, "column_collision_strategy_widget", None)
         if widget is not None:
+            ddl_area = getattr(self, "ddl_area", None)
+            area_is_active = ddl_area is None or str(ddl_area.get()) != "Nenhum"
             widget.configure(
                 state=(
                     "readonly"
                     if self.global_variables["resolve_column_collisions"].get()
+                    and area_is_active
                     else "disabled"
                 )
             )
@@ -1167,6 +1282,7 @@ class BcpGuiApplication:
             row,
             "Diretório de importação dos arquivos *",
             self.global_variables["destination_sql_directory"],
+            browse="directory",
             help_key="destination_sql_directory",
             entry_width=58,
             entry_help=False,
@@ -1358,6 +1474,20 @@ class BcpGuiApplication:
                 self._register_default_widget(
                     entry, self.global_variables[name], default, "entry"
                 )
+        flow_diagram = ttk.Labelframe(
+            tab, text="Fluxo do processo", padding=12
+        )
+        flow_diagram.grid(
+            row=2, column=0, columnspan=2, sticky="ew", pady=(10, 0)
+        )
+        ttk.Label(
+            flow_diagram,
+            textvariable=self.process_flow_description,
+            justify="center",
+            anchor="center",
+            wraplength=1120,
+        ).pack(fill="x")
+
         ttk.Label(
             tab,
             text=(
@@ -1366,8 +1496,9 @@ class BcpGuiApplication:
             ),
             bootstyle="secondary",
         ).grid(
-            row=2, column=0, columnspan=2, sticky="w", pady=(8, 0)
+            row=3, column=0, columnspan=2, sticky="w", pady=(8, 0)
         )
+        self._update_contextual_guidance()
 
     def _form_entry(
         self,
@@ -1822,6 +1953,7 @@ class BcpGuiApplication:
         self.plan_status.set("Planejamento ainda não executado")
         self._refresh_connection_summary([])
         self._invalidate_disk_projection()
+        self._update_contextual_guidance()
 
     def _on_bronze_schema_changed(self, *_args: object) -> None:
         if self._suspend_schema_sync:
@@ -1853,6 +1985,7 @@ class BcpGuiApplication:
                 self._suspend_directory_sync = False
         self._previous_executor_directory = executor
         self._invalidate_disk_projection()
+        self._update_contextual_guidance()
 
     def _table_dialog_defaults(self) -> dict[str, str]:
         destination_key = DESTINATION_ENDPOINT_KEYS[self._current_destination_area()]
@@ -1989,12 +2122,12 @@ class BcpGuiApplication:
     def _build_operations_tab(self) -> None:
         tab = self.operations_tab
         tab.columnconfigure(0, weight=1)
-        tab.rowconfigure(5, weight=1, minsize=190)
+        tab.rowconfigure(5, weight=1, minsize=120)
 
         prerequisites = ttk.Labelframe(
-            tab, text="1. Atender aos pré-requisitos do executor", padding=10
+            tab, text="1. Atender aos pré-requisitos do executor", padding=6
         )
-        prerequisites.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        prerequisites.grid(row=0, column=0, sticky="ew", pady=(0, 2))
         prerequisites.columnconfigure(0, weight=1)
         ttk.Label(prerequisites, textvariable=self.odbc_requirement).grid(
             row=0, column=0, sticky="w", padx=4, pady=2
@@ -2029,11 +2162,28 @@ class BcpGuiApplication:
             wraplength=1130,
             bootstyle="primary",
         ).grid(row=3, column=0, columnspan=4, sticky="w", padx=4, pady=2)
+        disk_guidance_label = ttk.Label(
+            prerequisites,
+            textvariable=self.disk_projection_guidance,
+            wraplength=1800,
+            bootstyle="danger",
+            justify="left",
+        )
+        disk_guidance_label.grid(
+            row=4, column=0, columnspan=4, sticky="w", padx=4, pady=(2, 5)
+        )
+        prerequisites.bind(
+            "<Configure>",
+            lambda event, label=disk_guidance_label: label.configure(
+                wraplength=max(500, event.width - 40)
+            ),
+            add="+",
+        )
         ttk.Label(
             prerequisites,
             textvariable=self.destination_disk_assessment,
             wraplength=1130,
-        ).grid(row=4, column=0, columnspan=4, sticky="w", padx=4, pady=2)
+        ).grid(row=5, column=0, columnspan=4, sticky="w", padx=4, pady=2)
 
         projection_columns = (
             "source",
@@ -2044,13 +2194,13 @@ class BcpGuiApplication:
         projection_frame = ttk.Frame(prerequisites)
         projection_frame.columnconfigure(0, weight=1)
         projection_frame.grid(
-            row=5, column=0, columnspan=4, sticky="ew", padx=4, pady=(2, 4)
+            row=6, column=0, columnspan=4, sticky="ew", padx=4, pady=(2, 4)
         )
         self.disk_projection_tree = ttk.Treeview(
             projection_frame,
             columns=projection_columns,
             show="headings",
-            height=4,
+            height=2,
         )
         projection_headings = {
             "source": "Tabela de origem  |",
@@ -2085,15 +2235,32 @@ class BcpGuiApplication:
             textvariable=self.disk_operator_warning,
             bootstyle="danger",
             wraplength=1130,
-        ).grid(row=6, column=0, columnspan=4, sticky="w", padx=4, pady=(4, 2))
+        ).grid(row=7, column=0, columnspan=4, sticky="w", padx=4, pady=(4, 2))
 
         planning = ttk.Labelframe(
-            tab, text="2. Informar credenciais e planejar", padding=10
+            tab, text="2. Informar credenciais e planejar", padding=6
         )
-        planning.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+        planning.grid(row=1, column=0, sticky="ew", pady=(0, 2))
         planning.columnconfigure(1, weight=1)
+        permission_guidance_label = ttk.Label(
+            planning,
+            textvariable=self.credential_permissions_guidance,
+            bootstyle="danger",
+            justify="left",
+            wraplength=1800,
+        )
+        permission_guidance_label.grid(
+            row=0, column=0, columnspan=3, sticky="w", padx=4, pady=(2, 6)
+        )
+        planning.bind(
+            "<Configure>",
+            lambda event, label=permission_guidance_label: label.configure(
+                wraplength=max(500, event.width - 40)
+            ),
+            add="+",
+        )
         plan = ttk.Button(planning, text="Planejar", command=self._plan, bootstyle="primary")
-        plan.grid(row=0, column=0, padx=4, pady=4, sticky="w")
+        plan.grid(row=1, column=0, padx=4, pady=4, sticky="w")
         ttk.Label(
             planning,
             text=(
@@ -2101,13 +2268,13 @@ class BcpGuiApplication:
                 "para Origem, Destino 01 e Destino 02."
             ),
             bootstyle="secondary",
-        ).grid(row=0, column=1, sticky="w", padx=8)
+        ).grid(row=1, column=1, sticky="w", padx=8)
         ttk.Label(planning, textvariable=self.plan_status, bootstyle="secondary").grid(
-            row=0, column=2, sticky="e", padx=8
+            row=1, column=2, sticky="e", padx=8
         )
         summary_columns = ("environment", "username", "instance", "port", "database")
         self.connection_tree = ttk.Treeview(
-            planning, columns=summary_columns, show="headings", height=3
+            planning, columns=summary_columns, show="headings", height=2
         )
         summary_headings = {
             "environment": "Ambiente  |",
@@ -2131,22 +2298,23 @@ class BcpGuiApplication:
                 anchor="w",
             )
         self.connection_tree.grid(
-            row=1, column=0, columnspan=3, sticky="ew", padx=4, pady=(6, 2)
+            row=2, column=0, columnspan=3, sticky="ew", padx=4, pady=(6, 2)
         )
 
-        ddl = ttk.Labelframe(tab, text="3. Gerar e aplicar a estrutura", padding=10)
-        ddl.grid(row=2, column=0, sticky="ew", pady=(0, 8))
+        ddl = ttk.Labelframe(tab, text="3. Gerar e aplicar a estrutura", padding=6)
+        ddl.grid(row=2, column=0, sticky="ew", pady=(0, 2))
         ddl.columnconfigure(4, weight=1)
         collision_container = ttk.Frame(ddl)
         collision_container.grid(row=0, column=0, padx=4, pady=4, sticky="w")
         collision_toggle = ttk.Frame(collision_container)
         collision_toggle.grid(row=0, column=0, sticky="w")
-        ttk.Checkbutton(
+        self.ddl_collision_checkbutton = ttk.Checkbutton(
             collision_toggle,
             text="Resolver colisão de colunas",
             variable=self.global_variables["resolve_column_collisions"],
             bootstyle="round-toggle",
-        ).pack(side="left")
+        )
+        self.ddl_collision_checkbutton.pack(side="left")
         collision_help = ttk.Label(
             collision_toggle, text=" ? ", bootstyle="info", cursor="hand2"
         )
@@ -2185,6 +2353,7 @@ class BcpGuiApplication:
             width=12,
         )
         ddl_area.grid(row=0, column=2, padx=4, pady=4)
+        self.ddl_area_widget = ddl_area
         _attach_help(ddl_area, "ddl_area")
         self._register_default_widget(ddl_area, self.ddl_area, "Ambas", "combobox")
         _help_label(ddl, "Diretório dos scripts", "ddl_output").grid(
@@ -2218,11 +2387,24 @@ class BcpGuiApplication:
         apply_ddl.grid(
             row=0, column=6, padx=4, pady=4
         )
+        self.ddl_non_area_controls = [
+            self.ddl_collision_checkbutton,
+            ddl_output,
+            generate,
+            apply_ddl,
+        ]
+        ttk.Label(
+            ddl,
+            textvariable=self.ddl_none_warning,
+            bootstyle="danger",
+            wraplength=1130,
+        ).grid(row=1, column=0, columnspan=7, sticky="w", padx=4, pady=(2, 0))
+        self._update_ddl_section_state()
 
         transfer = ttk.Labelframe(
-            tab, text="4. Exportar da Origem e importar no destino de dados", padding=10
+            tab, text="4. Exportar da Origem e importar no destino de dados", padding=6
         )
-        transfer.grid(row=3, column=0, sticky="ew", pady=(0, 8))
+        transfer.grid(row=3, column=0, sticky="ew", pady=(0, 2))
         transfer.columnconfigure(3, weight=1)
         run = ttk.Button(
             transfer,
@@ -2285,14 +2467,14 @@ class BcpGuiApplication:
             bootstyle="secondary",
             wraplength=1100,
         )
-        notice.grid(row=4, column=0, sticky="w", pady=(2, 6))
-        log_frame = ttk.Labelframe(tab, text="Acompanhamento", padding=8)
+        notice.grid(row=4, column=0, sticky="w", pady=(0, 2))
+        log_frame = ttk.Labelframe(tab, text="Acompanhamento", padding=5)
         log_frame.grid(row=5, column=0, sticky="nsew")
         log_frame.rowconfigure(0, weight=1)
         log_frame.columnconfigure(0, weight=1)
         self.log_text = ScrolledText(
             log_frame,
-            height=8,
+            height=3,
             wrap="word",
             font=("Cascadia Mono", 10),
             state="disabled",
@@ -2821,7 +3003,12 @@ class BcpGuiApplication:
                 self.table_forms.append(form)
         self._refresh_table_tree()
         self._refresh_connection_summary([])
+        if not bool(self.global_variables["create_structure_if_needed"].get()):
+            self.endpoint_variables["bronze_destination"]["role"].set(
+                label_for_code(DESTINATION_ROLE_LABELS, "data_only")
+            )
         self._update_ddl_area_default()
+        self._update_contextual_guidance()
         self.plan_status.set("Planejamento ainda não executado")
 
     def _load_endpoint(
@@ -3277,6 +3464,7 @@ class BcpGuiApplication:
         self.progress.stop()
         for button in self.action_buttons:
             button.configure(state="normal")
+        self._update_ddl_section_state()
         if success:
             self.operation_status.set("Operação concluída")
             messagebox.showinfo(

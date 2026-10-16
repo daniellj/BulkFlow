@@ -558,6 +558,9 @@ class GuiConstructionTests(unittest.TestCase):
 
         application = object.__new__(BcpGuiApplication)
         application.ddl_area = Value()
+        application.global_variables = {
+            "create_structure_if_needed": Value(True),
+        }
         application.endpoint_enabled = {
             "bronze_destination": Value(),
             "landing_destination": Value(),
@@ -572,6 +575,50 @@ class GuiConstructionTests(unittest.TestCase):
             application.endpoint_enabled["landing_destination"].set(landing)
             application._update_ddl_area_default()
             self.assertEqual(application.ddl_area.get(), expected)
+
+        application.global_variables["create_structure_if_needed"].set(False)
+        application.endpoint_enabled["bronze_destination"].set(True)
+        application.endpoint_enabled["landing_destination"].set(False)
+        application._update_ddl_area_default()
+        self.assertEqual(application.ddl_area.get(), "Destino 02")
+
+    def test_ddl_none_disables_every_control_except_area(self):
+        try:
+            from bcp_engine.gui import BcpGuiApplication
+        except ImportError as error:  # pragma: no cover
+            self.skipTest(f"Dependência gráfica indisponível: {error}")
+
+        class Value:
+            def __init__(self, value):
+                self.value = value
+
+            def get(self):
+                return self.value
+
+            def set(self, value):
+                self.value = value
+
+        class Widget:
+            def __init__(self):
+                self.state = None
+
+            def configure(self, *, state):
+                self.state = state
+
+        application = object.__new__(BcpGuiApplication)
+        application.ddl_area = Value("Nenhum")
+        application.ddl_non_area_controls = [Widget(), Widget()]
+        application.column_collision_strategy_widget = Widget()
+        application.global_variables = {
+            "resolve_column_collisions": Value(True),
+        }
+        application._update_contextual_guidance = lambda: None
+        application._update_ddl_section_state()
+        self.assertEqual(
+            [widget.state for widget in application.ddl_non_area_controls],
+            ["disabled", "disabled"],
+        )
+        self.assertEqual(application.column_collision_strategy_widget.state, "disabled")
 
     def test_configuration_filename_uses_destination_01_schema(self):
         try:
