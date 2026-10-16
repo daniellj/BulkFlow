@@ -733,9 +733,14 @@ class DestinationImporterTests(unittest.TestCase):
             importer.register_execution_table(**arguments)
         _connection, sql, params = execute_mock.call_args.args
         self.assertIn("DATA_TRANSFER_TARGET:", sql)
-        self.assertIn("WHERE destination_schema=? AND destination_table=?", sql)
-        self.assertIn("AND NOT (execution_id=? AND dataset_id=? AND table_id=?)", sql)
+        self.assertIn("WHERE t.destination_schema=? AND t.destination_table=?", sql)
+        self.assertIn(
+            "AND NOT (t.execution_id=? AND t.dataset_id=? AND t.table_id=?)", sql
+        )
         self.assertIn("THROW 51114", sql)
+        self.assertIn("@LockOwner='Session'", sql)
+        self.assertIn("UPDATE e SET state='GLOBAL_ERROR'", sql)
+        self.assertIn("TRUNCATE TABLE [s344].[bd_origem_tabela_origem_01]", sql)
         self.assertEqual(params[:5], (
             "s344", "bd_origem_tabela_origem_01", self.execution_id, "d" * 64, "t" * 64,
         ))

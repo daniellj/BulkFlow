@@ -167,6 +167,7 @@ FIELD_HELP: dict[str, str] = {
     "structure_profile": "Perfil JSON que define metadados, índices e estrutura técnica do destino.",
     "authentication_type": "Método de autenticação usado exclusivamente por este ambiente.",
     "username": "Usuário da conexão. Pode ser diferente na Origem, no Destino 01 e no Destino 02.",
+    "password": "Senha mantida somente em memória nesta sessão. Não é gravada no JSON nem exibida nos logs.",
     "domain": "Domínio Windows; editável somente para o tipo Credencial Windows.",
     "encrypt": "Solicita conexão criptografada ao SQL Server.",
     "trust_server_certificate": "Aceita o certificado apresentado sem validar sua cadeia de confiança.",
@@ -850,6 +851,8 @@ class BcpGuiApplication:
             tuple[tk.Misc, tk.Variable, Any | Callable[[], Any], str, bool]
         ] = []
         self._domain_entries: dict[str, ttk.Entry] = {}
+        self._password_entries: dict[str, ttk.Entry] = {}
+        self._operation_passwords: dict[str, str] = {}
         self._role_comboboxes: dict[str, ttk.Combobox] = {}
         self._suspend_schema_sync = False
         self._previous_bronze_schema = ""
@@ -918,6 +921,7 @@ class BcpGuiApplication:
                 "odbc_dsn": tk.StringVar(),
                 "authentication_type": tk.StringVar(),
                 "username": tk.StringVar(),
+                "password": tk.StringVar(),
                 "domain": tk.StringVar(),
                 "secret_provider": tk.StringVar(),
                 "secret_reference": tk.StringVar(),
@@ -1101,8 +1105,16 @@ class BcpGuiApplication:
         ]
         for title, key, permissions in (
             ("ORIGEM", "source", "somente leitura"),
-            ("DESTINO 01", "bronze_destination", "leitura e escrita; ddl"),
-            ("DESTINO 02", "landing_destination", "leitura e escrita; ddl"),
+            (
+                "DESTINO 01",
+                "bronze_destination",
+                "leitura e escrita; ddl; função de servidor: bulkadmin",
+            ),
+            (
+                "DESTINO 02",
+                "landing_destination",
+                "leitura e escrita; ddl; função de servidor: bulkadmin",
+            ),
         ):
             permission_lines.append(
                 f"- {title} | Instância: {endpoint_value(key, 'instance')} | "
@@ -1789,11 +1801,18 @@ class BcpGuiApplication:
         )
         _attach_help(domain, "domain")
         self._domain_entries[key] = domain
+        _help_label(auth, "Senha (quando aplicável)", "password").grid(
+            row=1, column=2, sticky="w", pady=5
+        )
+        password = ttk.Entry(auth, textvariable=variables["password"], show="•")
+        password.grid(row=1, column=3, sticky="ew", padx=(8, 0), pady=5)
+        _attach_help(password, "password")
+        self._password_entries[key] = password
         ttk.Label(
             auth,
             text=(
-                "A senha é solicitada de forma mascarada ao planejar e nunca é gravada "
-                "no arquivo de configuração. Provedores definidos em um JSON existente são preservados."
+                "A senha permanece mascarada e somente em memória durante esta sessão; "
+                "nunca é gravada no arquivo de configuração."
             ),
             bootstyle="secondary",
             wraplength=900,
@@ -1835,6 +1854,15 @@ class BcpGuiApplication:
         entry = self._domain_entries.get(key)
         if entry is not None:
             entry.configure(state=state)
+        password_entry = self._password_entries.get(key)
+        if password_entry is not None:
+            password_entry.configure(
+                state=(
+                    "normal"
+                    if authentication_type in {"sql", "windows_credentials"}
+                    else "disabled"
+                )
+            )
 
     def _build_tables_tab(self) -> None:
         tab = self.tables_tab
@@ -2752,6 +2780,10 @@ class BcpGuiApplication:
             str(result["secret_provider"]),
             "Provedor da senha",
         )
+        if result["authentication_type"] in {"sql", "windows_credentials"}:
+            result["secret_provider"] = "prompt"
+            result["secret_reference"] = ""
+        result.pop("password", None)
         return result
 
     def _collect_config(self) -> dict[str, Any]:
@@ -3053,6 +3085,7 @@ class BcpGuiApplication:
                 AUTHENTICATION_LABELS, str(auth.get("type", "windows_integrated"))
             ),
             "username": auth.get("username", ""),
+            "password": "",
             "domain": auth.get("domain", ""),
             "secret_provider": label_for_code(
                 SECRET_PROVIDER_LABELS, str(secret.get("provider", "env"))
@@ -3180,7 +3213,33 @@ class BcpGuiApplication:
             )
             return None
         try:
-            return self._collect_config()
+            config = self._collect_config()
+            passwords: dict[str, str] = {}
+            for endpoint_name in (
+                "source",
+                "bronze_destination",
+                "landing_destination",
+            ):
+                endpoint = config.get(endpoint_name)
+                if endpoint is None:
+                    continue
+                auth_type = str(endpoint["authentication"]["type"])
+                if auth_type not in {"sql", "windows_credentials"}:
+                    continue
+                password = str(
+                    self.endpoint_variables[endpoint_name]["password"].get()
+                )
+                if not password:
+                    raise ValueError(
+                        "Informe a senha mascarada em Conexões -> "
+                        + CONNECTION_TAB_TITLES[endpoint_name]
+                        + "."
+                    )
+                passwords[endpoint_name] = password
+            self._operation_passwords = passwords
+            self.secret_resolver.clear_cache()
+            config["_bcp_password_argument"] = True
+            return config
         except Exception as error:
             messagebox.showerror(
                 "Configuração inválida", redacted_exception(error), parent=self.root
@@ -3390,23 +3449,12 @@ class BcpGuiApplication:
         threading.Thread(target=target, name="bcp-gui-worker", daemon=True).start()
 
     def _prompt_secret_from_worker(self, label: str) -> str:
-        localized_label = label
-        for internal_name, displayed_name in (
-            ("source", "Origem"),
-            ("landing_destination", "Destino 02"),
-            ("bronze_destination", "Destino 01"),
-        ):
-            localized_label = localized_label.replace(
-                f" para {internal_name}: ", f" para {displayed_name}: "
-            )
-        request = _SecretPromptRequest(label=localized_label, ready=threading.Event())
-        self.worker_queue.put(("secret_prompt", request))
-        request.ready.wait()
-        if request.error is not None:
-            raise AuthError("A entrada da senha foi cancelada") from request.error
-        if request.value is None:
-            raise AuthError("A entrada da senha foi cancelada")
-        return request.value
+        for endpoint_name, password in self._operation_passwords.items():
+            if f" para {endpoint_name}:" in label:
+                return password
+        raise AuthError(
+            "Senha não informada na aba Conexões para a operação atual."
+        )
 
     def _poll_worker_queue(self) -> None:
         try:
@@ -3456,6 +3504,14 @@ class BcpGuiApplication:
 
     def _format_event(self, name: str, payload: Mapping[str, Any]) -> str:
         safe = redact_structure(payload)
+        if name == "bcp_command":
+            return f"COMANDO [{safe.get('context')}]: {safe.get('command')}"
+        if name == "database_command":
+            parameters = safe.get("parameters")
+            suffix = "" if not parameters else " | parâmetros=" + stable_json(parameters)
+            return (
+                f"SQL [{safe.get('context')}]: {safe.get('command')}" + suffix
+            )
         if name == "table_plan" and safe.get("text"):
             return "Panorama antes da tabela:\n" + str(safe["text"])
         labels = {

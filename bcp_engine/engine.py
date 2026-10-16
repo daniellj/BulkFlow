@@ -19,7 +19,12 @@ import uuid
 from typing import Any, Callable, Iterable, Mapping
 
 from .artifacts import ArtifactStore, read_bounded_json
-from .auth import SecretResolver, authentication_identity, build_bcp_invocation
+from .auth import (
+    SecretResolver,
+    authentication_identity,
+    build_bcp_invocation,
+    render_bcp_command,
+)
 from .batching import (
     BatchWindow,
     DirectSourceDriftError,
@@ -93,6 +98,7 @@ from .util import (
     DEFAULT_REDACTOR,
     digest,
     qi,
+    redact_structure,
     redacted_exception,
     stable_json,
     validate_canonical_uuid,
@@ -120,6 +126,40 @@ class _DestinationSpaceSkip(RuntimeError):
             f"necessario={assessment.required_bytes}; "
             f"disponivel={assessment.available_bytes}"
         )
+
+
+class _AuditedCursor:
+    def __init__(self, cursor: Any, audit: Callable[[str, Any], None]) -> None:
+        self._cursor = cursor
+        self._audit = audit
+
+    def execute(self, sql: str, *params: Any) -> Any:
+        effective = params[0] if len(params) == 1 else params
+        self._audit(sql, effective)
+        return self._cursor.execute(sql, *params)
+
+    def executemany(self, sql: str, params: Any) -> Any:
+        self._audit(sql, "<lote de parâmetros>")
+        return self._cursor.executemany(sql, params)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._cursor, name)
+
+
+class _AuditedConnection:
+    def __init__(
+        self,
+        connection: Any,
+        audit: Callable[[str, Any], None],
+    ) -> None:
+        self._connection = connection
+        self._audit = audit
+
+    def cursor(self, *args: Any, **kwargs: Any) -> _AuditedCursor:
+        return _AuditedCursor(self._connection.cursor(*args, **kwargs), self._audit)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._connection, name)
 
 
 def _noop_event(_name: str, _payload: Mapping[str, Any]) -> None:
@@ -278,18 +318,42 @@ class BcpEngine:
         self.event = event_sink or _noop_event
 
     def _connect_source(self) -> tuple[Any, Any]:
-        return self.connection_factory.connect(
+        connection, identity = self.connection_factory.connect(
             self.config["source"], self.config, endpoint_name="source"
         )
+        return self._audited_connection(connection, "Origem", self.config["source"]), identity
 
     def _connect_destination(self, area: str | None = None) -> tuple[Any, Any]:
         selected = area or self.config["active_destination"]
         endpoint = self.config.get(selected + "_destination")
         if endpoint is None:
             raise RuntimeError(f"Destino {selected} não configurado")
-        return self.connection_factory.connect(
+        connection, identity = self.connection_factory.connect(
             endpoint, self.config, endpoint_name=selected + "_destination"
         )
+        label = "Destino 01" if selected == "bronze" else "Destino 02"
+        return self._audited_connection(connection, label, endpoint), identity
+
+    def _audited_connection(
+        self, connection: Any, label: str, endpoint: Mapping[str, Any]
+    ) -> _AuditedConnection:
+        context = (
+            f"{label} | {endpoint.get('instance')},{endpoint.get('port', 1433)}"
+            f"/{endpoint.get('database')}"
+        )
+
+        def audit(sql: str, params: Any) -> None:
+            single_line = " ".join(str(sql).split())
+            self.event(
+                "database_command",
+                {
+                    "context": context,
+                    "command": single_line,
+                    "parameters": redact_structure(params),
+                },
+            )
+
+        return _AuditedConnection(connection, audit)
 
     @staticmethod
     def _connection_identity_payload(
@@ -1873,6 +1937,16 @@ class BcpEngine:
             return report
         except BaseException as exc:
             report.global_error = redacted_exception(exc) if isinstance(exc, Exception) else type(exc).__name__
+            if importer is not None and sql_execution_registered:
+                try:
+                    importer.finish_execution(
+                        execution_id, dataset_id, state="GLOBAL_ERROR"
+                    )
+                except Exception as control_error:
+                    report.warnings.append(
+                        "Falha adicional ao liberar o controle SQL da execução: "
+                        + redacted_exception(control_error)
+                    )
             if state is not None:
                 try:
                     state.finish_execution(execution_id, "GLOBAL_ERROR", "GLOBAL_ERROR", report.global_error)
@@ -2157,6 +2231,19 @@ class BcpEngine:
                             )
                         )
                         invocation = base_bcp.with_operation(query, "queryout", str(paths.partial))
+                        if hasattr(self, "event") and hasattr(invocation, "argv"):
+                            self.event(
+                                "bcp_command",
+                                {
+                                    "context": (
+                                        "BCP queryout | Origem | "
+                                        f"{self.config['source'].get('instance')},"
+                                        f"{self.config['source'].get('port', 1433)}/"
+                                        f"{self.config['source'].get('database')}"
+                                    ),
+                                    "command": render_bcp_command(invocation),
+                                },
+                            )
                         bcp_result = self.bcp_runner.run(
                             invocation, paths.log, monitor_path=paths.partial,
                             timeout=int(self.config["bcp_timeout_seconds"]),

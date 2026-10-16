@@ -864,12 +864,22 @@ BEGIN TRY
  BEGIN TRANSACTION;
  DECLARE @lock int;
  EXEC @lock=sys.sp_getapplock @Resource={qs(resource)},@LockMode='Exclusive',
-      @LockOwner='Transaction',@LockTimeout=0;
+      @LockOwner='Session',@LockTimeout=0;
  IF @lock<0 THROW 51110,'Outra sessão está vinculando o mesmo destino.',1;
- IF EXISTS(SELECT 1 FROM {names['table']} WITH(UPDLOCK,HOLDLOCK)
-           WHERE destination_schema=? AND destination_table=?
-             AND NOT (execution_id=? AND dataset_id=? AND table_id=?))
-   THROW 51114,'Destino fisico ja esta vinculado a outra execucao/dataset/tabela.',1;
+ UPDATE e SET state='GLOBAL_ERROR',updated_at=SYSDATETIME()
+ FROM {names['execution']} e
+ JOIN {names['table']} t
+   ON e.execution_id=t.execution_id AND e.dataset_id=t.dataset_id
+ WHERE t.destination_schema=? AND t.destination_table=?
+   AND NOT (t.execution_id=? AND t.dataset_id=? AND t.table_id=?)
+   AND e.state='RUNNING';
+ IF EXISTS(SELECT 1 FROM {names['table']} t WITH(UPDLOCK,HOLDLOCK)
+           JOIN {names['execution']} e WITH(UPDLOCK,HOLDLOCK)
+             ON e.execution_id=t.execution_id AND e.dataset_id=t.dataset_id
+           WHERE t.destination_schema=? AND t.destination_table=?
+             AND NOT (t.execution_id=? AND t.dataset_id=? AND t.table_id=?)
+             AND e.state='RUNNING')
+   THROW 51114,'Destino fisico esta sendo usado por outra execucao realmente ativa.',1;
  IF EXISTS(SELECT 1 FROM {names['execution']} WITH(UPDLOCK,HOLDLOCK)
            WHERE execution_id=? AND dataset_id=? AND structural_hash<>?)
    THROW 51111,'Execução existente possui hash estrutural divergente.',1;
@@ -886,6 +896,29 @@ BEGIN TRY
  IF NOT EXISTS(SELECT 1 FROM {names['table']} WITH(UPDLOCK,HOLDLOCK)
                WHERE execution_id=? AND dataset_id=? AND table_id=?)
  BEGIN
+   IF EXISTS(SELECT 1 FROM {names['table']} t WITH(UPDLOCK,HOLDLOCK)
+             JOIN {names['execution']} e WITH(UPDLOCK,HOLDLOCK)
+               ON e.execution_id=t.execution_id AND e.dataset_id=t.dataset_id
+             WHERE t.destination_schema=? AND t.destination_table=?
+               AND NOT (t.execution_id=? AND t.dataset_id=? AND t.table_id=?)
+               AND e.state<>'RUNNING')
+     TRUNCATE TABLE {target};
+   DELETE b
+   FROM {names['block']} b
+   JOIN {names['table']} t
+     ON t.execution_id=b.execution_id AND t.dataset_id=b.dataset_id AND t.table_id=b.table_id
+   JOIN {names['execution']} e
+     ON e.execution_id=t.execution_id AND e.dataset_id=t.dataset_id
+   WHERE t.destination_schema=? AND t.destination_table=?
+     AND NOT (t.execution_id=? AND t.dataset_id=? AND t.table_id=?)
+     AND e.state<>'RUNNING';
+   DELETE t
+   FROM {names['table']} t
+   JOIN {names['execution']} e
+     ON e.execution_id=t.execution_id AND e.dataset_id=t.dataset_id
+   WHERE t.destination_schema=? AND t.destination_table=?
+     AND NOT (t.execution_id=? AND t.dataset_id=? AND t.table_id=?)
+     AND e.state<>'RUNNING';
    IF EXISTS(SELECT TOP(1) 1 FROM {target} WITH(TABLOCKX,HOLDLOCK))
      THROW 51113,'Destino não vazio sem vínculo compatível de retomada.',1;
    INSERT {names['table']}
@@ -901,12 +934,16 @@ BEGIN CATCH
 END CATCH;"""
         params = (
             target_schema, target_table, execution_id, dataset_id, table_id,
+            target_schema, target_table, execution_id, dataset_id, table_id,
             execution_id, dataset_id, structural_hash,
             execution_id, dataset_id,
             execution_id, dataset_id, structural_hash, area,
             execution_id, dataset_id, table_id, layout_hash, projection_hash,
             target_schema, target_table, final_limit_json,
             execution_id, dataset_id, table_id,
+            target_schema, target_table, execution_id, dataset_id, table_id,
+            target_schema, target_table, execution_id, dataset_id, table_id,
+            target_schema, target_table, execution_id, dataset_id, table_id,
             execution_id, dataset_id, table_id, target_schema, target_table,
             layout_hash, projection_hash, final_limit_json,
         )

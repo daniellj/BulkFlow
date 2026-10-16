@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import getpass
 import os
+import subprocess
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -120,9 +121,11 @@ class BcpInvocation:
     authentication_type: str
     password_channel: SecretValue | None = field(default=None, repr=False)
     windows_context: WindowsExecutionContext | None = field(default=None, repr=False)
+    allow_password_argument: bool = field(default=False, repr=False)
 
     def __post_init__(self) -> None:
-        ensure_no_secret_arguments(self.arguments)
+        if not self.allow_password_argument:
+            ensure_no_secret_arguments(self.arguments)
 
     @property
     def argv(self) -> tuple[str, ...]:
@@ -138,7 +141,8 @@ class BcpInvocation:
 
     def with_operation(self, *arguments: str) -> "BcpInvocation":
         complete = tuple(arguments) + self.arguments
-        ensure_no_secret_arguments(complete)
+        if not self.allow_password_argument:
+            ensure_no_secret_arguments(complete)
         return BcpInvocation(
             endpoint_name=self.endpoint_name,
             executable=self.executable,
@@ -146,17 +150,36 @@ class BcpInvocation:
             authentication_type=self.authentication_type,
             password_channel=self.password_channel,
             windows_context=self.windows_context,
+            allow_password_argument=self.allow_password_argument,
         )
 
     def __repr__(self) -> str:
         return (
             "BcpInvocation("
             f"endpoint_name={self.endpoint_name!r}, executable={self.executable!r}, "
-            f"arguments={self.arguments!r}, authentication_type={self.authentication_type!r}, "
+            f"arguments={DEFAULT_REDACTOR.redact(self.arguments)!r}, authentication_type={self.authentication_type!r}, "
             f"private_password_channel={self.requires_private_password_channel!r}, "
             f"windows_context={self.windows_context.principal if self.windows_context else None!r})"
         )
 
+
+def render_bcp_command(invocation: BcpInvocation) -> str:
+    """Render one redacted, single-line command for operational auditing."""
+
+    rendered: list[str] = []
+    previous = ""
+    for argument in invocation.argv:
+        if previous.casefold() == "-p":
+            safe = "*********"
+        elif previous.casefold() == "-u":
+            # The login is public configuration, even when a laboratory uses
+            # the same text as its password. Only the -P value is the secret.
+            safe = str(argument)
+        else:
+            safe = DEFAULT_REDACTOR.redact(argument)
+        rendered.append(safe.replace("\r", " ").replace("\n", " "))
+        previous = str(argument)
+    return subprocess.list2cmdline(rendered)
 
 def _read_windows_credential(target: str) -> str:
     """Lê uma credencial Generic do Windows Credential Manager por CredReadW."""
@@ -434,6 +457,7 @@ def build_bcp_invocation(
     secret = resolver.resolve_auth(auth, endpoint_name=endpoint_name)
     context = None
     password_channel = None
+    password_argument_secret: SecretValue | None = None
     if kind == "windows_integrated":
         arguments.append("-T")
     elif kind == "windows_credentials":
@@ -443,7 +467,10 @@ def build_bcp_invocation(
     elif kind == "sql":
         assert secret is not None
         arguments.extend(["-U", auth["username"]])
-        password_channel = secret
+        if config.get("_bcp_password_argument"):
+            password_argument_secret = secret
+        else:
+            password_channel = secret
     else:
         raise AuthError(f"Tipo de autenticação não suportado: {kind}")
     arguments.extend(["-n", "-C", "RAW"])
@@ -453,11 +480,17 @@ def build_bcp_invocation(
         arguments.append(switch)
     if tls.get("trust_server_certificate", False):
         arguments.append("-u")
+    if password_argument_secret is not None:
+        arguments.extend(["-P", password_argument_secret.reveal()])
     connection_timeout = endpoint.get(
         "connection_timeout_seconds", config.get("connection_timeout_seconds", 30)
     )
     arguments.extend(["-l", str(int(connection_timeout))])
-    ensure_no_secret_arguments(arguments)
+    allow_password_argument = bool(
+        kind == "sql" and config.get("_bcp_password_argument")
+    )
+    if not allow_password_argument:
+        ensure_no_secret_arguments(arguments)
     requested_executable = str(config.get("bcp_executable", "bcp"))
     resolved_executable = resolve_bcp_executable(requested_executable)
     return BcpInvocation(
@@ -471,6 +504,7 @@ def build_bcp_invocation(
         authentication_type=kind,
         password_channel=password_channel,
         windows_context=context,
+        allow_password_argument=allow_password_argument,
     )
 
 

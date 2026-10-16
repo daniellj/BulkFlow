@@ -15,6 +15,7 @@ from bcp_engine.auth import (
     authentication_identity,
     assert_bcp_has_no_password,
     build_bcp_invocation,
+    render_bcp_command,
     build_odbc_connection_string,
     build_odbc_request,
     minimal_subprocess_environment,
@@ -246,6 +247,28 @@ class BcpAuthenticationTests(unittest.TestCase):
         self.assertTrue(all(password not in argument for argument in invocation.argv))
         self.assertNotIn(password, repr(invocation))
         assert_bcp_has_no_password(invocation, password)
+
+    def test_gui_sql_bcp_uses_redacted_password_argument(self):
+        password = "senha-gui-nao-pode-aparecer"
+        config = read_config(EXAMPLES / "config.auth-sql.json")
+        config["_bcp_password_argument"] = True
+        resolver = SecretResolver(
+            environment={"BCP_SOURCE_SQL_PASSWORD": password}
+        )
+
+        invocation = build_bcp_invocation(
+            config["source"], config, resolver, endpoint_name="source"
+        ).with_operation("SELECT TOP 1 * FROM [dbo].[produto]", "queryout", "x.bcp")
+
+        self.assertFalse(invocation.requires_private_password_channel)
+        self.assertTrue(invocation.allow_password_argument)
+        self.assertIn("-P", invocation.arguments)
+        self.assertIn(password, invocation.argv)
+        rendered = render_bcp_command(invocation)
+        self.assertIn(f"-U {config['source']['authentication']['username']}", rendered)
+        self.assertIn("-P *********", rendered)
+        self.assertNotIn(password, rendered)
+        self.assertNotIn(password, repr(invocation))
 
     def test_explicit_windows_bcp_requires_context_adapter(self):
         config = read_config(EXAMPLES / "config.auth-windows-credential.json")

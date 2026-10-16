@@ -657,10 +657,11 @@ class BcpRunner:
         self.redactor = redactor or DEFAULT_REDACTOR
 
     def preflight(self, invocation: BcpInvocation) -> None:
-        assert_bcp_has_no_password(
-            invocation,
-            invocation.password_channel.reveal() if invocation.password_channel else None,
-        )
+        if not invocation.allow_password_argument:
+            assert_bcp_has_no_password(
+                invocation,
+                invocation.password_channel.reveal() if invocation.password_channel else None,
+            )
         if invocation.requires_private_password_channel:
             _private_console_password(invocation)
             if not self.private_console.available():
