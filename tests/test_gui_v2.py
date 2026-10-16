@@ -509,6 +509,40 @@ class GuiModelTests(unittest.TestCase):
 
 
 class GuiConstructionTests(unittest.TestCase):
+    def test_process_flow_explains_sequential_import_and_retention(self):
+        try:
+            from bcp_engine.gui import build_process_flow_description
+        except ImportError as error:  # pragma: no cover
+            self.skipTest(f"Dependência gráfica indisponível: {error}")
+
+        imported = build_process_flow_description(
+            source_database="ORIGEM",
+            destination_databases=["BRONZE", "LANDING"],
+            export_directory=r"C:\export",
+            import_directory=r"C:\import",
+            create_structure=True,
+            execute_import=True,
+            delete_confirmed_files=True,
+        )
+        self.assertIn("Define o próximo lote", imported)
+        self.assertIn("Confirma a importação nos controles local e SQL", imported)
+        self.assertIn("Exclui o arquivo BCP confirmado", imported)
+        self.assertIn("Um novo lote somente é iniciado após", imported)
+        self.assertIn("um único bloco", imported)
+
+        export_only = build_process_flow_description(
+            source_database="ORIGEM",
+            destination_databases=["BRONZE"],
+            export_directory=r"C:\export",
+            import_directory=r"C:\import",
+            create_structure=False,
+            execute_import=False,
+            delete_confirmed_files=True,
+        )
+        self.assertIn("não cria tabelas", export_only)
+        self.assertIn("não realiza importação", export_only)
+        self.assertNotIn("Confirma a importação", export_only)
+
     def test_connection_summary_reserves_one_visible_row_per_endpoint(self):
         try:
             from bcp_engine.gui import CONNECTION_SUMMARY_VISIBLE_ROWS
@@ -1060,6 +1094,47 @@ class GuiConstructionTests(unittest.TestCase):
         self.assertNotIn(secret, application.log_text.value)
         self.assertIn("********", application.log_text.value)
         self.assertTrue(application.log_text.value.endswith("\n\n"))
+
+    def test_paused_log_view_does_not_chase_new_entries_and_can_resume(self):
+        try:
+            from bcp_engine.gui import BcpGuiApplication
+        except ImportError as error:  # pragma: no cover
+            self.skipTest(f"Dependência gráfica indisponível: {error}")
+
+        class Value:
+            def __init__(self):
+                self.value = ""
+
+            def set(self, value):
+                self.value = value
+
+        class LogBuffer:
+            def __init__(self):
+                self.value = ""
+                self.seen = 0
+
+            def configure(self, **_kwargs):
+                pass
+
+            def insert(self, _where, value):
+                self.value += value
+
+            def see(self, _where):
+                self.seen += 1
+
+        application = object.__new__(BcpGuiApplication)
+        application.log_text = LogBuffer()
+        application.log_follow_status = Value()
+        application.follow_log_tail = False
+
+        application._append_log("entrada enquanto o operador está lendo")
+        self.assertEqual(application.log_text.seen, 0)
+        self.assertFalse(application.follow_log_tail)
+
+        application._follow_latest_log()
+        self.assertEqual(application.log_text.seen, 1)
+        self.assertTrue(application.follow_log_tail)
+        self.assertIn("ativo", application.log_follow_status.value)
 
     def test_window_constructs_and_collects_the_same_validated_contract(self):
         try:

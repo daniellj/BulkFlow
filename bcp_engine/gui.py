@@ -86,6 +86,68 @@ CONNECTION_TAB_TITLES: dict[str, str] = {
     "landing_destination": "Destino 02",
 }
 CONNECTION_SUMMARY_VISIBLE_ROWS = 3
+
+
+def build_process_flow_description(
+    *,
+    source_database: str,
+    destination_databases: list[str],
+    export_directory: str,
+    import_directory: str,
+    create_structure: bool,
+    execute_import: bool,
+    delete_confirmed_files: bool,
+) -> str:
+    destinations = " e ".join(destination_databases) or "nenhum destino habilitado"
+    structure_step = (
+        f"Cria ou valida a estrutura em {destinations}, quando necessário"
+        if create_structure and destination_databases
+        else f"Usa as estruturas existentes em {destinations}; não cria tabelas"
+    )
+    steps = [
+        "Para cada tabela do fluxo",
+        structure_step,
+        "Define o próximo lote da tabela de origem",
+        f"Exporta o lote via BCP queryout de {source_database} para {export_directory}",
+        "Valida e registra o arquivo BCP exportado",
+    ]
+    if execute_import:
+        steps.extend(
+            [
+                f"Importa o lote no Destino 01 a partir de {import_directory}",
+                "Confirma a importação nos controles local e SQL",
+                (
+                    "Exclui o arquivo BCP confirmado"
+                    if delete_confirmed_files
+                    else "Mantém o arquivo BCP após a importação"
+                ),
+            ]
+        )
+        sequential_note = (
+            "Um novo lote somente é iniciado após a confirmação da importação "
+            "do lote anterior. Se a importação falhar, o arquivo BCP é preservado "
+            "para diagnóstico ou retomada."
+        )
+    else:
+        steps.append("Mantém o arquivo BCP exportado; não realiza importação")
+        sequential_note = (
+            "Um novo lote somente é iniciado após a validação e o registro do "
+            "arquivo BCP do lote anterior."
+        )
+    steps.extend(
+        [
+            "Existem mais lotes nessa tabela?",
+            "Sim: processa o próximo lote | Não: passa para a próxima tabela",
+        ]
+    )
+    flow = "\n↓\n".join(steps)
+    notes = (
+        "O BulkFlow processa um lote por vez. "
+        + sequential_note
+        + " Manifestos, arquivos de formato e logs permanecem disponíveis para auditoria. "
+        "Tabelas sem chave elegíveis para carga direta são processadas em um único bloco."
+    )
+    return flow + "\n\n" + notes
 SOURCE_ROLE_LABELS: dict[str, str] = {
     "provedor de dados": "data_provider",
 }
@@ -950,6 +1012,10 @@ class BcpGuiApplication:
         self.credential_permissions_guidance = tk.StringVar()
         self.process_flow_description = tk.StringVar()
         self.ddl_none_warning = tk.StringVar()
+        self.log_follow_status = tk.StringVar(
+            value="Acompanhamento automático: ativo"
+        )
+        self.follow_log_tail = True
 
         for name in ("max_file_bytes", "minimum_free_space_bytes"):
             self.global_variables[name].trace_add(
@@ -1085,26 +1151,28 @@ class BcpGuiApplication:
         export_directory = str(self.global_variables["executor_directory"].get()).strip() or "<não informado>"
         import_directory = str(self.global_variables["destination_sql_directory"].get()).strip() or "<não informado>"
 
-        create_step = (
-            f"Cria tabelas de destino em {destination_1_database} e {destination_2_database}"
-            if self.global_variables["create_structure_if_needed"].get()
-            else f"Não cria tabelas de destino em {destination_1_database} e {destination_2_database}"
-        )
-        import_step = (
-            f"Importa arquivos BCP em {destination_1_database} de {import_directory}"
-            if self.global_variables["execute_import"].get()
-            else "Não importa os arquivos BCP"
-        )
-        delete_step = (
-            "Exclui arquivos BCP"
-            if self.global_variables["delete_confirmed_files"].get()
-            else "Mantém os arquivos BCP"
-        )
+        enabled_destination_databases = [
+            database
+            for key, database in (
+                ("bronze_destination", destination_1_database),
+                ("landing_destination", destination_2_database),
+            )
+            if bool(self.endpoint_enabled[key].get())
+        ]
         self.process_flow_description.set(
-            "Para cada tabela do fluxo\n↓\n"
-            f"{create_step}\n↓\n"
-            f"Exporta arquivos BCP via queryout de {source_database} para {export_directory}\n↓\n"
-            f"{import_step}\n↓\n{delete_step}"
+            build_process_flow_description(
+                source_database=source_database,
+                destination_databases=enabled_destination_databases,
+                export_directory=export_directory,
+                import_directory=import_directory,
+                create_structure=bool(
+                    self.global_variables["create_structure_if_needed"].get()
+                ),
+                execute_import=bool(self.global_variables["execute_import"].get()),
+                delete_confirmed_files=bool(
+                    self.global_variables["delete_confirmed_files"].get()
+                ),
+            )
         )
 
         disk_lines = [
@@ -1526,8 +1594,8 @@ class BcpGuiApplication:
         ttk.Label(
             flow_diagram,
             textvariable=self.process_flow_description,
-            justify="center",
-            anchor="center",
+            justify="left",
+            anchor="w",
             wraplength=1120,
         ).pack(fill="x")
 
@@ -2551,12 +2619,39 @@ class BcpGuiApplication:
             insertbackground="#e5e7eb",
         )
         self.log_text.grid(row=0, column=0, sticky="nsew")
+        self.log_text.vbar.configure(command=self._on_log_scrollbar)
+        for sequence in (
+            "<MouseWheel>",
+            "<Button-4>",
+            "<Button-5>",
+            "<KeyRelease-Up>",
+            "<KeyRelease-Down>",
+            "<KeyRelease-Prior>",
+            "<KeyRelease-Next>",
+            "<KeyRelease-Home>",
+            "<KeyRelease-End>",
+        ):
+            self.log_text.bind(sequence, self._on_log_view_changed, add="+")
+        footer = ttk.Frame(log_frame)
+        footer.grid(row=1, column=0, sticky="ew", pady=(8, 0))
+        footer.columnconfigure(0, weight=1)
+        ttk.Label(
+            footer,
+            textvariable=self.log_follow_status,
+            bootstyle="secondary",
+        ).grid(row=0, column=0, sticky="w")
         ttk.Button(
-            log_frame,
+            footer,
+            text="Ir para o mais recente",
+            command=self._follow_latest_log,
+            bootstyle="outline-primary",
+        ).grid(row=0, column=1, padx=(8, 0))
+        ttk.Button(
+            footer,
             text="Limpar acompanhamento",
             command=self._clear_log,
             bootstyle="outline-secondary",
-        ).grid(row=1, column=0, sticky="e", pady=(8, 0))
+        ).grid(row=0, column=2, padx=(8, 0))
 
 
     def _invalidate_disk_projection(self) -> None:
@@ -3575,15 +3670,43 @@ class BcpGuiApplication:
             )
 
     def _append_log(self, text: str) -> None:
+        follow_tail = bool(getattr(self, "follow_log_tail", True))
         self.log_text.configure(state="normal")
         self.log_text.insert("end", redact_text(text).rstrip() + "\n\n")
-        self.log_text.see("end")
+        if follow_tail:
+            self.log_text.see("end")
         self.log_text.configure(state="disabled")
+
+    def _set_log_follow_state(self, enabled: bool) -> None:
+        self.follow_log_tail = enabled
+        status = getattr(self, "log_follow_status", None)
+        if status is not None:
+            status.set(
+                "Acompanhamento automático: ativo"
+                if enabled
+                else "Acompanhamento automático: pausado"
+            )
+
+    def _sync_log_follow_from_view(self) -> None:
+        _first, last = self.log_text.yview()
+        self._set_log_follow_state(float(last) >= 0.999)
+
+    def _on_log_view_changed(self, _event: Any = None) -> None:
+        self.root.after_idle(self._sync_log_follow_from_view)
+
+    def _on_log_scrollbar(self, *arguments: str) -> None:
+        self.log_text.yview(*arguments)
+        self._sync_log_follow_from_view()
+
+    def _follow_latest_log(self) -> None:
+        self.log_text.see("end")
+        self._set_log_follow_state(True)
 
     def _clear_log(self) -> None:
         self.log_text.configure(state="normal")
         self.log_text.delete("1.0", "end")
         self.log_text.configure(state="disabled")
+        self._set_log_follow_state(True)
 
     def _close(self) -> None:
         if self.busy:
