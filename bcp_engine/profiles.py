@@ -621,7 +621,7 @@ def resolve_profile(
     bronze_event_id: Mapping[str, Any] | None = None,
     partition_column: str | None = None,
     resolve_column_collisions: bool = False,
-    column_collision_strategy: str = "rename_source",
+    column_collision_strategy: str = "keep_destination",
 ) -> TableLayout:
     """Resolve placeholders e intercala colunas autodescobertas na ordem exata."""
 

@@ -76,7 +76,7 @@ class ConfigExamplesTests(unittest.TestCase):
         self.assertEqual(data_destination_areas(config), ("bronze",))
         self.assertFalse(config["allow_schema_evolution"])
         self.assertTrue(config["resolve_column_collisions"])
-        self.assertEqual(config["column_collision_strategy"], "rename_source")
+        self.assertEqual(config["column_collision_strategy"], "keep_destination")
         self.assertEqual(config["artifact_reader_sids"], [])
         self.assertEqual(config["artifact_writer_sids"], [])
         self.assertTrue(all(table["enable_cdc"] for table in config["tables"]))

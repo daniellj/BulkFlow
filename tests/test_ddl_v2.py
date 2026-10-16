@@ -472,6 +472,7 @@ class ProfileTests(unittest.TestCase):
             destination_table="db_t",
             destination_schema="bronze",
             resolve_column_collisions=True,
+            column_collision_strategy="rename_source",
         )
 
         business = next(column for column in layout.columns if column.role == "business")

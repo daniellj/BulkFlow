@@ -100,7 +100,7 @@ DEFAULT_ENDPOINT_ROLES: dict[str, str] = {
 }
 COLUMN_COLLISION_STRATEGY_LABELS: dict[str, str] = {
     "Preservar Origem com sufixo _origem": "rename_source",
-    "Manter somente a coluna do destino": "keep_destination",
+    "Manter somente a coluna de destino": "keep_destination",
 }
 DESTINATION_ENDPOINT_KEYS: dict[str, str] = {
     "bronze": "bronze_destination",
@@ -214,7 +214,7 @@ FIELD_HELP: dict[str, str] = {
     ),
     "column_collision_strategy": (
         "Define como resolver cada homônimo. '_origem' preserva os dois valores, "
-        "renomeando a coluna da Origem. 'Manter somente a coluna do destino' não "
+        "renomeando a coluna da Origem. 'Manter somente a coluna de destino' não "
         "materializa a homônima da Origem e mantém apenas a coluna técnica ou de "
         "metadados definida pelo perfil do destino."
     ),
@@ -809,8 +809,10 @@ class BcpGuiApplication:
         ensure_runtime_directories()
         RUNTIME_CONFIG_DIRECTORY.mkdir(parents=True, exist_ok=True)
         self.root.title(WINDOW_TITLE)
-        self.root.geometry("1240x860")
-        self.root.minsize(1040, 720)
+        # Reserve enough vertical space for the complete operations workflow,
+        # including a useful Acompanhamento pane, on the first render.
+        self.root.geometry("1280x980")
+        self.root.minsize(1100, 820)
         self.root.protocol("WM_DELETE_WINDOW", self._close)
 
         self.style = ttk.Style()
@@ -864,7 +866,7 @@ class BcpGuiApplication:
             "allow_schema_evolution": tk.BooleanVar(),
             "resolve_column_collisions": tk.BooleanVar(value=True),
             "column_collision_strategy": tk.StringVar(
-                value="Preservar Origem com sufixo _origem"
+                value="Manter somente a coluna de destino"
             ),
             "keyless_direct_load_max_rows": tk.StringVar(),
             "executor_directory": tk.StringVar(),
@@ -1987,7 +1989,7 @@ class BcpGuiApplication:
     def _build_operations_tab(self) -> None:
         tab = self.operations_tab
         tab.columnconfigure(0, weight=1)
-        tab.rowconfigure(5, weight=1)
+        tab.rowconfigure(5, weight=1, minsize=190)
 
         prerequisites = ttk.Labelframe(
             tab, text="1. Atender aos pré-requisitos do executor", padding=10
@@ -2168,7 +2170,7 @@ class BcpGuiApplication:
         self._register_default_widget(
             self.column_collision_strategy_widget,
             self.global_variables["column_collision_strategy"],
-            "Preservar Origem com sufixo _origem",
+            "Manter somente a coluna de destino",
             "combobox",
         )
         self._update_collision_strategy_state()
@@ -2190,7 +2192,17 @@ class BcpGuiApplication:
         )
         ddl_output = ttk.Entry(ddl, textvariable=self.ddl_output, width=36)
         ddl_output.grid(row=0, column=4, padx=4, pady=4, sticky="ew")
-        _attach_help(ddl_output, "ddl_output")
+        ddl_output_tooltip = ToolTip(
+            ddl_output, text=str(self.ddl_output.get()), wraplength=700, delay=250
+        )
+        ddl_output.bind(
+            "<Enter>",
+            lambda _event, tip=ddl_output_tooltip: setattr(
+                tip, "text", str(self.ddl_output.get()) or "<não informado>"
+            ),
+            add="+",
+        )
+        setattr(ddl_output, "_value_tooltip", ddl_output_tooltip)
         self._register_default_widget(
             ddl_output, self.ddl_output, str(RUNTIME_DDL_DIRECTORY), "entry"
         )
@@ -2280,6 +2292,7 @@ class BcpGuiApplication:
         log_frame.columnconfigure(0, weight=1)
         self.log_text = ScrolledText(
             log_frame,
+            height=8,
             wrap="word",
             font=("Cascadia Mono", 10),
             state="disabled",

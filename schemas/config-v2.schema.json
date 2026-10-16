@@ -62,7 +62,7 @@
     "column_collision_strategy": {
       "type": "string",
       "enum": ["rename_source", "keep_destination"],
-      "default": "rename_source",
+      "default": "keep_destination",
       "description": "Define se a coluna homônima da Origem é preservada com sufixo _origem ou se somente a coluna reservada do destino é mantida."
     },
     "artifact_reader_sids": {

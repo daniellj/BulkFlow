@@ -483,7 +483,7 @@ class BcpEngine:
                 self.config.get("resolve_column_collisions", True)
             ),
             column_collision_strategy=str(
-                self.config.get("column_collision_strategy", "rename_source")
+                self.config.get("column_collision_strategy", "keep_destination")
             ),
         )
         if not profile_matches_area(layout.profile_name, target_area):
@@ -2275,7 +2275,7 @@ class BcpEngine:
                 self.config.get("resolve_column_collisions", True)
             ),
             column_collision_strategy=str(
-                self.config.get("column_collision_strategy", "rename_source")
+                self.config.get("column_collision_strategy", "keep_destination")
             ),
         )
         if layout.table.casefold() != str(destination_info["table"]).casefold():

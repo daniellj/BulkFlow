@@ -686,7 +686,7 @@ def build_plan(
                         config.get("resolve_column_collisions", True)
                     ),
                     column_collision_strategy=str(
-                        config.get("column_collision_strategy", "rename_source")
+                        config.get("column_collision_strategy", "keep_destination")
                     ),
                 )
                 profile_name = getattr(layout, "profile_name", destination["area"])

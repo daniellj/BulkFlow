@@ -99,7 +99,7 @@ DEFAULTS: dict[str, Any] = {
     # the structural fingerprint independently of this switch.
     "allow_schema_evolution": False,
     "resolve_column_collisions": True,
-    "column_collision_strategy": "rename_source",
+    "column_collision_strategy": "keep_destination",
     # Optional Windows principals that need read/traverse access to the BCP
     # files (for example a local SQL Server service SID), plus exceptional
     # writer identities for SMB where the local token SID differs from the
@@ -1063,7 +1063,7 @@ def operational_fingerprint(config: Mapping[str, Any]) -> str:
         "allow_schema_evolution": config.get("allow_schema_evolution", False),
         "resolve_column_collisions": config.get("resolve_column_collisions", True),
         "column_collision_strategy": config.get(
-            "column_collision_strategy", "rename_source"
+            "column_collision_strategy", "keep_destination"
         ),
         "executor_directory": config["executor_directory"],
         "destination_sql_directory": config.get("destination_sql_directory"),
