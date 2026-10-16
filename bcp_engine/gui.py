@@ -2783,7 +2783,8 @@ class BcpGuiApplication:
                 {
                     "odbc_driver": driver,
                     "bcp_executable": executable,
-                }
+                },
+                hide_window=True,
             )
             if not report.ready:
                 raise RuntimeError("; ".join(report.errors) or "Pré-requisitos indisponíveis.")
@@ -3298,6 +3299,7 @@ class BcpGuiApplication:
         context_path = self.current_config_path or (
             RUNTIME_CONFIG_DIRECTORY / "config.gui.unsaved.json"
         )
+        config["_hide_subprocess_windows"] = True
         return BcpEngine(
             config,
             config_path=context_path.resolve(),

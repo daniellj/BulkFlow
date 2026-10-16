@@ -65,6 +65,20 @@ def _terminal_visible_text(value: str) -> str:
 BCP_OUTPUT_TAIL_BYTES = 4 * 1024 * 1024
 
 
+def windows_hidden_process_options(enabled: bool) -> dict[str, Any]:
+    """Return Windows-only flags that suppress a child console window."""
+
+    if not enabled or os.name != "nt":
+        return {}
+    startupinfo = subprocess.STARTUPINFO()
+    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    startupinfo.wShowWindow = subprocess.SW_HIDE
+    return {
+        "creationflags": subprocess.CREATE_NO_WINDOW,
+        "startupinfo": startupinfo,
+    }
+
+
 class BoundedOutputTail:
     """Captura binária thread-safe que retém somente a cauda da saída."""
 
@@ -646,6 +660,7 @@ class BcpRunner:
         private_console: PrivateConsole | None = None,
         windows_context_adapter: WindowsContextAdapter | None = None,
         redactor: SecretRedactor | None = None,
+        hide_window: bool = False,
     ) -> None:
         if private_console is not None:
             self.private_console = private_console
@@ -655,6 +670,7 @@ class BcpRunner:
             self.private_console = PosixPtyConsole()
         self.windows_context_adapter = windows_context_adapter
         self.redactor = redactor or DEFAULT_REDACTOR
+        self.hide_window = bool(hide_window)
 
     def preflight(self, invocation: BcpInvocation) -> None:
         if not invocation.allow_password_argument:
@@ -678,11 +694,11 @@ class BcpRunner:
                 "windows_credentials requer WindowsContextAdapter homologado para iniciar o BCP"
             )
 
-    @staticmethod
-    def require_version(executable: str) -> str:
+    def require_version(self, executable: str) -> str:
         process = subprocess.Popen(
             [executable, "-v"], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, shell=False, env=minimal_subprocess_environment(),
+            **windows_hidden_process_options(self.hide_window),
         )
         assert process.stdout is not None
         captured = BoundedOutputTail()
@@ -731,6 +747,7 @@ class BcpRunner:
                     env=minimal_subprocess_environment(),
                     timeout=20,
                     check=False,
+                    **windows_hidden_process_options(self.hide_window),
                 )
             except subprocess.TimeoutExpired:
                 raise RuntimeError("Consulta de capacidade do BCP excedeu 20 segundos") from None
@@ -749,6 +766,7 @@ class BcpRunner:
         process = subprocess.Popen(
             list(invocation.argv), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, shell=False, env=minimal_subprocess_environment(),
+            **windows_hidden_process_options(self.hide_window),
         )
         assert process.stdout is not None
         captured = BoundedOutputTail()

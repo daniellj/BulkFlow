@@ -314,7 +314,8 @@ class BcpEngine:
         self.resolver = resolver or SecretResolver()
         self.connection_factory = connection_factory or ConnectionFactory(self.resolver)
         self.bcp_runner = bcp_runner or BcpRunner(
-            windows_context_adapter=self.connection_factory.windows_adapter
+            windows_context_adapter=self.connection_factory.windows_adapter,
+            hide_window=bool(config.get("_hide_subprocess_windows", False)),
         )
         self.event = event_sink or _noop_event
 

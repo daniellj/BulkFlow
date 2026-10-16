@@ -1033,7 +1033,8 @@ class GuiConstructionTests(unittest.TestCase):
             {
                 "odbc_driver": "ODBC Driver 18 for SQL Server",
                 "bcp_executable": "bcp",
-            }
+            },
+            hide_window=True,
         )
         self.assertEqual(completed["label"], "Verificando pré-requisitos")
         self.assertIn(r"C:\tools\bcp.exe", completed["result"])

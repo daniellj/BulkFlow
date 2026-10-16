@@ -27,7 +27,9 @@ class PrerequisiteReport:
         return {**asdict(self), "ready": self.ready}
 
 
-def inspect_prerequisites(config: Mapping[str, Any]) -> PrerequisiteReport:
+def inspect_prerequisites(
+    config: Mapping[str, Any], *, hide_window: bool = False
+) -> PrerequisiteReport:
     """Inspect Driver Manager registration and BCP without changing the host."""
 
     expected_driver = str(config.get("odbc_driver", "ODBC Driver 18 for SQL Server"))
@@ -52,7 +54,7 @@ def inspect_prerequisites(config: Mapping[str, Any]) -> PrerequisiteReport:
         errors.append("BCP_NOT_FOUND: " + executable)
     else:
         try:
-            version = BcpRunner.require_version(resolved)
+            version = BcpRunner(hide_window=hide_window).require_version(resolved)
         except Exception as exc:
             errors.append("BCP_VERSION_INVALID: " + redacted_exception(exc))
 

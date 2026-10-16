@@ -86,6 +86,9 @@ def _current_windows_sid() -> str:
     global _CURRENT_WINDOWS_SID
     if _CURRENT_WINDOWS_SID is not None:
         return _CURRENT_WINDOWS_SID
+    startupinfo = subprocess.STARTUPINFO()
+    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    startupinfo.wShowWindow = subprocess.SW_HIDE
     try:
         result = subprocess.run(
             ["whoami.exe", "/user", "/fo", "csv", "/nh"],
@@ -95,6 +98,8 @@ def _current_windows_sid() -> str:
             shell=False,
             check=True,
             timeout=15,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+            startupinfo=startupinfo,
         )
         rows = list(csv.reader(result.stdout.decode("utf-8", errors="replace").splitlines()))
         sid = rows[0][1].strip() if rows and len(rows[0]) >= 2 else ""

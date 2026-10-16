@@ -15,11 +15,28 @@ from bcp_engine.bcp import (
     BoundedOutputTail,
     WinPtyConsole,
     parse_rows_copied,
+    windows_hidden_process_options,
 )
 from bcp_engine.connections import WindowsCredentialAdapter
 
 
 class OutputLimitTests(unittest.TestCase):
+    def test_hidden_child_process_options_are_windows_only_and_opt_in(self):
+        self.assertEqual(windows_hidden_process_options(False), {})
+        options = windows_hidden_process_options(True)
+        if os.name == "nt":
+            self.assertEqual(options["creationflags"], __import__("subprocess").CREATE_NO_WINDOW)
+            self.assertTrue(
+                options["startupinfo"].dwFlags
+                & __import__("subprocess").STARTF_USESHOWWINDOW
+            )
+            self.assertEqual(
+                options["startupinfo"].wShowWindow,
+                __import__("subprocess").SW_HIDE,
+            )
+        else:
+            self.assertEqual(options, {})
+
     def test_runner_propagates_non_counted_operation_to_private_console(self):
         observed = {}
 
