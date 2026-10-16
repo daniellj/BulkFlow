@@ -509,6 +509,14 @@ class GuiModelTests(unittest.TestCase):
 
 
 class GuiConstructionTests(unittest.TestCase):
+    def test_connection_summary_reserves_one_visible_row_per_endpoint(self):
+        try:
+            from bcp_engine.gui import CONNECTION_SUMMARY_VISIBLE_ROWS
+        except ImportError as error:  # pragma: no cover
+            self.skipTest(f"Dependência gráfica indisponível: {error}")
+
+        self.assertEqual(CONNECTION_SUMMARY_VISIBLE_ROWS, 3)
+
     def test_database_commands_are_rendered_as_indented_sql_blocks(self):
         try:
             from bcp_engine.gui import BcpGuiApplication
@@ -1051,6 +1059,7 @@ class GuiConstructionTests(unittest.TestCase):
 
         self.assertNotIn(secret, application.log_text.value)
         self.assertIn("********", application.log_text.value)
+        self.assertTrue(application.log_text.value.endswith("\n\n"))
 
     def test_window_constructs_and_collects_the_same_validated_contract(self):
         try:

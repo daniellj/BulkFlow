@@ -85,6 +85,7 @@ CONNECTION_TAB_TITLES: dict[str, str] = {
     "bronze_destination": "Destino 01",
     "landing_destination": "Destino 02",
 }
+CONNECTION_SUMMARY_VISIBLE_ROWS = 3
 SOURCE_ROLE_LABELS: dict[str, str] = {
     "provedor de dados": "data_provider",
 }
@@ -2326,7 +2327,10 @@ class BcpGuiApplication:
         )
         summary_columns = ("environment", "username", "instance", "port", "database")
         self.connection_tree = ttk.Treeview(
-            planning, columns=summary_columns, show="headings", height=2
+            planning,
+            columns=summary_columns,
+            show="headings",
+            height=CONNECTION_SUMMARY_VISIBLE_ROWS,
         )
         summary_headings = {
             "environment": "Ambiente  |",
@@ -3572,7 +3576,7 @@ class BcpGuiApplication:
 
     def _append_log(self, text: str) -> None:
         self.log_text.configure(state="normal")
-        self.log_text.insert("end", redact_text(text).rstrip() + "\n")
+        self.log_text.insert("end", redact_text(text).rstrip() + "\n\n")
         self.log_text.see("end")
         self.log_text.configure(state="disabled")
 
