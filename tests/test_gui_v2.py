@@ -1177,11 +1177,12 @@ class GuiConstructionTests(unittest.TestCase):
                     for index in range(application.notebook.index("end"))
                 ],
                 [
-                    "1. Geral",
-                    "2. Conexões",
-                    "3. Tabelas",
-                    "4. Executar",
-                    "5. Acompanhamento",
+                    "1. Fluxo Processo",
+                    "2. Geral",
+                    "3. Conexões",
+                    "4. Tabelas",
+                    "5. Executar",
+                    "6. Acompanhamento",
                 ],
             )
             log_ancestors = []
