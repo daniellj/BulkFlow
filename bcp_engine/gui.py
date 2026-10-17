@@ -87,13 +87,13 @@ CONNECTION_TAB_TITLES: dict[str, str] = {
 }
 CONNECTION_SUMMARY_VISIBLE_ROWS = 3
 PROCESS_FLOW_CARD_TITLES = (
-    "01 · Estrutura",
-    "02 · Próximo lote",
-    "03 · Exportar BCP",
-    "04 · Importar",
-    "05 · Confirmar",
-    "06 · Arquivo BCP",
-    "07 · Mais lotes?",
+    "01 · PREPARAR",
+    "02 · PLANEJAR LOTE",
+    "03 · ESTRUTURA",
+    "04 · EXPORTAR BCP",
+    "05 · IMPORTAR / VALIDAR",
+    "06 · CONFIRMAR E FINALIZAR",
+    "07 · HÁ MAIS LOTES?",
 )
 
 
@@ -133,12 +133,12 @@ def build_process_flow_cards(
             "O próximo lote só começa após a validação e o registro do BCP anterior."
         )
     cards = [
-        structure_step,
+        "Validar configuração, conexões e pré-requisitos do executor.",
         "Definir o próximo lote da tabela de origem.",
+        structure_step,
         f"Executar BCP queryout de {source_database} para {export_directory}.",
         import_step,
-        confirm_step,
-        file_step,
+        f"{confirm_step} {file_step}",
         "Sim: voltar ao próximo lote. Não: avançar para a próxima tabela.",
     ]
     notes = (
@@ -1095,6 +1095,9 @@ class BcpGuiApplication:
         self.process_flow_description = tk.StringVar()
         self.process_flow_cards = [tk.StringVar() for _ in PROCESS_FLOW_CARD_TITLES]
         self.process_flow_note = tk.StringVar()
+        self.process_flow_context = tk.StringVar(
+            value="Tabela: configuração | Lote: aguardando | Próxima ação: validar e planejar"
+        )
         self.ddl_none_warning = tk.StringVar()
         self.cli_command_proposal = tk.StringVar()
         self.log_follow_status = tk.StringVar(
@@ -1326,6 +1329,12 @@ class BcpGuiApplication:
         for variable, text in zip(self.process_flow_cards, flow_cards, strict=True):
             variable.set(text)
         self.process_flow_note.set(flow_note)
+        mode = "exportação e importação" if flow_options["execute_import"] else "somente exportação"
+        self.process_flow_context.set(
+            "Tabela: cada tabela configurada   |   Lote: um por vez   |   "
+            f"Próxima ação: validar e planejar ({mode})"
+        )
+        self._update_process_flow_card_styles(**flow_options)
         self.cli_command_proposal.set(
             build_cli_run_command(
                 self.current_config_path,
@@ -1392,6 +1401,27 @@ class BcpGuiApplication:
                 + "."
             )
         self.ddl_none_warning.set("\n".join(ddl_warnings))
+
+    def _update_process_flow_card_styles(self, **options: Any) -> None:
+        headers = getattr(self, "process_flow_card_headers", [])
+        if len(headers) != len(PROCESS_FLOW_CARD_TITLES):
+            return
+        structure_active = bool(
+            options.get("create_structure") and options.get("destination_databases")
+        )
+        import_active = bool(options.get("execute_import"))
+        delete_files = bool(options.get("delete_confirmed_files"))
+        styles = (
+            "primary",
+            "info",
+            "primary" if structure_active else "secondary",
+            "success",
+            "warning" if import_active else "secondary",
+            "danger" if delete_files and import_active else "info",
+            "primary",
+        )
+        for header, style in zip(headers, styles, strict=True):
+            header.configure(bootstyle=f"{style}-inverse")
 
     def _update_ddl_section_state(self) -> None:
         inactive = str(self.ddl_area.get()) == "Nenhum"
@@ -1480,42 +1510,73 @@ class BcpGuiApplication:
     def _build_process_flow_tab(self) -> None:
         tab = self.process_flow_tab
         tab.columnconfigure(0, weight=1)
-        flow_diagram = ttk.Labelframe(tab, text="Fluxo do processo", padding=12)
+        flow_diagram = ttk.Frame(tab, padding=12, relief="solid", borderwidth=1)
         flow_diagram.grid(row=0, column=0, sticky="nsew")
         ttk.Label(
             flow_diagram,
-            text="Para cada tabela do fluxo",
-            bootstyle="primary",
-            font=("Segoe UI Semibold", 11),
-        ).grid(row=0, column=0, columnspan=5, pady=(0, 8))
+            textvariable=self.process_flow_context,
+            bootstyle="primary-inverse",
+            anchor="center",
+            padding=(12, 8),
+            font=("Segoe UI Semibold", 10),
+        ).grid(row=0, column=0, columnspan=5, sticky="ew", pady=(0, 10))
+        ttk.Label(
+            flow_diagram,
+            text="PIPELINE POR TABELA",
+            bootstyle="secondary",
+            font=("Segoe UI Semibold", 9),
+        ).grid(row=1, column=0, columnspan=5, pady=(0, 5))
         for column in (0, 2, 4):
             flow_diagram.columnconfigure(column, weight=1, uniform="flow-card")
-        card_positions = ((1, 0), (1, 2), (1, 4), (3, 4), (3, 2), (3, 0))
-        card_styles = ("primary", "info", "success", "warning", "info", "secondary")
+        card_positions = ((2, 0), (2, 2), (2, 4), (4, 4), (4, 2), (4, 0))
+        card_styles = ("primary", "info", "primary", "success", "warning", "info")
+        self.process_flow_card_headers: list[ttk.Label] = []
         for index, ((row, column), style) in enumerate(
             zip(card_positions, card_styles, strict=True)
         ):
-            card = ttk.Labelframe(
+            card = ttk.Frame(
                 flow_diagram,
-                text=PROCESS_FLOW_CARD_TITLES[index],
-                padding=8,
-                bootstyle=style,
+                padding=0,
+                relief="solid",
+                borderwidth=1,
             )
-            card.grid(row=row, column=column, sticky="nsew", padx=4, pady=3)
-            ttk.Label(
+            card.grid(row=row, column=column, sticky="nsew", padx=5, pady=4)
+            header = ttk.Label(
+                card,
+                text=PROCESS_FLOW_CARD_TITLES[index],
+                bootstyle=f"{style}-inverse",
+                anchor="w",
+                padding=(10, 6),
+                font=("Segoe UI Semibold", 9),
+            )
+            header.pack(fill="x")
+            self.process_flow_card_headers.append(header)
+            body = ttk.Label(
                 card,
                 textvariable=self.process_flow_cards[index],
                 justify="left",
                 anchor="nw",
-                wraplength=300,
-            ).pack(fill="both", expand=True)
+                wraplength=290,
+                padding=(10, 9),
+            )
+            body.pack(fill="both", expand=True)
+            tooltip = ToolTip(
+                body, text=self.process_flow_cards[index].get(), wraplength=650
+            )
+            body.bind(
+                "<Enter>",
+                lambda _event, tip=tooltip, variable=self.process_flow_cards[index]: setattr(
+                    tip, "text", variable.get()
+                ),
+                add="+",
+            )
         for row, column, arrow in (
-            (1, 1, "→"),
-            (1, 3, "→"),
-            (2, 4, "↓"),
-            (3, 3, "←"),
-            (3, 1, "←"),
-            (4, 0, "↓"),
+            (2, 1, "→"),
+            (2, 3, "→"),
+            (3, 4, "↓"),
+            (4, 3, "←"),
+            (4, 1, "←"),
+            (5, 0, "↓"),
         ):
             ttk.Label(
                 flow_diagram,
@@ -1523,20 +1584,39 @@ class BcpGuiApplication:
                 bootstyle="primary",
                 font=("Segoe UI Semibold", 18),
             ).grid(row=row, column=column, padx=3, pady=1)
-        decision = ttk.Labelframe(
+        decision = ttk.Frame(
             flow_diagram,
-            text=PROCESS_FLOW_CARD_TITLES[6],
-            padding=8,
-            bootstyle="primary",
+            padding=0,
+            relief="solid",
+            borderwidth=1,
         )
-        decision.grid(row=5, column=0, columnspan=5, sticky="ew", padx=4, pady=3)
-        ttk.Label(
+        decision.grid(row=6, column=0, columnspan=5, sticky="ew", padx=5, pady=4)
+        decision_header = ttk.Label(
+            decision,
+            text=PROCESS_FLOW_CARD_TITLES[6],
+            bootstyle="primary-inverse",
+            anchor="center",
+            padding=(10, 6),
+            font=("Segoe UI Semibold", 9),
+        )
+        decision_header.pack(fill="x")
+        self.process_flow_card_headers.append(decision_header)
+        decision_body = ttk.Label(
             decision,
             textvariable=self.process_flow_cards[6],
             justify="center",
             anchor="center",
             wraplength=1000,
-        ).pack(fill="x")
+            padding=(10, 8),
+        )
+        decision_body.pack(fill="x")
+        ToolTip(
+            decision_body,
+            text=(
+                "Sim: retorna ao planejamento do próximo lote. "
+                "Não: avança para a próxima tabela."
+            ),
+        )
         ttk.Label(
             flow_diagram,
             textvariable=self.process_flow_note,
@@ -1544,7 +1624,23 @@ class BcpGuiApplication:
             anchor="w",
             wraplength=1120,
             bootstyle="secondary",
-        ).grid(row=6, column=0, columnspan=5, sticky="ew", padx=4, pady=(8, 0))
+        ).grid(row=7, column=0, columnspan=5, sticky="ew", padx=5, pady=(8, 4))
+        legend = ttk.Frame(flow_diagram)
+        legend.grid(row=8, column=0, columnspan=5, sticky="ew", padx=5, pady=(5, 0))
+        ttk.Label(legend, text="LEGENDA", font=("Segoe UI Semibold", 9)).pack(
+            side="left", padx=(0, 10)
+        )
+        for text, style in (
+            ("Etapa obrigatória", "primary-inverse"),
+            ("Processamento de dados", "success-inverse"),
+            ("Etapa condicional", "warning-inverse"),
+            ("Etapa não executada", "secondary-inverse"),
+            ("Ponto de retomada", "info-inverse"),
+        ):
+            ttk.Label(legend, text=text, bootstyle=style, padding=(7, 3)).pack(
+                side="left", padx=3
+            )
+        self._update_contextual_guidance()
 
     def _build_general_tab(self) -> None:
         tab = self.general_tab
