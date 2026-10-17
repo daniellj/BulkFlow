@@ -1311,18 +1311,36 @@ class GuiConstructionTests(unittest.TestCase):
             )
             self.assertEqual(application.table_tree.get_children(), ())
             self.assertEqual(
-                application.endpoint_variables["bronze_destination"]["schema"].get(), ""
+                application.endpoint_variables["bronze_destination"]["schema"].get(),
+                "dbo",
             )
-            application.endpoint_variables["bronze_destination"]["schema"].set("s344")
+            self.assertEqual(
+                application.endpoint_variables["landing_destination"]["schema"].get(),
+                "dbo",
+            )
+            application.endpoint_variables["source"]["schema"].set("s344")
+            self.assertEqual(
+                application.endpoint_variables["bronze_destination"]["schema"].get(),
+                "s344",
+            )
             self.assertEqual(
                 application.endpoint_variables["landing_destination"]["schema"].get(),
                 "s344",
+            )
+            application.endpoint_variables["source"]["schema"].set("dbo")
+            self.assertEqual(
+                application.endpoint_variables["bronze_destination"]["schema"].get(),
+                "dbo",
+            )
+            self.assertEqual(
+                application.endpoint_variables["landing_destination"]["schema"].get(),
+                "dbo",
             )
             defaults = application._table_dialog_defaults()
             self.assertEqual(defaults["default_source_database"], "BANCO_ORIGEM")
             self.assertEqual(defaults["default_source_schema"], "dbo")
             self.assertEqual(defaults["default_destination_database"], "DBRO684")
-            self.assertEqual(defaults["default_destination_schema"], "s344")
+            self.assertEqual(defaults["default_destination_schema"], "dbo")
             self.assertEqual(defaults["default_rows_per_block"], "200000")
             self.assertEqual(defaults["default_structure_profile"], "bronze")
             table = table_to_form(
@@ -1330,7 +1348,7 @@ class GuiConstructionTests(unittest.TestCase):
                 default_source_database="BANCO_ORIGEM",
                 default_source_schema="dbo",
                 default_destination_database="DBRO684",
-                default_destination_schema="s344",
+                default_destination_schema="dbo",
                 default_rows_per_block="200000",
                 default_structure_profile="bronze",
             )
@@ -1522,6 +1540,9 @@ class GuiConstructionTests(unittest.TestCase):
             FIELD_HELP["create_structure_if_needed"],
         )
         self.assertIn("Aplicar DDL", FIELD_HELP["create_structure_if_needed"])
+        self.assertIn("sem chave primária (PK) ou chave UNIQUE", FIELD_HELP["watermark"])
+        self.assertIn("registra onde o processamento parou", FIELD_HELP["watermark"])
+        self.assertIn("retomada segura", FIELD_HELP["watermark"])
         self.assertEqual(
             FIELD_HELP["enable_cdc"],
             "Ativa e confirma o CDC em "

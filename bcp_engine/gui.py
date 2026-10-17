@@ -303,8 +303,11 @@ FIELD_HELP: dict[str, str] = {
         "quando for diferente do perfil do destino."
     ),
     "watermark": (
-        "Nome da coluna, ou nomes separados por vírgula, usados na paginação. "
-        "A ordem é sempre ascendente; não informe ASC ou DESC."
+        "Usada principalmente em tabelas sem chave primária (PK) ou chave UNIQUE. "
+        "Informe uma coluna, ou uma combinação de colunas separadas por vírgula, "
+        "capaz de distinguir e ordenar as linhas. A marca d'água controla os lotes, "
+        "registra onde o processamento parou e permite sua retomada segura. A ordem "
+        "é sempre ascendente; não informe ASC ou DESC."
     ),
     "watermark_validation_script": WATERMARK_VALIDATION_GUIDANCE_PT_BR,
     "enable_cdc": (
@@ -993,7 +996,7 @@ class BcpGuiApplication:
         self._operation_passwords: dict[str, str] = {}
         self._role_comboboxes: dict[str, ttk.Combobox] = {}
         self._suspend_schema_sync = False
-        self._previous_bronze_schema = ""
+        self._previous_source_schema = ""
         self._suspend_directory_sync = False
         self._previous_executor_directory = ""
         self._last_execute_import_state: bool | None = None
@@ -1134,8 +1137,8 @@ class BcpGuiApplication:
             self.global_variables[name].trace_add(
                 "write", lambda *_args: self._on_planning_context_changed()
             )
-        self.endpoint_variables["bronze_destination"]["schema"].trace_add(
-            "write", self._on_bronze_schema_changed
+        self.endpoint_variables["source"]["schema"].trace_add(
+            "write", self._on_source_schema_changed
         )
         for endpoint in self.endpoint_variables.values():
             for name in (
@@ -2343,19 +2346,20 @@ class BcpGuiApplication:
         self._invalidate_disk_projection()
         self._update_contextual_guidance()
 
-    def _on_bronze_schema_changed(self, *_args: object) -> None:
+    def _on_source_schema_changed(self, *_args: object) -> None:
         if self._suspend_schema_sync:
             return
-        bronze = str(self.endpoint_variables["bronze_destination"]["schema"].get())
-        landing_variable = self.endpoint_variables["landing_destination"]["schema"]
-        landing = str(landing_variable.get())
-        if not landing.strip() or landing == self._previous_bronze_schema:
-            self._suspend_schema_sync = True
-            try:
-                landing_variable.set(bronze)
-            finally:
-                self._suspend_schema_sync = False
-        self._previous_bronze_schema = bronze
+        source_schema = str(self.endpoint_variables["source"]["schema"].get())
+        self._suspend_schema_sync = True
+        try:
+            for key in ("bronze_destination", "landing_destination"):
+                destination_schema = self.endpoint_variables[key]["schema"]
+                current = str(destination_schema.get())
+                if not current.strip() or current == self._previous_source_schema:
+                    destination_schema.set(source_schema)
+        finally:
+            self._suspend_schema_sync = False
+        self._previous_source_schema = source_schema
         for record in self._default_widgets:
             self._apply_default_style(record)
 
@@ -3423,22 +3427,17 @@ class BcpGuiApplication:
             )
         finally:
             self._suspend_schema_sync = False
-        self._previous_bronze_schema = str(
-            self.endpoint_variables["bronze_destination"]["schema"].get()
+        self._previous_source_schema = str(
+            self.endpoint_variables["source"]["schema"].get()
         )
         self._last_perimeter = str(normalized["perimeter"])
         self.table_forms = []
         if path is None:
-            # A nova configuração é um rascunho visual: destinos sem
-            # esquema e nenhuma linha fictícia na grade. A validação oficial
-            # continua sendo executada antes de salvar ou operar.
-            self._suspend_schema_sync = True
-            try:
-                self.endpoint_variables["bronze_destination"]["schema"].set("")
-                self.endpoint_variables["landing_destination"]["schema"].set("")
-            finally:
-                self._suspend_schema_sync = False
-            self._previous_bronze_schema = ""
+            # A nova configuração herda o esquema da Origem nos dois destinos
+            # e começa sem linhas fictícias na grade.
+            source_schema = str(self.endpoint_variables["source"]["schema"].get())
+            self.endpoint_variables["bronze_destination"]["schema"].set(source_schema)
+            self.endpoint_variables["landing_destination"]["schema"].set(source_schema)
         else:
             source_endpoint = normalized["source"]
             destination_area = str(normalized["active_destination"])
