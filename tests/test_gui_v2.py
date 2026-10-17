@@ -1423,6 +1423,13 @@ class GuiConstructionTests(unittest.TestCase):
             self.assertFalse(
                 application.delete_confirmed_files_widget.instate(["disabled"])
             )
+            self.assertTrue(
+                application.global_variables["delete_confirmed_files"].get()
+            )
+            application.delete_confirmed_files_widget.invoke()
+            self.assertFalse(
+                application.global_variables["delete_confirmed_files"].get()
+            )
             application.delete_confirmed_files_widget.invoke()
             self.assertTrue(
                 application.global_variables["delete_confirmed_files"].get()

@@ -996,6 +996,8 @@ class BcpGuiApplication:
         self._previous_bronze_schema = ""
         self._suspend_directory_sync = False
         self._previous_executor_directory = ""
+        self._last_execute_import_state: bool | None = None
+        self._delete_confirmed_files_preference: bool | None = None
         self._endpoint_controls: dict[str, list[tuple[tk.Misc, str]]] = {}
         self._endpoint_enabled_widgets: dict[str, ttk.Checkbutton] = {}
         self.secret_resolver = SecretResolver(prompt=self._prompt_secret_from_worker)
@@ -1192,11 +1194,23 @@ class BcpGuiApplication:
 
     def _on_execute_import_changed(self) -> None:
         enabled = bool(self.global_variables["execute_import"].get())
+        previous = self._last_execute_import_state
+        delete_variable = self.global_variables["delete_confirmed_files"]
+        if not enabled and previous is True:
+            self._delete_confirmed_files_preference = bool(delete_variable.get())
+        elif (
+            enabled
+            and previous is False
+            and self._delete_confirmed_files_preference is not None
+        ):
+            delete_variable.set(self._delete_confirmed_files_preference)
+        self._last_execute_import_state = enabled
         self.endpoint_enabled["bronze_destination"].set(enabled)
         if not enabled:
-            self.global_variables["delete_confirmed_files"].set(False)
+            delete_variable.set(False)
         delete_widget = getattr(self, "delete_confirmed_files_widget", None)
         if delete_widget is not None:
+            delete_widget.configure(state="normal" if enabled else "disabled")
             delete_widget.state(["!disabled"] if enabled else ["disabled"])
         self._update_endpoint_state("bronze_destination")
         self._update_ddl_area_choices()
