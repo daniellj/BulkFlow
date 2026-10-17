@@ -179,6 +179,20 @@ def build_cli_run_command(config_path: Path | None, *, execute_import: bool) -> 
     arguments = ["BulkFlowCLI.exe", "run", "--config", str(config_path.resolve())]
     arguments.append("--confirm-load" if execute_import else "--export-only")
     return subprocess.list2cmdline(arguments)
+
+
+def build_run_confirmation(*, execute_import: bool, destination_database: str) -> str:
+    if execute_import:
+        return "Deseja exportar e importar os dados em uma nova execução?"
+    database = destination_database.strip() or "<não informado>"
+    return (
+        f"O processo não importará os dados no Destino 01 ({database}), pois "
+        "a configuração '2. Geral -> Importar no destino' está desligada. "
+        "A exportação prosseguirá de forma completa, gerando todos os arquivos.\n\n"
+        "Deseja iniciar a exportação?"
+    )
+
+
 SOURCE_ROLE_LABELS: dict[str, str] = {
     "provedor de dados": "data_provider",
 }
@@ -376,8 +390,11 @@ class TableDialog:
         default_destination_schema: str = "",
         default_rows_per_block: str = "",
         default_structure_profile: str = "",
+        destination_fields_enabled: bool = True,
     ) -> None:
         self.destination_area = destination_area
+        self.destination_fields_enabled = destination_fields_enabled
+        self._field_widgets: dict[str, list[tk.Misc]] = {}
         self.result: dict[str, Any] | None = None
         values = dict(
             initial
@@ -575,6 +592,7 @@ class TableDialog:
             bootstyle="round-toggle",
         )
         partition.grid(row=0, column=0, sticky="w")
+        self.partition_toggle = partition
         _attach_help(partition, "partition_enabled")
         partition_help = ttk.Label(
             partition_container, text=" ? ", bootstyle="info", cursor="hand2"
@@ -592,6 +610,7 @@ class TableDialog:
             "write", lambda *_args: self._update_partition_style()
         )
         self._update_partition_state()
+        self._update_destination_fields_state()
         row += 1
 
         self.variables["source_database"].trace_add(
@@ -669,6 +688,7 @@ class TableDialog:
             row=row, column=0, sticky="w", padx=(0, 12), pady=6
         )
         entry = ttk.Entry(parent, textvariable=self.variables[name])
+        self._field_widgets.setdefault(name, []).append(entry)
         entry.grid(
             row=row, column=1, sticky="ew", pady=6
         )
@@ -680,12 +700,14 @@ class TableDialog:
             if name == "destination_table":
                 self._destination_style_refresh = refresh
         if browse:
-            ttk.Button(
+            browse_button = ttk.Button(
                 parent,
                 text="Selecionar…",
                 command=lambda: self._browse_profile(name),
                 bootstyle="outline-secondary",
-            ).grid(row=row, column=2, padx=(8, 0), pady=6)
+            )
+            browse_button.grid(row=row, column=2, padx=(8, 0), pady=6)
+            self._field_widgets[name].append(browse_button)
         return row + 1
 
     @staticmethod
@@ -754,8 +776,30 @@ class TableDialog:
 
     def _update_partition_state(self) -> None:
         enabled = bool(self.variables["partition_enabled"].get())
-        self.partition_entry.configure(state="normal" if enabled else "disabled")
+        destination_fields_enabled = getattr(
+            self, "destination_fields_enabled", True
+        )
+        self.partition_entry.configure(
+            state=(
+                "normal"
+                if enabled and destination_fields_enabled
+                else "disabled"
+            )
+        )
         self._update_partition_style()
+
+    def _update_destination_fields_state(self) -> None:
+        state = "normal" if self.destination_fields_enabled else "disabled"
+        for name in (
+            "destination_database",
+            "destination_schema",
+            "destination_table",
+            "structure_profile",
+        ):
+            for widget in self._field_widgets.get(name, []):
+                widget.configure(state=state)
+        self.partition_toggle.configure(state=state)
+        self._update_partition_state()
 
     def _browse_profile(self, name: str) -> None:
         selected = filedialog.askopenfilename(
@@ -952,6 +996,8 @@ class BcpGuiApplication:
         self._previous_bronze_schema = ""
         self._suspend_directory_sync = False
         self._previous_executor_directory = ""
+        self._endpoint_controls: dict[str, list[tuple[tk.Misc, str]]] = {}
+        self._endpoint_enabled_widgets: dict[str, ttk.Checkbutton] = {}
         self.secret_resolver = SecretResolver(prompt=self._prompt_secret_from_worker)
 
         self._create_variables()
@@ -1070,11 +1116,13 @@ class BcpGuiApplication:
         self.global_variables["create_structure_if_needed"].trace_add(
             "write", lambda *_args: self._on_create_structure_changed()
         )
+        self.global_variables["execute_import"].trace_add(
+            "write", lambda *_args: self._on_execute_import_changed()
+        )
         for name in (
             "destination_sql_directory",
             "minimum_free_space_bytes",
             "safety_factor",
-            "execute_import",
             "delete_confirmed_files",
             "rows_per_block",
             "maximum_sample_rows",
@@ -1109,7 +1157,7 @@ class BcpGuiApplication:
                 )
         for key in ("bronze_destination", "landing_destination"):
             self.endpoint_enabled[key].trace_add(
-                "write", lambda *_args: self._update_ddl_area_default()
+                "write", lambda *_args, endpoint=key: self._on_endpoint_enabled_changed(endpoint)
             )
         self.global_variables["resolve_column_collisions"].trace_add(
             "write", lambda *_args: self._update_collision_strategy_state()
@@ -1135,6 +1183,53 @@ class BcpGuiApplication:
             else "Nenhum"
         )
         self.ddl_area.set(value)
+
+    def _on_endpoint_enabled_changed(self, key: str) -> None:
+        self._update_endpoint_state(key)
+        self._update_ddl_area_choices()
+        self._update_ddl_area_default()
+        self._update_contextual_guidance()
+
+    def _on_execute_import_changed(self) -> None:
+        enabled = bool(self.global_variables["execute_import"].get())
+        self.endpoint_enabled["bronze_destination"].set(enabled)
+        if not enabled:
+            self.global_variables["delete_confirmed_files"].set(False)
+        delete_widget = getattr(self, "delete_confirmed_files_widget", None)
+        if delete_widget is not None:
+            delete_widget.configure(state="normal" if enabled else "disabled")
+        self._update_endpoint_state("bronze_destination")
+        self._update_ddl_area_choices()
+        self._update_ddl_area_default()
+        self._on_planning_context_changed()
+
+    def _on_execute_import_toggled_by_user(self) -> None:
+        if not bool(self.global_variables["execute_import"].get()):
+            database = str(
+                self.endpoint_variables["bronze_destination"]["database"].get()
+            ).strip() or "<não informado>"
+            messagebox.showinfo(
+                "Importação desabilitada",
+                f"A importação de dados no Destino 01 ({database}) está desabilitada.",
+                parent=self.root,
+            )
+
+    def _update_ddl_area_choices(self) -> None:
+        widget = getattr(self, "ddl_area_widget", None)
+        execute_import = bool(self.global_variables["execute_import"].get())
+        values = (
+            ["Nenhum", "Destino 01", "Destino 02", "Ambas"]
+            if execute_import
+            else ["Nenhum", "Destino 02"]
+        )
+        if widget is not None:
+            widget.configure(values=values)
+        if str(self.ddl_area.get()) not in values:
+            self.ddl_area.set(
+                "Destino 02"
+                if self.endpoint_enabled["landing_destination"].get()
+                else "Nenhum"
+            )
 
     def _on_create_structure_changed(self) -> None:
         enabled = bool(self.global_variables["create_structure_if_needed"].get())
@@ -1262,12 +1357,21 @@ class BcpGuiApplication:
             )
         self.credential_permissions_guidance.set("\n".join(permission_lines))
 
-        if str(self.ddl_area.get()) == "Nenhum":
-            self.ddl_none_warning.set(
-                f"Cenário configurado não cria tabelas em {destination_1_database} e {destination_2_database}."
+        ddl_warnings: list[str] = []
+        if not bool(self.global_variables["execute_import"].get()):
+            ddl_warnings.append(
+                f"Cenário configurado não cria tabelas em {destination_1_database}."
             )
-        else:
-            self.ddl_none_warning.set("")
+        if str(self.ddl_area.get()) == "Nenhum":
+            inactive_databases = [destination_2_database]
+            if bool(self.global_variables["execute_import"].get()):
+                inactive_databases.insert(0, destination_1_database)
+            ddl_warnings.append(
+                "Cenário configurado não cria tabelas em "
+                + " e ".join(inactive_databases)
+                + "."
+            )
+        self.ddl_none_warning.set("\n".join(ddl_warnings))
 
     def _update_ddl_section_state(self) -> None:
         inactive = str(self.ddl_area.get()) == "Nenhum"
@@ -1482,14 +1586,22 @@ class BcpGuiApplication:
                 container,
                 text=label,
                 variable=self.global_variables[name],
+                command=(
+                    self._on_execute_import_toggled_by_user
+                    if name == "execute_import"
+                    else None
+                ),
                 bootstyle="round-toggle",
             )
             control.pack(side="left")
+            if name == "delete_confirmed_files":
+                self.delete_confirmed_files_widget = control
             _attach_help(control, name)
             help_marker = ttk.Label(container, text=" ? ", bootstyle="info", cursor="hand2")
             help_marker.pack(side="left", padx=(3, 0))
             _attach_help(help_marker, name)
             row += 1
+        self._on_execute_import_changed()
 
         row = 0
         row = self._form_entry(
@@ -1851,6 +1963,7 @@ class BcpGuiApplication:
 
     def _build_endpoint_frame(self, frame: ttk.Frame, *, key: str, source: bool) -> None:
         variables = self.endpoint_variables[key]
+        self._endpoint_controls[key] = []
         frame.columnconfigure(1, weight=1)
         frame.columnconfigure(3, weight=1)
         row = 0
@@ -1866,6 +1979,9 @@ class BcpGuiApplication:
                 bootstyle="round-toggle",
             )
             enabled.pack(side="left")
+            self._endpoint_enabled_widgets[key] = enabled
+            if key == "bronze_destination":
+                enabled.configure(state="disabled")
             _attach_help(enabled, "endpoint_enabled")
             enabled_help = ttk.Label(
                 enabled_container, text=" ? ", bootstyle="info", cursor="hand2"
@@ -1895,6 +2011,7 @@ class BcpGuiApplication:
         )
         _attach_help(role, "role")
         self._role_comboboxes[key] = role
+        self._endpoint_controls[key].append((role, "readonly"))
         self._register_default_widget(
             role,
             variables["role"],
@@ -1946,6 +2063,7 @@ class BcpGuiApplication:
                 pady=6,
             )
             _attach_help(entry, name)
+            self._endpoint_controls[key].append((entry, "normal"))
             if name == "odbc_dsn":
                 self._register_default_widget(
                     entry,
@@ -1974,6 +2092,7 @@ class BcpGuiApplication:
             state="readonly",
         )
         auth_type.grid(row=0, column=1, sticky="ew", padx=(8, 20), pady=5)
+        self._endpoint_controls[key].append((auth_type, "readonly"))
         _attach_help(auth_type, "authentication_type")
         self._register_default_widget(
             auth_type, variables["authentication_type"], "SQL Server", "combobox"
@@ -1988,6 +2107,7 @@ class BcpGuiApplication:
         username.grid(
             row=0, column=3, sticky="ew", padx=(8, 0), pady=5
         )
+        self._endpoint_controls[key].append((username, "normal"))
         _attach_help(username, "username")
         _help_label(auth, "Domínio (credencial Windows)", "domain").grid(
             row=1, column=0, sticky="w", pady=5
@@ -1998,6 +2118,7 @@ class BcpGuiApplication:
         )
         _attach_help(domain, "domain")
         self._domain_entries[key] = domain
+        self._endpoint_controls[key].append((domain, "normal"))
         _help_label(auth, "Senha (quando aplicável)", "password").grid(
             row=1, column=2, sticky="w", pady=5
         )
@@ -2005,6 +2126,7 @@ class BcpGuiApplication:
         password.grid(row=1, column=3, sticky="ew", padx=(8, 0), pady=5)
         _attach_help(password, "password")
         self._password_entries[key] = password
+        self._endpoint_controls[key].append((password, "normal"))
         ttk.Label(
             auth,
             text=(
@@ -2024,6 +2146,7 @@ class BcpGuiApplication:
             bootstyle="round-toggle",
         )
         encrypt.pack(side="left", padx=(0, 4))
+        self._endpoint_controls[key].append((encrypt, "normal"))
         _attach_help(encrypt, "encrypt")
         encrypt_help = ttk.Label(tls, text=" ? ", bootstyle="info", cursor="hand2")
         encrypt_help.pack(side="left", padx=(0, 24))
@@ -2035,6 +2158,7 @@ class BcpGuiApplication:
             bootstyle="round-toggle",
         )
         trust.pack(side="left")
+        self._endpoint_controls[key].append((trust, "normal"))
         _attach_help(trust, "trust_server_certificate")
         trust_help = ttk.Label(tls, text=" ? ", bootstyle="info", cursor="hand2")
         trust_help.pack(side="left", padx=(3, 0))
@@ -2042,12 +2166,28 @@ class BcpGuiApplication:
         ttk.Label(frame, text="* campo obrigatório", bootstyle="secondary").grid(
             row=row + 2, column=0, columnspan=4, sticky="w", pady=(8, 0)
         )
+        self._update_endpoint_state(key)
+
+    def _update_endpoint_state(self, key: str) -> None:
+        enabled = key == "source" or bool(self.endpoint_enabled[key].get())
+        for widget, active_state in self._endpoint_controls.get(key, []):
+            widget.configure(state=active_state if enabled else "disabled")
+        toggle = self._endpoint_enabled_widgets.get(key)
+        if toggle is not None:
+            toggle.configure(
+                state="disabled" if key == "bronze_destination" else "normal"
+            )
         self._update_auth_state(key)
 
     def _update_auth_state(self, key: str) -> None:
+        endpoint_is_enabled = key == "source" or bool(self.endpoint_enabled[key].get())
         displayed = str(self.endpoint_variables[key]["authentication_type"].get())
         authentication_type = AUTHENTICATION_LABELS.get(displayed, "")
-        state = "normal" if authentication_type == "windows_credentials" else "disabled"
+        state = (
+            "normal"
+            if endpoint_is_enabled and authentication_type == "windows_credentials"
+            else "disabled"
+        )
         entry = self._domain_entries.get(key)
         if entry is not None:
             entry.configure(state=state)
@@ -2056,7 +2196,8 @@ class BcpGuiApplication:
             password_entry.configure(
                 state=(
                     "normal"
-                    if authentication_type in {"sql", "windows_credentials"}
+                    if endpoint_is_enabled
+                    and authentication_type in {"sql", "windows_credentials"}
                     else "disabled"
                 )
             )
@@ -2248,6 +2389,9 @@ class BcpGuiApplication:
             self.root,
             destination_area=self._current_destination_area(),
             initial=initial,
+            destination_fields_enabled=bool(
+                self.global_variables["execute_import"].get()
+            ),
             **defaults,
         )
         value = dialog.show()
@@ -2271,6 +2415,9 @@ class BcpGuiApplication:
             self.root,
             destination_area=self._current_destination_area(),
             initial=self.table_forms[index],
+            destination_fields_enabled=bool(
+                self.global_variables["execute_import"].get()
+            ),
             **defaults,
         )
         value = dialog.show()
@@ -2581,6 +2728,7 @@ class BcpGuiApplication:
         )
         ddl_area.grid(row=0, column=2, padx=4, pady=4)
         self.ddl_area_widget = ddl_area
+        self._update_ddl_area_choices()
         _attach_help(ddl_area, "ddl_area")
         self._register_default_widget(ddl_area, self.ddl_area, "Ambas", "combobox")
         _help_label(ddl, "Diretório dos scripts", "ddl_output").grid(
@@ -3137,7 +3285,10 @@ class BcpGuiApplication:
             self._endpoint_form_values("source"), source=True
         )
         for key in ("bronze_destination", "landing_destination"):
-            if self.endpoint_enabled[key].get():
+            keep_export_layout = (
+                key == "bronze_destination" and not candidate["execute_import"]
+            )
+            if self.endpoint_enabled[key].get() or keep_export_layout:
                 candidate[key] = build_endpoint(
                     self._endpoint_form_values(key), source=False
                 )
@@ -3296,6 +3447,7 @@ class BcpGuiApplication:
             self.endpoint_variables["bronze_destination"]["role"].set(
                 label_for_code(DESTINATION_ROLE_LABELS, "data_only")
             )
+        self._on_execute_import_changed()
         self._update_ddl_area_default()
         self._update_contextual_guidance()
         self.plan_status.set("Planejamento ainda não executado")
@@ -3574,10 +3726,15 @@ class BcpGuiApplication:
         config = self._prepare_operation()
         if config is None:
             return
-        action = "exportar e importar os dados" if config["execute_import"] else "exportar os dados"
+        confirmation = build_run_confirmation(
+            execute_import=bool(config["execute_import"]),
+            destination_database=str(
+                self.endpoint_variables["bronze_destination"]["database"].get()
+            ),
+        )
         if not messagebox.askyesno(
             "Confirmar nova execução",
-            f"Deseja {action} em uma nova execução?",
+            confirmation,
             icon="warning",
             parent=self.root,
         ):

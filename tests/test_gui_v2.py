@@ -741,6 +741,19 @@ class GuiConstructionTests(unittest.TestCase):
         self.assertNotIn("--confirm-load", export)
         self.assertIn("Salve a configuração", build_cli_run_command(None, execute_import=True))
 
+    def test_export_only_confirmation_explains_destination_and_complete_export(self):
+        try:
+            from bcp_engine.gui import build_run_confirmation
+        except ImportError as error:  # pragma: no cover
+            self.skipTest(f"Dependência gráfica indisponível: {error}")
+
+        message = build_run_confirmation(
+            execute_import=False, destination_database="DBRO684"
+        )
+        self.assertIn("Destino 01 (DBRO684)", message)
+        self.assertIn("Importar no destino", message)
+        self.assertIn("todos os arquivos", message)
+
     def test_source_gui_ddl_field_uses_exact_project_local_default(self):
         try:
             from bcp_engine.gui import RUNTIME_DATA_ROOT, RUNTIME_DDL_DIRECTORY
@@ -1198,6 +1211,24 @@ class GuiConstructionTests(unittest.TestCase):
                 ],
                 ["Origem", "Destino 01", "Destino 02"],
             )
+            self.assertEqual(
+                str(
+                    application._endpoint_enabled_widgets[
+                        "bronze_destination"
+                    ].cget("state")
+                ),
+                "disabled",
+            )
+            application.endpoint_enabled["landing_destination"].set(False)
+            self.assertEqual(
+                str(application._role_comboboxes["landing_destination"].cget("state")),
+                "disabled",
+            )
+            application.endpoint_enabled["landing_destination"].set(True)
+            self.assertEqual(
+                str(application._role_comboboxes["landing_destination"].cget("state")),
+                "readonly",
+            )
             expected_roles = {
                 "source": (
                     "provedor de dados",
@@ -1371,6 +1402,23 @@ class GuiConstructionTests(unittest.TestCase):
                 application._required_data_destination_area()
 
             application.global_variables["execute_import"].set(False)
+            self.assertFalse(
+                application.endpoint_enabled["bronze_destination"].get()
+            )
+            self.assertFalse(
+                application.global_variables["delete_confirmed_files"].get()
+            )
+            self.assertEqual(
+                str(application.delete_confirmed_files_widget.cget("state")),
+                "disabled",
+            )
+            self.assertNotIn(
+                "Destino 01", tuple(application.ddl_area_widget.cget("values"))
+            )
+            self.assertNotIn("Ambas", tuple(application.ddl_area_widget.cget("values")))
+            self.assertIn(
+                "DBRO684", application.ddl_none_warning.get()
+            )
             application.endpoint_variables["source"]["authentication_type"].set(
                 "Windows integrada"
             )
