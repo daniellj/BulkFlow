@@ -1408,9 +1408,8 @@ class GuiConstructionTests(unittest.TestCase):
             self.assertFalse(
                 application.global_variables["delete_confirmed_files"].get()
             )
-            self.assertEqual(
-                str(application.delete_confirmed_files_widget.cget("state")),
-                "disabled",
+            self.assertTrue(
+                application.delete_confirmed_files_widget.instate(["disabled"])
             )
             self.assertNotIn(
                 "Destino 01", tuple(application.ddl_area_widget.cget("values"))
@@ -1419,6 +1418,16 @@ class GuiConstructionTests(unittest.TestCase):
             self.assertIn(
                 "DBRO684", application.ddl_none_warning.get()
             )
+            application.execute_import_widget.invoke()
+            self.assertTrue(application.global_variables["execute_import"].get())
+            self.assertFalse(
+                application.delete_confirmed_files_widget.instate(["disabled"])
+            )
+            application.delete_confirmed_files_widget.invoke()
+            self.assertTrue(
+                application.global_variables["delete_confirmed_files"].get()
+            )
+            application.global_variables["execute_import"].set(False)
             application.endpoint_variables["source"]["authentication_type"].set(
                 "Windows integrada"
             )

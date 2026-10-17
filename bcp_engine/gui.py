@@ -1197,13 +1197,16 @@ class BcpGuiApplication:
             self.global_variables["delete_confirmed_files"].set(False)
         delete_widget = getattr(self, "delete_confirmed_files_widget", None)
         if delete_widget is not None:
-            delete_widget.configure(state="normal" if enabled else "disabled")
+            delete_widget.state(["!disabled"] if enabled else ["disabled"])
         self._update_endpoint_state("bronze_destination")
         self._update_ddl_area_choices()
         self._update_ddl_area_default()
         self._on_planning_context_changed()
 
     def _on_execute_import_toggled_by_user(self) -> None:
+        # Reaplicar explicitamente no callback do controle evita que o estado
+        # visual fique defasado em relação ao BooleanVar em alguns ciclos do Tk.
+        self._on_execute_import_changed()
         if not bool(self.global_variables["execute_import"].get()):
             database = str(
                 self.endpoint_variables["bronze_destination"]["database"].get()
@@ -1594,6 +1597,8 @@ class BcpGuiApplication:
                 bootstyle="round-toggle",
             )
             control.pack(side="left")
+            if name == "execute_import":
+                self.execute_import_widget = control
             if name == "delete_confirmed_files":
                 self.delete_confirmed_files_widget = control
             _attach_help(control, name)
