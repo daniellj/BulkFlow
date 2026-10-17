@@ -86,6 +86,68 @@ CONNECTION_TAB_TITLES: dict[str, str] = {
     "landing_destination": "Destino 02",
 }
 CONNECTION_SUMMARY_VISIBLE_ROWS = 3
+PROCESS_FLOW_CARD_TITLES = (
+    "01 · Estrutura",
+    "02 · Próximo lote",
+    "03 · Exportar BCP",
+    "04 · Importar",
+    "05 · Confirmar",
+    "06 · Arquivo BCP",
+    "07 · Mais lotes?",
+)
+
+
+def build_process_flow_cards(
+    *,
+    source_database: str,
+    destination_databases: list[str],
+    export_directory: str,
+    import_directory: str,
+    create_structure: bool,
+    execute_import: bool,
+    delete_confirmed_files: bool,
+) -> tuple[list[str], str]:
+    destinations = " e ".join(destination_databases) or "nenhum destino habilitado"
+    structure_step = (
+        f"Criar ou validar em {destinations}, quando necessário."
+        if create_structure and destination_databases
+        else f"Usar estruturas existentes em {destinations}; não criar tabelas."
+    )
+    if execute_import:
+        import_step = f"Carregar o lote no Destino 01 a partir de {import_directory}."
+        confirm_step = "Confirmar a carga nos controles local e SQL."
+        file_step = (
+            "Excluir o BCP confirmado."
+            if delete_confirmed_files
+            else "Manter o BCP após a importação."
+        )
+        sequential_note = (
+            "O próximo lote só começa após a confirmação da importação anterior. "
+            "Se a importação falhar, o BCP é preservado para diagnóstico ou retomada."
+        )
+    else:
+        import_step = "Não importar: operação configurada somente para exportação."
+        confirm_step = "Validar e registrar o arquivo BCP exportado."
+        file_step = "Manter o arquivo BCP exportado."
+        sequential_note = (
+            "O próximo lote só começa após a validação e o registro do BCP anterior."
+        )
+    cards = [
+        structure_step,
+        "Definir o próximo lote da tabela de origem.",
+        f"Executar BCP queryout de {source_database} para {export_directory}.",
+        import_step,
+        confirm_step,
+        file_step,
+        "Sim: voltar ao próximo lote. Não: avançar para a próxima tabela.",
+    ]
+    notes = (
+        "O BulkFlow processa um lote por vez. "
+        + sequential_note
+        + " Manifestos, formatos e logs permanecem disponíveis para auditoria. "
+        "Tabelas sem chave elegíveis para carga direta usam um único bloco."
+    )
+    return cards, notes
 
 
 def build_process_flow_description(
@@ -98,56 +160,25 @@ def build_process_flow_description(
     execute_import: bool,
     delete_confirmed_files: bool,
 ) -> str:
-    destinations = " e ".join(destination_databases) or "nenhum destino habilitado"
-    structure_step = (
-        f"Cria ou valida a estrutura em {destinations}, quando necessário"
-        if create_structure and destination_databases
-        else f"Usa as estruturas existentes em {destinations}; não cria tabelas"
+    cards, notes = build_process_flow_cards(
+        source_database=source_database,
+        destination_databases=destination_databases,
+        export_directory=export_directory,
+        import_directory=import_directory,
+        create_structure=create_structure,
+        execute_import=execute_import,
+        delete_confirmed_files=delete_confirmed_files,
     )
-    steps = [
-        "Para cada tabela do fluxo",
-        structure_step,
-        "Define o próximo lote da tabela de origem",
-        f"Exporta o lote via BCP queryout de {source_database} para {export_directory}",
-        "Valida e registra o arquivo BCP exportado",
-    ]
-    if execute_import:
-        steps.extend(
-            [
-                f"Importa o lote no Destino 01 a partir de {import_directory}",
-                "Confirma a importação nos controles local e SQL",
-                (
-                    "Exclui o arquivo BCP confirmado"
-                    if delete_confirmed_files
-                    else "Mantém o arquivo BCP após a importação"
-                ),
-            ]
-        )
-        sequential_note = (
-            "Um novo lote somente é iniciado após a confirmação da importação "
-            "do lote anterior. Se a importação falhar, o arquivo BCP é preservado "
-            "para diagnóstico ou retomada."
-        )
-    else:
-        steps.append("Mantém o arquivo BCP exportado; não realiza importação")
-        sequential_note = (
-            "Um novo lote somente é iniciado após a validação e o registro do "
-            "arquivo BCP do lote anterior."
-        )
-    steps.extend(
-        [
-            "Existem mais lotes nessa tabela?",
-            "Sim: processa o próximo lote | Não: passa para a próxima tabela",
-        ]
-    )
-    flow = "\n↓\n".join(steps)
-    notes = (
-        "O BulkFlow processa um lote por vez. "
-        + sequential_note
-        + " Manifestos, arquivos de formato e logs permanecem disponíveis para auditoria. "
-        "Tabelas sem chave elegíveis para carga direta são processadas em um único bloco."
-    )
-    return flow + "\n\n" + notes
+    steps = ["Para cada tabela do fluxo", *cards]
+    return "\n↓\n".join(steps) + "\n\n" + notes
+
+
+def build_cli_run_command(config_path: Path | None, *, execute_import: bool) -> str:
+    if config_path is None:
+        return "Salve a configuração para gerar o comando da CLI."
+    arguments = ["BulkFlowCLI.exe", "run", "--config", str(config_path.resolve())]
+    arguments.append("--confirm-load" if execute_import else "--export-only")
+    return subprocess.list2cmdline(arguments)
 SOURCE_ROLE_LABELS: dict[str, str] = {
     "provedor de dados": "data_provider",
 }
@@ -1011,7 +1042,10 @@ class BcpGuiApplication:
         self.disk_projection_guidance = tk.StringVar()
         self.credential_permissions_guidance = tk.StringVar()
         self.process_flow_description = tk.StringVar()
+        self.process_flow_cards = [tk.StringVar() for _ in PROCESS_FLOW_CARD_TITLES]
+        self.process_flow_note = tk.StringVar()
         self.ddl_none_warning = tk.StringVar()
+        self.cli_command_proposal = tk.StringVar()
         self.log_follow_status = tk.StringVar(
             value="Acompanhamento automático: ativo"
         )
@@ -1159,19 +1193,28 @@ class BcpGuiApplication:
             )
             if bool(self.endpoint_enabled[key].get())
         ]
-        self.process_flow_description.set(
-            build_process_flow_description(
-                source_database=source_database,
-                destination_databases=enabled_destination_databases,
-                export_directory=export_directory,
-                import_directory=import_directory,
-                create_structure=bool(
-                    self.global_variables["create_structure_if_needed"].get()
-                ),
+        flow_options = {
+            "source_database": source_database,
+            "destination_databases": enabled_destination_databases,
+            "export_directory": export_directory,
+            "import_directory": import_directory,
+            "create_structure": bool(
+                self.global_variables["create_structure_if_needed"].get()
+            ),
+            "execute_import": bool(self.global_variables["execute_import"].get()),
+            "delete_confirmed_files": bool(
+                self.global_variables["delete_confirmed_files"].get()
+            ),
+        }
+        self.process_flow_description.set(build_process_flow_description(**flow_options))
+        flow_cards, flow_note = build_process_flow_cards(**flow_options)
+        for variable, text in zip(self.process_flow_cards, flow_cards, strict=True):
+            variable.set(text)
+        self.process_flow_note.set(flow_note)
+        self.cli_command_proposal.set(
+            build_cli_run_command(
+                self.current_config_path,
                 execute_import=bool(self.global_variables["execute_import"].get()),
-                delete_confirmed_files=bool(
-                    self.global_variables["delete_confirmed_files"].get()
-                ),
             )
         )
 
@@ -1593,11 +1636,67 @@ class BcpGuiApplication:
         )
         ttk.Label(
             flow_diagram,
-            textvariable=self.process_flow_description,
+            text="Para cada tabela do fluxo",
+            bootstyle="primary",
+            font=("Segoe UI Semibold", 11),
+        ).grid(row=0, column=0, columnspan=5, pady=(0, 8))
+        for column in (0, 2, 4):
+            flow_diagram.columnconfigure(column, weight=1, uniform="flow-card")
+        card_positions = ((1, 0), (1, 2), (1, 4), (3, 4), (3, 2), (3, 0))
+        card_styles = ("primary", "info", "success", "warning", "info", "secondary")
+        for index, ((row, column), style) in enumerate(
+            zip(card_positions, card_styles, strict=True)
+        ):
+            card = ttk.Labelframe(
+                flow_diagram,
+                text=PROCESS_FLOW_CARD_TITLES[index],
+                padding=8,
+                bootstyle=style,
+            )
+            card.grid(row=row, column=column, sticky="nsew", padx=4, pady=3)
+            ttk.Label(
+                card,
+                textvariable=self.process_flow_cards[index],
+                justify="left",
+                anchor="nw",
+                wraplength=300,
+            ).pack(fill="both", expand=True)
+        for row, column, arrow in (
+            (1, 1, "→"),
+            (1, 3, "→"),
+            (2, 4, "↓"),
+            (3, 3, "←"),
+            (3, 1, "←"),
+            (4, 0, "↓"),
+        ):
+            ttk.Label(
+                flow_diagram,
+                text=arrow,
+                bootstyle="primary",
+                font=("Segoe UI Semibold", 18),
+            ).grid(row=row, column=column, padx=3, pady=1)
+        decision = ttk.Labelframe(
+            flow_diagram,
+            text=PROCESS_FLOW_CARD_TITLES[6],
+            padding=8,
+            bootstyle="primary",
+        )
+        decision.grid(row=5, column=0, columnspan=5, sticky="ew", padx=4, pady=3)
+        ttk.Label(
+            decision,
+            textvariable=self.process_flow_cards[6],
+            justify="center",
+            anchor="center",
+            wraplength=1000,
+        ).pack(fill="x")
+        ttk.Label(
+            flow_diagram,
+            textvariable=self.process_flow_note,
             justify="left",
             anchor="w",
             wraplength=1120,
-        ).pack(fill="x")
+            bootstyle="secondary",
+        ).grid(row=6, column=0, columnspan=5, sticky="ew", padx=4, pady=(8, 0))
 
         ttk.Label(
             tab,
@@ -2584,6 +2683,33 @@ class BcpGuiApplication:
             bootstyle="outline-success",
         ).grid(row=0, column=5, padx=(18, 4), pady=4)
 
+        cli_hint = ttk.Frame(transfer)
+        cli_hint.grid(row=2, column=0, columnspan=6, sticky="ew", pady=(2, 4))
+        cli_hint.columnconfigure(1, weight=1)
+        ttk.Label(cli_hint, text="Comando sugerido para CLI").grid(
+            row=0, column=0, sticky="w", padx=4
+        )
+        cli_command = ttk.Entry(
+            cli_hint,
+            textvariable=self.cli_command_proposal,
+            state="readonly",
+        )
+        cli_command.grid(row=0, column=1, sticky="ew", padx=4)
+        cli_tooltip = ToolTip(cli_command, text=self.cli_command_proposal.get())
+        cli_command.bind(
+            "<Enter>",
+            lambda _event, tip=cli_tooltip: setattr(
+                tip, "text", self.cli_command_proposal.get()
+            ),
+            add="+",
+        )
+        ttk.Button(
+            cli_hint,
+            text="Copiar comando",
+            command=self._copy_cli_command,
+            bootstyle="outline-secondary",
+        ).grid(row=0, column=2, padx=4)
+
         notice = ttk.Label(
             tab,
             text=(
@@ -2862,6 +2988,19 @@ class BcpGuiApplication:
             )
         if selected:
             self.manifest_path.set(selected)
+
+    def _copy_cli_command(self) -> None:
+        command = self.cli_command_proposal.get().strip()
+        if not command or self.current_config_path is None:
+            messagebox.showinfo(
+                "Comando da CLI",
+                "Salve a configuração antes de copiar o comando da CLI.",
+                parent=self.root,
+            )
+            return
+        self.root.clipboard_clear()
+        self.root.clipboard_append(command)
+        self.operation_status.set("Comando da CLI copiado")
 
     def _endpoint_form_values(self, key: str) -> dict[str, Any]:
         variables = self.endpoint_variables[key]
@@ -3567,7 +3706,9 @@ class BcpGuiApplication:
                 kind, payload = self.worker_queue.get_nowait()
                 if kind == "event":
                     name, event_payload = payload
-                    self._append_log(self._format_event(name, event_payload))
+                    formatted = self._format_event(name, event_payload)
+                    if formatted:
+                        self._append_log(formatted)
                 elif kind == "prerequisites":
                     self.prerequisite_status.set(str(payload))
                 elif kind == "connection_summary":
@@ -3623,18 +3764,10 @@ class BcpGuiApplication:
 
         if name == "bcp_command":
             return f"COMANDO [{safe.get('context')}]: {safe.get('command')}"
+        if name == "bulk_import_command":
+            return f"COMANDO [{safe.get('context')}]: {safe.get('command')}"
         if name == "database_command":
-            parameters = safe.get("parameters")
-            command = str(safe.get("command") or "").strip()
-            indented_command = "\n".join(
-                "  " + line.rstrip() for line in command.splitlines()
-            )
-            suffix = (
-                ""
-                if not parameters
-                else "\n  parâmetros:\n" + pretty_json(parameters, indent=4)
-            )
-            return f"SQL [{safe.get('context')}]:\n{indented_command}{suffix}"
+            return ""
         if name == "table_plan" and safe.get("text"):
             return "Panorama antes da tabela:\n" + str(safe["text"])
         labels = {

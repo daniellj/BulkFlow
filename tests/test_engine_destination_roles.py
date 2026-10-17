@@ -43,6 +43,41 @@ def role_engine(role: str = "data_only", area: str = "landing") -> BcpEngine:
 
 
 class DestinationRoleEngineTests(unittest.TestCase):
+    def test_sql_audit_emits_only_the_bulk_import_statement(self):
+        class Cursor:
+            def execute(self, _sql, *_params):
+                return self
+
+        class Connection:
+            def cursor(self):
+                return Cursor()
+
+        events = []
+        engine = BcpEngine.__new__(BcpEngine)
+        engine.event = lambda name, payload: events.append((name, payload))
+        audited = engine._audited_connection(
+            Connection(),
+            "Destino 01",
+            {"instance": "SQL", "port": 1433, "database": "DB"},
+        )
+        cursor = audited.cursor()
+        cursor.execute("SELECT 1 WHERE ?=?", 1, 1)
+        cursor.execute(
+            """
+            SET NOCOUNT ON;
+            INSERT INTO [dbo].[t] ([id])
+            SELECT [id]
+            FROM OPENROWSET(BULK N'C:\\a.bcp', FORMATFILE=N'C:\\a.xml',
+                 CODEPAGE='RAW', MAXERRORS=1) AS b;
+            SET @inserted=ROWCOUNT_BIG();
+            """
+        )
+
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0][0], "bulk_import_command")
+        self.assertIn("OPENROWSET(BULK", events[0][1]["command"])
+        self.assertNotIn("SET NOCOUNT", events[0][1]["command"])
+
     def test_destination_control_is_read_only_for_data_only_role(self):
         engine = role_engine()
         importer = Mock()

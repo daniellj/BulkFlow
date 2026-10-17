@@ -346,14 +346,19 @@ class BcpEngine:
 
         def audit(sql: str, params: Any) -> None:
             formatted_sql = textwrap.dedent(str(sql)).strip()
-            self.event(
-                "database_command",
-                {
-                    "context": context,
-                    "command": formatted_sql,
-                    "parameters": redact_structure(params),
-                },
+            bulk_import = re.search(
+                r"INSERT\s+INTO\b.*?FROM\s+OPENROWSET\s*\(\s*BULK\b.*?\)\s+AS\s+b\s*;",
+                formatted_sql,
+                flags=re.IGNORECASE | re.DOTALL,
             )
+            if bulk_import:
+                self.event(
+                    "bulk_import_command",
+                    {
+                        "context": "BULK IN | " + context,
+                        "command": " ".join(bulk_import.group(0).split()),
+                    },
+                )
 
         return _AuditedConnection(connection, audit)
 

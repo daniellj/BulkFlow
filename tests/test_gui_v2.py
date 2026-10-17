@@ -524,10 +524,10 @@ class GuiConstructionTests(unittest.TestCase):
             execute_import=True,
             delete_confirmed_files=True,
         )
-        self.assertIn("Define o próximo lote", imported)
-        self.assertIn("Confirma a importação nos controles local e SQL", imported)
-        self.assertIn("Exclui o arquivo BCP confirmado", imported)
-        self.assertIn("Um novo lote somente é iniciado após", imported)
+        self.assertIn("Definir o próximo lote", imported)
+        self.assertIn("Confirmar a carga nos controles local e SQL", imported)
+        self.assertIn("Excluir o BCP confirmado", imported)
+        self.assertIn("O próximo lote só começa após", imported)
         self.assertIn("um único bloco", imported)
 
         export_only = build_process_flow_description(
@@ -539,9 +539,9 @@ class GuiConstructionTests(unittest.TestCase):
             execute_import=False,
             delete_confirmed_files=True,
         )
-        self.assertIn("não cria tabelas", export_only)
-        self.assertIn("não realiza importação", export_only)
-        self.assertNotIn("Confirma a importação", export_only)
+        self.assertIn("não criar tabelas", export_only)
+        self.assertIn("somente para exportação", export_only)
+        self.assertNotIn("Confirmar a carga", export_only)
 
     def test_connection_summary_reserves_one_visible_row_per_endpoint(self):
         try:
@@ -551,7 +551,7 @@ class GuiConstructionTests(unittest.TestCase):
 
         self.assertEqual(CONNECTION_SUMMARY_VISIBLE_ROWS, 3)
 
-    def test_database_commands_are_rendered_as_indented_sql_blocks(self):
+    def test_tracking_hides_internal_sql_and_keeps_bulk_import_command(self):
         try:
             from bcp_engine.gui import BcpGuiApplication
         except ImportError as error:  # pragma: no cover
@@ -566,11 +566,17 @@ class GuiConstructionTests(unittest.TestCase):
                 "parameters": (10,),
             },
         )
-        self.assertEqual(
-            rendered,
-            'SQL [Origem | SQL/DB]:\n  SELECT *\n  FROM dbo.t\n  WHERE id=?;\n'
-            '  parâmetros:\n    [\n      10\n    ]',
+        self.assertEqual(rendered, "")
+
+        bulk = application._format_event(
+            "bulk_import_command",
+            {
+                "context": "BULK IN | Destino 01 | SQL/DB",
+                "command": "INSERT INTO dbo.t SELECT * FROM OPENROWSET(BULK N'C:\\\\a.bcp') AS b;",
+            },
         )
+        self.assertIn("COMANDO [BULK IN", bulk)
+        self.assertIn("OPENROWSET", bulk)
 
         structured = application._format_event(
             "identity", {"principal": "u684", "roles": ["reader", "writer"]}
@@ -718,6 +724,22 @@ class GuiConstructionTests(unittest.TestCase):
             _configuration_filename({"bronze_destination": {"schema": "s 999/qa"}}),
             "config_transferencia_s_999_qa.json",
         )
+
+    def test_cli_command_uses_saved_gui_configuration(self):
+        try:
+            from bcp_engine.gui import build_cli_run_command
+        except ImportError as error:  # pragma: no cover
+            self.skipTest(f"Dependência gráfica indisponível: {error}")
+
+        path = ROOT / "Local" / "BulkFlow" / "config_transferencia_s999.json"
+        load = build_cli_run_command(path, execute_import=True)
+        self.assertIn("BulkFlowCLI.exe run --config", load)
+        self.assertIn(str(path.resolve()), load)
+        self.assertIn("--confirm-load", load)
+        export = build_cli_run_command(path, execute_import=False)
+        self.assertIn("--export-only", export)
+        self.assertNotIn("--confirm-load", export)
+        self.assertIn("Salve a configuração", build_cli_run_command(None, execute_import=True))
 
     def test_source_gui_ddl_field_uses_exact_project_local_default(self):
         try:
