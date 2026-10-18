@@ -888,6 +888,9 @@ BEGIN TRY
    INSERT {names['execution']}
    (execution_id,dataset_id,structural_hash,destination_area,started_at,updated_at,state)
    VALUES(?,?,?, ?,SYSDATETIME(),SYSDATETIME(),'RUNNING');
+ UPDATE {names['execution']}
+ SET state='RUNNING',updated_at=SYSDATETIME()
+ WHERE execution_id=? AND dataset_id=?;
  IF EXISTS(SELECT 1 FROM {names['table']} WITH(UPDLOCK,HOLDLOCK)
            WHERE execution_id=? AND dataset_id=? AND table_id=?
              AND (layout_hash<>? OR projection_hash<>? OR destination_schema<>? OR destination_table<>?
@@ -938,6 +941,7 @@ END CATCH;"""
             execution_id, dataset_id, structural_hash,
             execution_id, dataset_id,
             execution_id, dataset_id, structural_hash, area,
+            execution_id, dataset_id,
             execution_id, dataset_id, table_id, layout_hash, projection_hash,
             target_schema, target_table, final_limit_json,
             execution_id, dataset_id, table_id,

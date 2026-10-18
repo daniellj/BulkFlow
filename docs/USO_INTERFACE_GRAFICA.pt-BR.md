@@ -427,11 +427,16 @@ O campo **Diretório dos scripts** começa em
 - **Executar nova carga:** cria um UUID, exporta da Origem e importa somente no
   único destino capaz de receber dados.
 - **Retomar:** usa o mesmo UUID e os checkpoints duráveis.
+- **Cancelar:** solicita uma parada cooperativa; o lote corrente termina, seus
+  controles são persistidos e nenhum lote seguinte é iniciado.
 - **Consultar status:** lê o controle SQLite local.
 - **Importar manifestos:** importa artefatos publicados sem consultar a Origem.
 
 As tarefas longas rodam fora da thread visual. A janela impede uma segunda
-operação e não oferece cancelamento forçado. Em caso de pane, preserve o UUID,
+operação. Durante uma carga ou retomada, o botão **Cancelar** muda o estado para
+**Cancelando**, aguarda a fronteira durável do lote corrente e então informa
+que o operador pode usar **Retomar** com o mesmo UUID. O processo BCP/SQL não é
+encerrado à força. Em caso de pane, preserve o UUID,
 o SQLite, os artefatos e as quatro tabelas de controle em `dbo` no destino ativo; reabra
 a mesma configuração e use **Retomar**.
 

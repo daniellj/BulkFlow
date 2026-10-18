@@ -460,6 +460,10 @@ class _SecretPromptRequest:
     error: BaseException | None = None
 
 
+class _WorkerCancelled(RuntimeError):
+    """Signals a completed cooperative cancellation to the Tk worker bridge."""
+
+
 class TableDialog:
     """Modal editor that returns GUI scalar fields, never database rows."""
 
@@ -1183,6 +1187,7 @@ class BcpGuiApplication:
         self.table_forms: list[dict[str, Any]] = []
         self.worker_queue: queue.Queue[tuple[str, Any]] = queue.Queue()
         self.busy = False
+        self.active_execution_engine: BcpEngine | None = None
         self.action_buttons: list[ttk.Button] = []
         self._default_widgets: list[
             tuple[tk.Misc, tk.Variable, Any | Callable[[], Any], str, bool]
@@ -3225,6 +3230,14 @@ class BcpGuiApplication:
             bootstyle="outline-primary",
         )
         status.grid(row=0, column=5, padx=4, pady=4)
+        self.cancel_execution_button = ttk.Button(
+            transfer,
+            text="Cancelar",
+            command=self._cancel_execution,
+            bootstyle="danger",
+            state="disabled",
+        )
+        self.cancel_execution_button.grid(row=0, column=6, padx=4, pady=4)
 
         recovery = ttk.Frame(transfer)
         recovery.grid(row=1, column=0, columnspan=6, sticky="ew", pady=(4, 0))
@@ -3285,8 +3298,8 @@ class BcpGuiApplication:
         notice = ttk.Label(
             tab,
             text=(
-                "Operações destrutivas exigem confirmação. A janela permanece responsiva, "
-                "mas uma operação em andamento não pode ser cancelada pela interface."
+                "Operações destrutivas exigem confirmação. Ao cancelar uma carga, o lote "
+                "corrente termina e os checkpoints são preservados para retomada."
             ),
             bootstyle="secondary",
             wraplength=1100,
@@ -4304,15 +4317,20 @@ class BcpGuiApplication:
         ):
             return
 
+        engine = self._engine(config)
+        self.active_execution_engine = engine
+
         def operation() -> str:
-            report = self._engine(config).run()
+            report = engine.run()
             self.worker_queue.put(("execution_id", report.execution_id))
             rendered = render_execution(report)
+            if report.cancelled:
+                raise _WorkerCancelled(rendered)
             if report.exit_code() != 0:
                 raise RuntimeError(rendered)
             return rendered
 
-        self._start_worker("Executando carga", operation)
+        self._start_worker("Executando carga", operation, cancellable=True)
 
     def _resume(self) -> None:
         config = self._prepare_operation()
@@ -4332,14 +4350,38 @@ class BcpGuiApplication:
         ):
             return
 
+        engine = self._engine(config)
+        self.active_execution_engine = engine
+
         def operation() -> str:
-            report = self._engine(config).run(execution_id=execution_id, resume=True)
+            report = engine.run(execution_id=execution_id, resume=True)
             rendered = render_execution(report)
+            if report.cancelled:
+                raise _WorkerCancelled(rendered)
             if report.exit_code() != 0:
                 raise RuntimeError(rendered)
             return rendered
 
-        self._start_worker("Retomando execução", operation)
+        self._start_worker("Retomando execução", operation, cancellable=True)
+
+    def _cancel_execution(self) -> None:
+        engine = self.active_execution_engine
+        if not self.busy or engine is None or engine.cancellation_requested:
+            return
+        if not messagebox.askyesno(
+            "Confirmar cancelamento",
+            "Solicitar o cancelamento? O lote corrente será concluído e os "
+            "checkpoints serão gravados antes de a execução parar.",
+            icon="warning",
+            parent=self.root,
+        ):
+            return
+        engine.request_cancel()
+        self.cancel_execution_button.configure(state="disabled")
+        self.operation_status.set("Cancelando… aguardando o lote corrente")
+        self._append_log(
+            "Cancelamento solicitado. Aguardando a conclusão consistente do lote corrente."
+        )
 
     def _import_manifests(self) -> None:
         config = self._prepare_operation()
@@ -4397,17 +4439,28 @@ class BcpGuiApplication:
 
         self._start_worker("Consultando status", operation)
 
-    def _start_worker(self, label: str, operation: Callable[[], str]) -> None:
+    def _start_worker(
+        self,
+        label: str,
+        operation: Callable[[], str],
+        *,
+        cancellable: bool = False,
+    ) -> None:
         self.busy = True
         self.operation_status.set(label + "…")
         self._update_execution_progress(0)
         for button in self.action_buttons:
             button.configure(state="disabled")
+        self.cancel_execution_button.configure(
+            state="normal" if cancellable else "disabled"
+        )
         self._append_log(f"\n=== {label} ===")
 
         def target() -> None:
             try:
                 result = operation()
+            except _WorkerCancelled as cancelled:
+                self.worker_queue.put(("cancelled", str(cancelled)))
             except BaseException as error:
                 self.worker_queue.put(("failure", redacted_exception(error)))
             else:
@@ -4454,6 +4507,9 @@ class BcpGuiApplication:
                 elif kind == "success":
                     self._append_log(str(payload))
                     self._finish_worker(success=True)
+                elif kind == "cancelled":
+                    self._append_log(str(payload))
+                    self._finish_worker(success=False, cancelled=True)
                 elif kind == "failure":
                     self._append_log("ERRO: " + str(payload))
                     self._finish_worker(success=False, error=str(payload))
@@ -4535,15 +4591,31 @@ class BcpGuiApplication:
         }
         return f"{labels.get(name, name)}:\n{pretty_json(safe)}"
 
-    def _finish_worker(self, *, success: bool, error: str | None = None) -> None:
+    def _finish_worker(
+        self,
+        *,
+        success: bool,
+        error: str | None = None,
+        cancelled: bool = False,
+    ) -> None:
         self._close_planning_progress()
         self.busy = False
+        self.active_execution_engine = None
+        self.cancel_execution_button.configure(state="disabled")
         if success:
             self._update_execution_progress(100)
         for button in self.action_buttons:
             button.configure(state="normal")
         self._update_ddl_section_state()
-        if success:
+        if cancelled:
+            self.operation_status.set("Execução cancelada — pronta para retomada")
+            messagebox.showinfo(
+                "Cancelamento concluído",
+                "O lote corrente foi concluído e os checkpoints foram gravados. "
+                "O operador pode retomar o processo de onde parou usando o ID da execução.",
+                parent=self.root,
+            )
+        elif success:
             self.operation_status.set("Operação concluída")
             messagebox.showinfo(
                 "Operação concluída",

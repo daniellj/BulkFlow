@@ -674,7 +674,10 @@ COMMIT;
                 "credenciais e opções operacionais não participam desse hash."
             )
         self.connection.execute(
-            "UPDATE execucao SET operational_hash=?,updated_at=? WHERE execution_id=?",
+            """UPDATE execucao
+            SET operational_hash=?,status='RUNNING',finished_at=NULL,
+                error_code=NULL,error_message=NULL,updated_at=?
+            WHERE execution_id=?""",
             (operational_hash, utc_now(), execution_id),
         )
         return dict(row)

@@ -37,6 +37,7 @@ class TableStatus(str, Enum):
     PARTIAL_ERROR = "PARTIAL_ERROR"
     PARTIALLY_IMPORTED = "PARTIALLY_IMPORTED"
     DATA_COMPLETE_INDEXES_PENDING = "DATA_COMPLETE_INDEXES_PENDING"
+    CANCELLED = "CANCELLED"
 
 
 class ExecutionState(str, Enum):
@@ -44,6 +45,7 @@ class ExecutionState(str, Enum):
     COMPLETED = "COMPLETED"
     COMPLETED_WITH_PENDING_ITEMS = "COMPLETED_WITH_PENDING_ITEMS"
     GLOBAL_ERROR = "GLOBAL_ERROR"
+    CANCELLED = "CANCELLED"
 
 
 class BlockState(str, Enum):
@@ -876,10 +878,13 @@ class ExecutionReport:
     cdc_database: dict[str, Any] | None = None
     warnings: list[str] = field(default_factory=list)
     global_error: str | None = None
+    cancelled: bool = False
 
     def exit_code(self) -> int:
         if self.global_error:
             return 1
+        if self.cancelled:
+            return 3
         if any(item.status not in SUCCESS_STATUSES for item in self.tables):
             return 2
         return 0
@@ -895,5 +900,6 @@ class ExecutionReport:
             "cdc_database": dict(self.cdc_database) if self.cdc_database else None,
             "warnings": list(self.warnings),
             "global_error": self.global_error,
+            "cancelled": self.cancelled,
             "exit_code": self.exit_code(),
         }

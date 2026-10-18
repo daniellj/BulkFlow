@@ -428,11 +428,16 @@ DDL, evolution, and index creation. When running from source, **Diretório dos s
 - **Executar nova carga:** creates a UUID, exports from Source, and imports only
   into the single data-capable destination.
 - **Retomar:** uses the same UUID and durable checkpoints.
+- **Cancelar:** requests a cooperative stop; the current block finishes, its
+  controls are persisted, and no subsequent block is started.
 - **Consultar status:** reads local SQLite control.
 - **Importar manifestos:** imports published artifacts without querying Source.
 
 Long-running tasks execute outside the UI thread. The window prevents a second
-operation and does not offer forced cancellation. After a disruption, retain
+operation. During a run or resume, **Cancelar** changes the state to
+**Cancelando**, waits for the current block's durable boundary, and then tells
+the operator that **Retomar** can continue with the same UUID. The BCP/SQL
+process is never force-terminated. After a disruption, retain
 the UUID, SQLite, artifacts, and the four `dbo` control tables in the active destination;
 reopen the same configuration and select **Retomar**.
 

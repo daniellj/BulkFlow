@@ -15,6 +15,7 @@ from pathlib import Path
 import re
 import shutil
 import textwrap
+import threading
 import time
 import uuid
 from typing import Any, Callable, Iterable, Mapping
@@ -127,6 +128,10 @@ class _DestinationSpaceSkip(RuntimeError):
             f"necessario={assessment.required_bytes}; "
             f"disponivel={assessment.available_bytes}"
         )
+
+
+class _CancellationRequested(RuntimeError):
+    """Cooperative stop raised only at a durable batch boundary."""
 
 
 class _AuditedCursor:
@@ -318,6 +323,27 @@ class BcpEngine:
             hide_window=bool(config.get("_hide_subprocess_windows", False)),
         )
         self.event = event_sink or _noop_event
+        self._cancel_requested = threading.Event()
+
+    def request_cancel(self) -> None:
+        """Request a cooperative stop after the current batch is durable."""
+
+        event = getattr(self, "_cancel_requested", None)
+        if event is None:
+            event = threading.Event()
+            self._cancel_requested = event
+        event.set()
+
+    @property
+    def cancellation_requested(self) -> bool:
+        event = getattr(self, "_cancel_requested", None)
+        return bool(event is not None and event.is_set())
+
+    def _raise_if_cancelled(self) -> None:
+        if self.cancellation_requested:
+            raise _CancellationRequested(
+                "Cancelamento solicitado pelo operador após concluir o lote corrente."
+            )
 
     def _connect_source(self) -> tuple[Any, Any]:
         connection, identity = self.connection_factory.connect(
@@ -1524,6 +1550,9 @@ class BcpEngine:
                 else 0
             )
             for table_index, table in enumerate(tables, start=1):
+                if self.cancellation_requested:
+                    report.cancelled = True
+                    break
                 started = time.perf_counter()
                 prepared: PreparedTable | None = None
                 sql_table_registered = False
@@ -1714,6 +1743,7 @@ class BcpEngine:
                         destination_identity.as_dict() if destination_identity else None,
                         result,
                     )
+                    self._raise_if_cancelled()
                     if destination is not None and importer is not None:
                         result.destination_rows_verified = importer.verify_destination_cardinality(
                             execution_id=execution_id,
@@ -1777,6 +1807,15 @@ class BcpEngine:
                             execution_id, prepared.table_id, status=result.status,
                             index_state=result.index_state, finished_at=utc_now(),
                         )
+                except _CancellationRequested as exc:
+                    report.cancelled = True
+                    result.status = TableStatus.CANCELLED.value
+                    result.reason = str(exc)
+                    result.next_action = (
+                        f"Execute Retomar com o mesmo UUID {execution_id} para continuar "
+                        "a partir do próximo lote pendente."
+                    )
+                    stop_after_table = True
                 except _CdcTableSkip as exc:
                     result.status = TableStatus.SKIPPED_CDC_ACTIVATION_FAILED.value
                     result.reason = exc.result.message or str(exc)
@@ -1981,18 +2020,19 @@ class BcpEngine:
                 )
                 if stop_after_table:
                     break
+            execution_state = (
+                "CANCELLED"
+                if report.cancelled
+                else "COMPLETED" if report.exit_code() == 0
+                else "COMPLETED_WITH_PENDING_ITEMS"
+            )
             if importer is not None and sql_execution_registered:
                 importer.finish_execution(
                     execution_id,
                     dataset_id,
-                    state=(
-                        "COMPLETED" if report.exit_code() == 0
-                        else "COMPLETED_WITH_PENDING_ITEMS"
-                    ),
+                    state=execution_state,
                 )
-            state.finish_execution(
-                execution_id, "COMPLETED" if report.exit_code() == 0 else "COMPLETED_WITH_PENDING_ITEMS"
-            )
+            state.finish_execution(execution_id, execution_state)
             return report
         except BaseException as exc:
             report.global_error = redacted_exception(exc) if isinstance(exc, Exception) else type(exc).__name__
@@ -2189,6 +2229,7 @@ class BcpEngine:
             if status in {"EXPORTED", "IMPORTED", "EMPTY_CONFIRMED"}:
                 result.rows_exported += int(block["rows_exported"] or 0)
                 result.bytes_exported += int(block["file_bytes"] or 0)
+            self._raise_if_cancelled()
 
         local = state.table(execution_id, prepared.table_id)
         assert local is not None and prepared.final_limit is not None
@@ -2425,6 +2466,7 @@ class BcpEngine:
             if self.config["execute_import"]:
                 result.last_imported = list(window.upper)
             lower = window.upper
+            self._raise_if_cancelled()
 
         self._restore_result_progress(
             state,

@@ -156,6 +156,13 @@ def render_execution(report: ExecutionReport) -> str:
     )
     if report.global_error:
         lines.append(f"Falha global: {report.global_error}")
+    elif report.cancelled:
+        lines.append(
+            "Execução cancelada de forma consistente após a conclusão do lote corrente."
+        )
+        lines.append(
+            f"O operador pode retomar do ponto salvo usando o UUID {report.execution_id}."
+        )
     elif report.exit_code() == 0:
         lines.append("Tudo que foi solicitado foi concluído.")
     else:

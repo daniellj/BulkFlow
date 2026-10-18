@@ -573,10 +573,13 @@ class LocalStateTests(unittest.TestCase):
         self.assertEqual(stored["rows_imported"], rows)
 
     def test_structural_change_blocks_resume_but_operational_change_is_recorded(self):
+        self.state.finish_execution(self.execution_id, "CANCELLED")
         resumed = self.state.resume_execution(self.execution_id, "a" * 64, "c" * 64)
         self.assertEqual(resumed["operational_hash"], "b" * 64)
         current = self.state.execution(self.execution_id)
         self.assertEqual(current["operational_hash"], "c" * 64)
+        self.assertEqual(current["status"], "RUNNING")
+        self.assertIsNone(current["finished_at"])
         with self.assertRaises(StructuralResumeError):
             self.state.resume_execution(self.execution_id, "d" * 64, "e" * 64)
 

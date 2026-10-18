@@ -80,6 +80,23 @@ class PlanRenderingTests(unittest.TestCase):
         self.assertIn("linhas importadas: 350", rendered)
         self.assertIn("tempo total: 00:02:03.456", rendered)
 
+    def test_cancelled_execution_explains_resume_with_same_uuid(self):
+        execution_id = "00000000-0000-4000-8000-000000000002"
+        report = ExecutionReport(
+            execution_id=execution_id,
+            command="run",
+            started_at="2026-10-18T10:00:00+00:00",
+            finished_at="2026-10-18T10:00:05+00:00",
+            cancelled=True,
+        )
+
+        rendered = render_execution(report)
+
+        self.assertEqual(report.exit_code(), 3)
+        self.assertIn("cancelada de forma consistente", rendered)
+        self.assertIn(execution_id, rendered)
+        self.assertIn("retomar do ponto salvo", rendered)
+
 
 if __name__ == "__main__":
     unittest.main()

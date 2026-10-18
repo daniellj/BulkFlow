@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import sys
 
@@ -549,6 +549,64 @@ class GuiModelTests(unittest.TestCase):
 
 
 class GuiConstructionTests(unittest.TestCase):
+    def test_cancel_button_requests_cooperative_stop_and_shows_waiting_state(self):
+        try:
+            from bcp_engine.gui import BcpGuiApplication
+        except ImportError as error:  # pragma: no cover
+            self.skipTest(f"Dependência gráfica indisponível: {error}")
+
+        application = object.__new__(BcpGuiApplication)
+        application.busy = True
+        application.root = Mock()
+        application.operation_status = Mock()
+        application.cancel_execution_button = Mock()
+        application._append_log = Mock()
+        engine = Mock()
+        engine.cancellation_requested = False
+        application.active_execution_engine = engine
+
+        with patch("bcp_engine.gui.messagebox.askyesno", return_value=True):
+            application._cancel_execution()
+
+        engine.request_cancel.assert_called_once_with()
+        application.cancel_execution_button.configure.assert_called_once_with(
+            state="disabled"
+        )
+        application.operation_status.set.assert_called_once_with(
+            "Cancelando… aguardando o lote corrente"
+        )
+        self.assertIn("lote corrente", application._append_log.call_args.args[0])
+
+    def test_cancelled_worker_finishes_without_error_dialog(self):
+        try:
+            from bcp_engine.gui import BcpGuiApplication
+        except ImportError as error:  # pragma: no cover
+            self.skipTest(f"Dependência gráfica indisponível: {error}")
+
+        application = object.__new__(BcpGuiApplication)
+        application.busy = True
+        application.root = Mock()
+        application.operation_status = Mock()
+        application.cancel_execution_button = Mock()
+        application.action_buttons = []
+        application._close_planning_progress = Mock()
+        application._update_ddl_section_state = Mock()
+        application.active_execution_engine = Mock()
+
+        with (
+            patch("bcp_engine.gui.messagebox.showinfo") as show_info,
+            patch("bcp_engine.gui.messagebox.showerror") as show_error,
+        ):
+            application._finish_worker(success=False, cancelled=True)
+
+        self.assertFalse(application.busy)
+        self.assertIsNone(application.active_execution_engine)
+        show_info.assert_called_once()
+        show_error.assert_not_called()
+        application.operation_status.set.assert_called_once_with(
+            "Execução cancelada — pronta para retomada"
+        )
+
     def test_bcp_directory_help_explains_shared_network_access_and_permissions(self):
         try:
             from bcp_engine.gui import FIELD_HELP

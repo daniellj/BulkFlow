@@ -643,6 +643,61 @@ class EngineBoundaryTests(unittest.TestCase):
         )
         engine._connect_destination.assert_not_called()
 
+    def test_cooperative_cancel_stops_after_durable_batch_and_is_resumable(self):
+        engine = make_engine()
+        tables = [
+            {
+                "index": index,
+                "source": {"schema": "dbo", "table": name},
+                "destination": {
+                    "area": "bronze",
+                    "schema": "s",
+                    "table": "dst_" + name,
+                },
+            }
+            for index, name in enumerate(("a", "b"))
+        ]
+
+        def prepare(_source, table, _db):
+            name = table["source"]["table"]
+            return SimpleNamespace(
+                effective=table,
+                table_id="id_" + name,
+                columns=[],
+                watermark=SimpleNamespace(columns=(), warnings=()),
+                layout=SimpleNamespace(table="dst_" + name),
+                projection={},
+                layout_contract={},
+                table_structural_hash="hash_" + name,
+                final_limit=None,
+                average_row_bytes=None,
+            )
+
+        def process(*args):
+            state, prepared, result = args[3], args[6], args[-1]
+            result.rows_exported = 25
+            state.records[prepared.table_id]["rows_exported"] = 25
+            engine.request_cancel()
+
+        engine.prepare_table = Mock(side_effect=prepare)
+        engine._table_plan = Mock(
+            return_value={"estimated_rows": 25, "warnings": [], "execution_allowed": True}
+        )
+        engine._process_blocks = Mock(side_effect=process)
+
+        with self.run_patches(tables):
+            report = engine.run(execution_id=FIXED_ID)
+
+        state = FakeLocalState.instances[0]
+        self.assertTrue(report.cancelled)
+        self.assertEqual(report.exit_code(), 3)
+        self.assertEqual(len(report.tables), 1)
+        self.assertEqual(report.tables[0].status, TableStatus.CANCELLED.value)
+        self.assertEqual(report.tables[0].rows_exported, 25)
+        self.assertIn(FIXED_ID, report.tables[0].next_action)
+        self.assertEqual(state.finish_calls[-1], (FIXED_ID, "CANCELLED"))
+        engine.prepare_table.assert_called_once()
+
     def test_failure_before_second_preparation_does_not_corrupt_first_table_state(self):
         engine = make_engine()
         tables = [
