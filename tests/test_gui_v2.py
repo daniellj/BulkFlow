@@ -346,6 +346,43 @@ class GuiModelTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "Esquema"):
                     build_table(invalid, destination_area="bronze")
 
+    def test_table_builder_detects_audit_mapping_from_custom_landing_profile(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            profile = json.loads(
+                (ROOT / "templates" / "landing_with_aud.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            profile["name"] = "landing_personalizado"
+            profile_path = Path(temporary) / "landing_personalizado.json"
+            profile_path.write_text(
+                json.dumps(profile, ensure_ascii=False), encoding="utf-8"
+            )
+            table = build_table(
+                {
+                    "source_database": "BD_ORIGEM",
+                    "source_table": "TABELA_ORIGEM_01",
+                    "destination_database": "DLAN684",
+                    "source_schema": "dbo",
+                    "destination_schema": "s999",
+                    "structure_profile": str(profile_path),
+                    "aud_ccid_mode": "constant",
+                    "aud_ccid_value": "1",
+                    "aud_cntrrn_mode": "constant",
+                    "aud_cntrrn_value": "2",
+                    "aud_enttyp_mode": "constant",
+                    "aud_enttyp_value": "CARGA",
+                },
+                destination_area="landing",
+                default_structure_profile="landing_without_aud",
+            )
+
+        self.assertEqual(
+            set(table["metadata_mapping"]),
+            {"aud_ccid", "aud_cntrrn", "aud_enttyp"},
+        )
+        self.assertEqual(table["structure_profile"], str(profile_path))
+
     def test_new_table_form_inherits_visual_defaults(self):
         form = table_to_form(
             {},
@@ -466,7 +503,7 @@ class GuiModelTests(unittest.TestCase):
     def test_relative_custom_profiles_are_anchored_for_safe_save_as(self):
         config = default_gui_config(ROOT)
         config["bronze_destination"]["structure_profile"] = "../templates/bronze.json"
-        config["landing_destination"]["structure_profile"] = "landing"
+        config["landing_destination"]["structure_profile"] = "landing_without_aud"
         config["tables"][0]["structure_profile"] = "profiles/custom.json"
         source_path = ROOT / "docker" / "source-config.json"
         resolved = resolve_profile_paths_for_editor(config, source_path)
@@ -478,7 +515,10 @@ class GuiModelTests(unittest.TestCase):
             resolved["tables"][0]["structure_profile"],
             str((ROOT / "docker" / "profiles" / "custom.json").resolve()),
         )
-        self.assertEqual(resolved["landing_destination"]["structure_profile"], "landing")
+        self.assertEqual(
+            resolved["landing_destination"]["structure_profile"],
+            "landing_without_aud",
+        )
 
     def test_frozen_defaults_live_in_local_app_data_not_beside_executable(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -509,6 +549,19 @@ class GuiModelTests(unittest.TestCase):
 
 
 class GuiConstructionTests(unittest.TestCase):
+    def test_bcp_directory_help_explains_shared_network_access_and_permissions(self):
+        try:
+            from bcp_engine.gui import FIELD_HELP
+        except ImportError as error:  # pragma: no cover
+            self.skipTest(f"Dependência gráfica indisponível: {error}")
+
+        for field in ("executor_directory", "destination_sql_directory"):
+            help_text = FIELD_HELP[field]
+            self.assertIn("Origem", help_text)
+            self.assertIn("Destino", help_text)
+            self.assertIn("caminho de rede", help_text)
+            self.assertIn("leitura e escrita", help_text)
+
     def test_process_flow_explains_sequential_import_and_retention(self):
         try:
             from bcp_engine.gui import build_process_flow_description
@@ -790,6 +843,57 @@ class GuiConstructionTests(unittest.TestCase):
             guidance,
         )
         self.assertEqual(guidance.count("Projeção do lote"), 1)
+
+    def test_selected_structure_profile_is_validated_by_destination_family(self):
+        try:
+            from bcp_engine.gui import (
+                validate_structure_profile_reference,
+                validate_structure_profile_selection,
+            )
+            from bcp_engine.profiles import ProfileError
+        except ImportError as error:  # pragma: no cover
+            self.skipTest(f"Dependência gráfica indisponível: {error}")
+
+        self.assertEqual(
+            validate_structure_profile_reference("bronze", area="bronze"),
+            "bronze",
+        )
+        self.assertEqual(
+            validate_structure_profile_reference(
+                "landing_without_aud", area="landing"
+            ),
+            "landing_without_aud",
+        )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary_path = Path(temporary)
+            bronze_path = temporary_path / "bronze_custom.json"
+            bronze_path.write_text(
+                (ROOT / "templates" / "bronze.json").read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            selected, name = validate_structure_profile_selection(
+                bronze_path, area="bronze"
+            )
+            self.assertEqual(selected, bronze_path.resolve())
+            self.assertEqual(name, "bronze")
+            with self.assertRaisesRegex(ProfileError, "incompatível.*landing_"):
+                validate_structure_profile_selection(bronze_path, area="landing")
+
+            landing = json.loads(
+                (ROOT / "templates" / "landing_without_aud.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            landing["name"] = "landing_personalizado"
+            landing_path = temporary_path / "landing_custom.json"
+            landing_path.write_text(
+                json.dumps(landing, ensure_ascii=False), encoding="utf-8"
+            )
+            _selected, name = validate_structure_profile_selection(
+                landing_path, area="landing"
+            )
+            self.assertEqual(name, "landing_personalizado")
 
     def test_source_gui_ddl_field_uses_exact_project_local_default(self):
         try:
@@ -1264,6 +1368,30 @@ class GuiConstructionTests(unittest.TestCase):
             application.endpoint_enabled["landing_destination"].set(True)
             self.assertEqual(
                 str(application._role_comboboxes["landing_destination"].cget("state")),
+                "readonly",
+            )
+            self.assertEqual(
+                tuple(
+                    application._structure_profile_comboboxes[
+                        "bronze_destination"
+                    ].cget("values")
+                ),
+                ("bronze",),
+            )
+            self.assertEqual(
+                tuple(
+                    application._structure_profile_comboboxes[
+                        "landing_destination"
+                    ].cget("values")
+                ),
+                ("landing_without_aud", "landing_with_aud"),
+            )
+            self.assertEqual(
+                str(
+                    application._structure_profile_comboboxes[
+                        "bronze_destination"
+                    ].cget("state")
+                ),
                 "readonly",
             )
             expected_roles = {

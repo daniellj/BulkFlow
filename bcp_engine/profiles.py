@@ -934,10 +934,24 @@ def profile_matches_area(profile_name: str, area: str) -> bool:
 
     profile = str(profile_name).casefold()
     target = str(area).casefold()
-    return profile == target or (
-        target == "landing"
-        and profile in {"landing_with_aud", "landing_without_aud"}
-    )
+    if target == "bronze":
+        return profile == "bronze"
+    if target == "landing":
+        return profile.startswith("landing_")
+    return False
+
+
+def profile_requires_aud_mapping(profile: str | Path | Mapping[str, Any]) -> bool:
+    """Return whether a landing profile contains operator-mapped audit columns."""
+
+    loaded = load_profile(profile)
+    audit_columns = {"aud_ccid", "aud_cntrrn", "aud_enttyp"}
+    configured = {
+        str(column.get("name", "")).casefold()
+        for column in loaded.get("additional_columns", [])
+        if isinstance(column, Mapping)
+    }
+    return bool(audit_columns & configured)
 
 
 __all__ = [
@@ -958,5 +972,6 @@ __all__ = [
     "load_profile",
     "resolve_profile",
     "profile_matches_area",
+    "profile_requires_aud_mapping",
     "validate_profile",
 ]

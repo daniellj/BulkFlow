@@ -16,6 +16,7 @@ import shutil
 from typing import Any, Mapping, Sequence
 
 from .config import PERIMETER_DEFAULT_USERNAMES, validate_config
+from .profiles import profile_requires_aud_mapping
 from .runtime import ensure_runtime_directories
 from .watermark_validation import (
     normalize_watermark_columns,
@@ -765,12 +766,10 @@ def build_table(
         if not partition_column:
             raise ValueError("Coluna de particionamento é obrigatória quando ativada")
         result["partition_column"] = partition_column
-    effective_profile = (structure_profile or inherited_profile).replace(
-        "\\", "/"
-    ).rsplit("/", 1)[-1].removesuffix(".json").casefold()
-    if destination_area == "landing" and effective_profile in {
-        "landing", "landing_with_aud"
-    }:
+    effective_profile = structure_profile or inherited_profile
+    if destination_area == "landing" and profile_requires_aud_mapping(
+        effective_profile
+    ):
         result["metadata_mapping"] = build_landing_metadata(values)
     return result
 
@@ -885,7 +884,12 @@ def resolve_profile_paths_for_editor(
     base = config_path.resolve().parent
 
     def anchored(value: Any) -> Any:
-        if not isinstance(value, str) or value.casefold() in {"bronze", "landing"}:
+        if not isinstance(value, str) or value.casefold() in {
+            "bronze",
+            "landing",
+            "landing_with_aud",
+            "landing_without_aud",
+        }:
             return value
         if PureWindowsPath(value).is_absolute() or PurePosixPath(value).is_absolute():
             return value

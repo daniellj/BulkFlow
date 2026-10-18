@@ -56,6 +56,13 @@ from .gui_model import (
     write_config_atomic,
 )
 from .models import TableStatus
+from .profiles import (
+    DEFAULT_PROFILE_DIRECTORY,
+    ProfileError,
+    load_profile,
+    profile_matches_area,
+    profile_requires_aud_mapping,
+)
 from .prerequisites import inspect_prerequisites
 from .reporting import format_bytes, render_execution, render_plan_rows
 from .runtime import (
@@ -229,6 +236,32 @@ def build_disk_projection_guidance(
     return "\n".join(lines)
 
 
+def validate_structure_profile_selection(
+    path: str | Path, *, area: str
+) -> tuple[Path, str]:
+    """Validate a selected profile file and its destination family."""
+
+    resolved = Path(path).expanduser().resolve(strict=True)
+    profile_name = validate_structure_profile_reference(resolved, area=area)
+    return resolved, profile_name
+
+
+def validate_structure_profile_reference(
+    profile: str | Path, *, area: str
+) -> str:
+    """Validate any built-in alias or file-backed profile for an area."""
+
+    loaded = load_profile(profile)
+    profile_name = str(loaded["name"])
+    if not profile_matches_area(profile_name, area):
+        expected = "'bronze'" if area == "bronze" else "um nome iniciado por 'landing_'"
+        raise ProfileError(
+            f"Perfil {profile_name!r} incompatível com este destino: o campo "
+            f"'name' deve ser {expected}."
+        )
+    return profile_name
+
+
 SOURCE_ROLE_LABELS: dict[str, str] = {
     "provedor de dados": "data_provider",
 }
@@ -266,8 +299,18 @@ FIELD_HELP: dict[str, str] = {
     "delete_confirmed_files": "Remove arquivos exportados apenas depois da confirmação durável da importação.",
     "continue_after_table_error": "Registra a falha da tabela e continua o processamento das tabelas seguintes.",
     "require_watermark_index": "Exige índice compatível com a marca d'água antes de autorizar a extração.",
-    "executor_directory": "Diretório local ou compartilhado em que o programa exporta os arquivos BCP.",
-    "destination_sql_directory": "Diretório pelo qual o SQL Server do destino de dados acessa os arquivos durante a importação.",
+    "executor_directory": (
+        "Diretório em que o programa exporta os arquivos BCP. A pasta deve ser "
+        "acessível tanto no fluxo da Origem quanto no Destino, preferencialmente "
+        "por um caminho de rede, com permissões de leitura e escrita para as "
+        "identidades que executam o processo."
+    ),
+    "destination_sql_directory": (
+        "Diretório pelo qual o SQL Server do destino de dados acessa os arquivos "
+        "durante a importação. A pasta deve ser acessível tanto no fluxo da Origem "
+        "quanto no Destino, preferencialmente por um caminho de rede, com permissões "
+        "de leitura e escrita para as identidades que executam o processo."
+    ),
     "artifact_reader_sids": "SIDs Windows específicos que precisam ler os artefatos; separe por vírgula.",
     "artifact_writer_sids": "SIDs Windows excepcionais autorizados a escrever no compartilhamento SMB.",
     "local_control_directory": "Diretório local do controle SQLite e dos checkpoints de retomada.",
@@ -309,6 +352,14 @@ FIELD_HELP: dict[str, str] = {
     "schema": "Esquema SQL. Nos destinos, o nome é normalizado para minúsculas.",
     "odbc_dsn": "DSN ODBC opcional. Quando preenchido, ele define a rota efetiva da conexão.",
     "structure_profile": "Perfil JSON que define metadados, índices e estrutura técnica do destino.",
+    "structure_profile_import": (
+        "Carrega e valida imediatamente um perfil JSON personalizado. No Destino 01, "
+        "o campo 'name' deve ser 'bronze'; no Destino 02, deve começar com 'landing_'. "
+        "Use como exemplos/esqueletos os arquivos templates\\bronze.json, "
+        "templates\\landing_with_aud.json e templates\\landing_without_aud.json. "
+        "O caminho absoluto do arquivo validado será salvo na configuração para uso "
+        "idêntico pelo GUI e pelo BulkFlowCLI.exe."
+    ),
     "authentication_type": "Método de autenticação usado exclusivamente por este ambiente.",
     "username": "Usuário da conexão. Pode ser diferente na Origem, no Destino 01 e no Destino 02.",
     "password": "Senha mantida somente em memória nesta sessão. Não é gravada no JSON nem exibida nos logs.",
@@ -569,12 +620,7 @@ class TableDialog:
             help_key="table_rows_per_block",
             default_value=self.default_rows_per_block,
         )
-        row = self._entry(
-            body, row, "Perfil de estrutura (opcional; usa o destino)", "structure_profile",
-            browse=True,
-            help_key="table_structure_profile",
-            default_value=self.default_structure_profile,
-        )
+        row = self._profile_selector(body, row)
         _help_label(body, "Marca d'água (opcional)", "watermark").grid(
             row=row, column=0, sticky="w", padx=(0, 12), pady=6
         )
@@ -662,18 +708,19 @@ class TableDialog:
             "write", self._on_destination_table_changed
         )
 
-        effective_profile = str(
-            values.get("structure_profile") or default_structure_profile
-        ).replace("\\", "/").rsplit("/", 1)[-1].removesuffix(".json").casefold()
-        if destination_area == "landing" and effective_profile in {
-            "landing", "landing_with_aud"
-        }:
-            landing = ttk.Labelframe(
-                body,
-                text="Mapeamento do Destino 02 (obrigatório)",
-                padding=12,
+        if destination_area == "landing":
+            self.landing_mapping_frame = ttk.Labelframe(
+                body, text="Mapeamento do Destino 02 (obrigatório)", padding=12
             )
-            landing.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(12, 8))
+            landing = self.landing_mapping_frame
+            self._landing_mapping_grid = {
+                "row": row,
+                "column": 0,
+                "columnspan": 3,
+                "sticky": "ew",
+                "pady": (12, 8),
+            }
+            landing.grid(**self._landing_mapping_grid)
             landing.columnconfigure(2, weight=1)
             ttk.Label(landing, text="Campo").grid(row=0, column=0, sticky="w", padx=4)
             ttk.Label(landing, text="Origem do valor").grid(row=0, column=1, sticky="w", padx=4)
@@ -692,6 +739,10 @@ class TableDialog:
                 ttk.Entry(
                     landing, textvariable=self.variables[f"{name}_value"]
                 ).grid(row=index, column=2, sticky="ew", padx=4, pady=5)
+            self.variables["structure_profile"].trace_add(
+                "write", lambda *_args: self._update_landing_mapping_visibility()
+            )
+            self._update_landing_mapping_visibility()
             row += 1
 
         ttk.Label(
@@ -749,6 +800,50 @@ class TableDialog:
             self._field_widgets[name].append(browse_button)
         return row + 1
 
+    def _profile_selector(self, parent: ttk.Frame, row: int) -> int:
+        _help_label(
+            parent,
+            "Perfil de estrutura (opcional; usa o destino)",
+            "table_structure_profile",
+        ).grid(row=row, column=0, sticky="w", padx=(0, 12), pady=6)
+        built_in = (
+            ["bronze"]
+            if self.destination_area == "bronze"
+            else ["landing_without_aud", "landing_with_aud"]
+        )
+        current = str(self.variables["structure_profile"].get()).strip()
+        choices = list(built_in)
+        for value in (self.default_structure_profile, current):
+            if value and value not in choices:
+                choices.append(value)
+        self.structure_profile_choices = choices
+        combobox = ttk.Combobox(
+            parent,
+            textvariable=self.variables["structure_profile"],
+            values=choices,
+            state="readonly",
+        )
+        combobox.grid(row=row, column=1, sticky="ew", pady=6)
+        _attach_help(combobox, "table_structure_profile")
+        self.structure_profile_combobox = combobox
+        self._field_widgets.setdefault("structure_profile", []).append(combobox)
+        self._register_default_combobox(
+            combobox,
+            self.variables["structure_profile"],
+            self.default_structure_profile,
+        )
+        browse_button = ttk.Button(
+            parent,
+            text="...",
+            width=4,
+            command=self._browse_structure_profile,
+            bootstyle="outline-secondary",
+        )
+        browse_button.grid(row=row, column=2, padx=(8, 0), pady=6)
+        _attach_help(browse_button, "structure_profile_import")
+        self._field_widgets["structure_profile"].append(browse_button)
+        return row + 1
+
     @staticmethod
     def _comparable_default(value: Any) -> str:
         return str(value).strip().replace(",", ".").casefold()
@@ -772,6 +867,24 @@ class TableDialog:
         variable.trace_add("write", update)
         update()
         return update
+
+    def _register_default_combobox(
+        self,
+        combobox: ttk.Combobox,
+        variable: tk.Variable,
+        default_value: Any,
+    ) -> None:
+        def update(*_args: object) -> None:
+            style = (
+                "DefaultValue.TCombobox"
+                if self._comparable_default(variable.get())
+                == self._comparable_default(default_value)
+                else "TCombobox"
+            )
+            combobox.configure(style=style)
+
+        variable.trace_add("write", update)
+        update()
 
     def _current_automatic_destination(self) -> str:
         return automatic_destination_table(
@@ -836,18 +949,65 @@ class TableDialog:
             "structure_profile",
         ):
             for widget in self._field_widgets.get(name, []):
-                widget.configure(state=state)
+                active_state = (
+                    "readonly"
+                    if name == "structure_profile"
+                    and widget is getattr(self, "structure_profile_combobox", None)
+                    else state
+                )
+                widget.configure(
+                    state=active_state if self.destination_fields_enabled else "disabled"
+                )
         self.partition_toggle.configure(state=state)
         self._update_partition_state()
 
-    def _browse_profile(self, name: str) -> None:
+    def _browse_structure_profile(self) -> None:
         selected = filedialog.askopenfilename(
             parent=self.window,
-            title="Selecionar perfil de estrutura",
+            title="Carregar perfil de estrutura JSON",
+            initialdir=str(DEFAULT_PROFILE_DIRECTORY.resolve()),
             filetypes=[("Arquivos JSON", "*.json"), ("Todos os arquivos", "*.*")],
         )
-        if selected:
-            self.variables[name].set(selected)
+        if not selected:
+            return
+        try:
+            path, profile_name = validate_structure_profile_selection(
+                selected, area=self.destination_area
+            )
+        except Exception as error:
+            messagebox.showerror(
+                "Perfil de estrutura inválido",
+                "O arquivo não foi carregado.\n\n" + redacted_exception(error),
+                parent=self.window,
+            )
+            return
+        value = str(path)
+        if value not in self.structure_profile_choices:
+            self.structure_profile_choices.append(value)
+            self.structure_profile_combobox.configure(
+                values=self.structure_profile_choices
+            )
+        self.variables["structure_profile"].set(value)
+        messagebox.showinfo(
+            "Perfil de estrutura validado",
+            f"Perfil {profile_name!r} carregado e selecionado.\n\n{path}",
+            parent=self.window,
+        )
+
+    def _update_landing_mapping_visibility(self) -> None:
+        frame = getattr(self, "landing_mapping_frame", None)
+        if frame is None:
+            return
+        try:
+            required = profile_requires_aud_mapping(
+                str(self.variables["structure_profile"].get())
+            )
+        except Exception:
+            required = False
+        if required:
+            frame.grid(**self._landing_mapping_grid)
+        else:
+            frame.grid_remove()
 
     def _save_watermark_validation_script(self) -> None:
         try:
@@ -1031,6 +1191,14 @@ class BcpGuiApplication:
         self._password_entries: dict[str, ttk.Entry] = {}
         self._operation_passwords: dict[str, str] = {}
         self._role_comboboxes: dict[str, ttk.Combobox] = {}
+        self._structure_profile_comboboxes: dict[str, ttk.Combobox] = {}
+        self._structure_profile_choices: dict[str, list[str]] = {
+            "bronze_destination": ["bronze"],
+            "landing_destination": [
+                "landing_without_aud",
+                "landing_with_aud",
+            ],
+        }
         self._suspend_schema_sync = False
         self._previous_source_schema = ""
         self._suspend_directory_sync = False
@@ -2217,16 +2385,48 @@ class BcpGuiApplication:
             _help_label(frame, label, name).grid(
                 row=current_row, column=column, sticky="w", pady=6
             )
-            entry = ttk.Entry(frame, textvariable=variables[name])
-            entry.grid(
-                row=current_row,
-                column=column + 1,
-                sticky="ew",
-                padx=(8, 20 if column == 0 else 0),
-                pady=6,
-            )
+            if name == "structure_profile":
+                profile_container = ttk.Frame(frame)
+                profile_container.grid(
+                    row=current_row,
+                    column=column + 1,
+                    sticky="ew",
+                    padx=(8, 20 if column == 0 else 0),
+                    pady=6,
+                )
+                profile_container.columnconfigure(0, weight=1)
+                entry = ttk.Combobox(
+                    profile_container,
+                    textvariable=variables[name],
+                    values=self._structure_profile_choices[key],
+                    state="readonly",
+                )
+                entry.grid(row=0, column=0, sticky="ew")
+                load_profile_button = ttk.Button(
+                    profile_container,
+                    text="...",
+                    width=4,
+                    bootstyle="secondary-outline",
+                    command=lambda endpoint=key: self._select_structure_profile(
+                        endpoint
+                    ),
+                )
+                load_profile_button.grid(row=0, column=1, padx=(6, 0))
+                _attach_help(load_profile_button, "structure_profile_import")
+                self._structure_profile_comboboxes[key] = entry
+                self._endpoint_controls[key].append((entry, "readonly"))
+                self._endpoint_controls[key].append((load_profile_button, "normal"))
+            else:
+                entry = ttk.Entry(frame, textvariable=variables[name])
+                entry.grid(
+                    row=current_row,
+                    column=column + 1,
+                    sticky="ew",
+                    padx=(8, 20 if column == 0 else 0),
+                    pady=6,
+                )
+                self._endpoint_controls[key].append((entry, "normal"))
             _attach_help(entry, name)
-            self._endpoint_controls[key].append((entry, "normal"))
             if name == "odbc_dsn":
                 self._register_default_widget(
                     entry,
@@ -2237,7 +2437,7 @@ class BcpGuiApplication:
                 )
             elif name == "structure_profile" and name in defaults:
                 self._register_default_widget(
-                    entry, variables[name], defaults[name], "entry"
+                    entry, variables[name], defaults[name], "combobox"
                 )
         row += 3
 
@@ -2330,6 +2530,48 @@ class BcpGuiApplication:
             row=row + 2, column=0, columnspan=4, sticky="w", pady=(8, 0)
         )
         self._update_endpoint_state(key)
+
+    def _add_structure_profile_choice(self, key: str, value: str) -> None:
+        if key not in self._structure_profile_choices:
+            return
+        choices = self._structure_profile_choices[key]
+        if value and value not in choices:
+            choices.append(value)
+        combobox = self._structure_profile_comboboxes.get(key)
+        if combobox is not None:
+            combobox.configure(values=choices)
+
+    def _select_structure_profile(self, key: str) -> None:
+        area = "bronze" if key == "bronze_destination" else "landing"
+        selected = filedialog.askopenfilename(
+            parent=self.root,
+            title="Carregar perfil de estrutura JSON",
+            initialdir=str(DEFAULT_PROFILE_DIRECTORY.resolve()),
+            filetypes=[("Perfil JSON", "*.json"), ("Todos os arquivos", "*.*")],
+        )
+        if not selected:
+            return
+        try:
+            path, profile_name = validate_structure_profile_selection(
+                selected, area=area
+            )
+        except Exception as error:
+            messagebox.showerror(
+                "Perfil de estrutura inválido",
+                "O arquivo não foi carregado.\n\n" + redacted_exception(error),
+                parent=self.root,
+            )
+            return
+        value = str(path)
+        self._add_structure_profile_choice(key, value)
+        self.endpoint_variables[key]["structure_profile"].set(value)
+        self._on_credential_context_changed()
+        messagebox.showinfo(
+            "Perfil de estrutura validado",
+            f"Perfil {profile_name!r} carregado e selecionado para "
+            f"{'Destino 01' if area == 'bronze' else 'Destino 02'}.\n\n{path}",
+            parent=self.root,
+        )
 
     def _update_endpoint_state(self, key: str) -> None:
         enabled = key == "source" or bool(self.endpoint_enabled[key].get())
@@ -3492,6 +3734,15 @@ class BcpGuiApplication:
 
     def _load_config_into_form(self, config: Mapping[str, Any], *, path: Path | None) -> None:
         normalized = validate_config(resolve_profile_paths_for_editor(config, path))
+        for endpoint_key, area in (
+            ("bronze_destination", "bronze"),
+            ("landing_destination", "landing"),
+        ):
+            endpoint = normalized.get(endpoint_key)
+            if endpoint is not None:
+                validate_structure_profile_reference(
+                    str(endpoint["structure_profile"]), area=area
+                )
         self.secret_resolver.clear_cache()
         self.base_config = deepcopy(normalized)
         self.current_config_path = path.resolve() if path else None
@@ -3654,6 +3905,10 @@ class BcpGuiApplication:
         }
         for name, value in values.items():
             variables[name].set(value)
+        if not source:
+            self._add_structure_profile_choice(
+                key, str(values["structure_profile"])
+            )
         self._update_auth_state(key)
 
     def _new_configuration(self) -> None:

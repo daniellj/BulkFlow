@@ -24,7 +24,12 @@ from bcp_engine.ddl import (  # noqa: E402
     create_table_statement,
     partition_boundary_values,
 )
-from bcp_engine.profiles import ProfileError, load_profile, resolve_profile  # noqa: E402
+from bcp_engine.profiles import (  # noqa: E402
+    ProfileError,
+    load_profile,
+    profile_matches_area,
+    resolve_profile,
+)
 from bcp_engine.projection import build_import_plan  # noqa: E402
 from bcp_engine.source import validate_source_columns  # noqa: E402
 
@@ -175,6 +180,13 @@ def catalog_for(layout) -> dict:
 
 
 class ProfileTests(unittest.TestCase):
+    def test_profile_family_accepts_custom_landing_but_only_canonical_bronze(self):
+        self.assertTrue(profile_matches_area("bronze", "bronze"))
+        self.assertFalse(profile_matches_area("bronze_custom", "bronze"))
+        self.assertTrue(profile_matches_area("landing_without_aud", "landing"))
+        self.assertTrue(profile_matches_area("landing_personalizado", "landing"))
+        self.assertFalse(profile_matches_area("landing", "landing"))
+
     def test_landing_source_column_mapping_is_validated_and_projected(self):
         columns = [source_column("codigo")]
         mapping = {
