@@ -726,11 +726,21 @@ class BcpEngine:
             ],
         }
 
-    def plan(self) -> tuple[list[dict[str, Any]], list[TableResult]]:
+    def plan(
+        self,
+        *,
+        progress_callback: Callable[[int, str], None] | None = None,
+    ) -> tuple[list[dict[str, Any]], list[TableResult]]:
+        def progress(percent: int, message: str) -> None:
+            if progress_callback is not None:
+                progress_callback(percent, message)
+
         opened: list[Any] = []
         try:
+            progress(18, "Conectando à instância e ao banco de dados da Origem…")
             source, source_identity = self._connect_source()
             opened.append(source)
+            progress(24, "Origem conectada; validando identidade e permissões de leitura…")
             self.event("identity", source_identity.as_dict())
             self.event(
                 "connection_identity",
@@ -749,17 +759,45 @@ class BcpEngine:
                 connection, identity = self._connect_destination(area)
                 opened.append(connection)
                 destination_connections[area] = connection
+                progress(
+                    30 if area == "landing" else 34,
+                    "Conectando e validando os destinos configurados…",
+                )
                 if area == self.config.get("active_destination"):
                     self.event("destination_identity", identity.as_dict())
                 self.event(
                     "connection_identity",
                     self._connection_identity_payload(area, endpoint, identity),
                 )
+            progress(
+                36,
+                "Verificando espaço da Origem e da pasta de exportação dos arquivos BCP…",
+            )
+
+            def table_progress(
+                completed: int, total: int, table_source: Mapping[str, Any]
+            ) -> None:
+                table_name = ".".join(
+                    str(table_source.get(part, ""))
+                    for part in ("database", "schema", "table")
+                    if table_source.get(part)
+                )
+                percent = 40 + int((completed / max(total, 1)) * 42)
+                progress(
+                    percent,
+                    f"Analisando tabela {completed + 1} de {total}: {table_name}",
+                )
+
             planning = build_plan(
                 self.config,
                 source,
                 destination_connections=destination_connections or None,
                 profile_directory=self.config_directory,
+                progress_callback=table_progress,
+            )
+            progress(
+                86,
+                "Conferindo catálogos e capacidade de dados/log no Destino 01…",
             )
             plans = [item.as_dict() for item in planning.tables]
             results = [
@@ -781,6 +819,7 @@ class BcpEngine:
                 )
                 for item in planning.tables
             ]
+            progress(90, "Consolidando o planejamento de todas as tabelas…")
             return plans, results
         finally:
             close_all(opened)

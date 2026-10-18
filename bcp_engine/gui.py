@@ -16,6 +16,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 from typing import Any, Callable, Mapping
 
 import tkinter as tk
@@ -191,6 +192,41 @@ def build_run_confirmation(*, execute_import: bool, destination_database: str) -
         "A exportação prosseguirá de forma completa, gerando todos os arquivos.\n\n"
         "Deseja iniciar a exportação?"
     )
+
+
+def build_disk_projection_guidance(
+    *,
+    destination_instance: str,
+    export_directory: str,
+    import_directory: str,
+    delete_confirmed_files: bool,
+    max_file_bytes: str | int,
+) -> str:
+    """Render operator capacity checks according to BCP retention behavior."""
+
+    if delete_confirmed_files:
+        limit_in_mb = format_bytes_summary(max_file_bytes).split(" | ", 1)[0]
+        folder_projection = f"Projeção do lote: {limit_in_mb}"
+    else:
+        folder_projection = "Projeção de disco"
+
+    def normalized(path: str) -> str:
+        return path.strip().replace("/", "\\").rstrip("\\").casefold()
+
+    lines = [
+        "O operador deve avaliar:",
+        "- Espaço disponível na instância de banco de dados de destino "
+        f"{destination_instance} X Projeção de disco",
+        f"- Espaço disponível em {export_directory} X {folder_projection}",
+    ]
+    if not (
+        bool(normalized(export_directory))
+        and normalized(export_directory) == normalized(import_directory)
+    ):
+        lines.append(
+            f"- Espaço disponível em {import_directory} X {folder_projection}"
+        )
+    return "\n".join(lines)
 
 
 SOURCE_ROLE_LABELS: dict[str, str] = {
@@ -1104,6 +1140,12 @@ class BcpGuiApplication:
             value="Acompanhamento automático: ativo"
         )
         self.follow_log_tail = True
+        self.planning_progress_window: ttk.Toplevel | None = None
+        self.planning_progress_value = tk.DoubleVar(value=0)
+        self.planning_progress_percent = tk.StringVar(value="0%")
+        self.planning_progress_message = tk.StringVar(
+            value="Preparando a checagem de planejamento…"
+        )
 
         for name in ("max_file_bytes", "minimum_free_space_bytes"):
             self.global_variables[name].trace_add(
@@ -1129,6 +1171,7 @@ class BcpGuiApplication:
         )
         for name in (
             "destination_sql_directory",
+            "max_file_bytes",
             "minimum_free_space_bytes",
             "safety_factor",
             "delete_confirmed_files",
@@ -1342,17 +1385,19 @@ class BcpGuiApplication:
             )
         )
 
-        disk_lines = [
-            "O operador deve avaliar:",
-            "- Espaço disponível na instância de banco de dados de destino "
-            f"{endpoint_value('bronze_destination', 'instance')} X Projeção de disco",
-            f"- espaço disponível em {export_directory} X Projeção de disco",
-        ]
-        if not self._same_display_path(export_directory, import_directory):
-            disk_lines.append(
-                f"- espaço disponível em {import_directory} X Projeção de disco."
+        self.disk_projection_guidance.set(
+            build_disk_projection_guidance(
+                destination_instance=endpoint_value(
+                    "bronze_destination", "instance"
+                ),
+                export_directory=export_directory,
+                import_directory=import_directory,
+                delete_confirmed_files=bool(
+                    self.global_variables["delete_confirmed_files"].get()
+                ),
+                max_file_bytes=self.global_variables["max_file_bytes"].get(),
             )
-        self.disk_projection_guidance.set("\n".join(disk_lines))
+        )
 
         permission_lines = [
             "É premissa ter o usuário criado nas instâncias conforme permissionamento abaixo:",
@@ -3759,30 +3804,151 @@ class BcpGuiApplication:
             self.notebook.select(self.general_tab)
             return None
 
+    def _open_planning_progress(self) -> None:
+        self._close_planning_progress()
+        window = ttk.Toplevel(self.root)
+        window.title("Planejamento em andamento")
+        window.geometry("680x270")
+        window.resizable(False, False)
+        window.transient(self.root)
+        window.protocol("WM_DELETE_WINDOW", lambda: None)
+        self.planning_progress_window = window
+        self.planning_progress_value.set(0)
+        self.planning_progress_percent.set("0%")
+        self.planning_progress_message.set(
+            "Preparando conexões e verificações somente leitura…"
+        )
+
+        body = ttk.Frame(window, padding=22)
+        body.pack(fill="both", expand=True)
+        ttk.Label(
+            body,
+            text="PLANEJAMENTO DO FLUXO",
+            bootstyle="primary",
+            font=("Segoe UI Semibold", 12),
+        ).pack(anchor="w")
+        ttk.Label(
+            body,
+            text=(
+                "O BulkFlow conectará às bases configuradas, analisará tabelas e "
+                "catálogos e confrontará a projeção com os espaços disponíveis no "
+                "Destino 01 e nas pastas de exportação/importação dos arquivos BCP."
+            ),
+            justify="left",
+            wraplength=625,
+        ).pack(anchor="w", pady=(8, 16))
+        progress_row = ttk.Frame(body)
+        progress_row.pack(fill="x")
+        ttk.Progressbar(
+            progress_row,
+            variable=self.planning_progress_value,
+            maximum=100,
+            mode="determinate",
+            bootstyle="success-striped",
+        ).pack(side="left", fill="x", expand=True)
+        ttk.Label(
+            progress_row,
+            textvariable=self.planning_progress_percent,
+            width=6,
+            anchor="e",
+            font=("Segoe UI Semibold", 10),
+        ).pack(side="left", padx=(10, 0))
+        ttk.Label(
+            body,
+            textvariable=self.planning_progress_message,
+            bootstyle="secondary",
+            justify="left",
+            wraplength=625,
+        ).pack(anchor="w", pady=(14, 0))
+        window.grab_set()
+        window.update_idletasks()
+
+    def _update_planning_progress(self, percent: int, message: str) -> None:
+        value = max(0, min(100, int(percent)))
+        self.planning_progress_value.set(value)
+        self.planning_progress_percent.set(f"{value}%")
+        self.planning_progress_message.set(message)
+        window = self.planning_progress_window
+        if window is not None and window.winfo_exists():
+            window.update_idletasks()
+
+    def _close_planning_progress(self) -> None:
+        window = getattr(self, "planning_progress_window", None)
+        if window is None:
+            return
+        try:
+            if window.winfo_exists():
+                window.grab_release()
+                window.destroy()
+        except tk.TclError:
+            pass
+        self.planning_progress_window = None
+
     def _plan(self) -> None:
         config = self._prepare_operation()
         if config is None:
             return
         self._invalidate_disk_projection()
         self.secret_resolver.clear_cache()
+        self._open_planning_progress()
 
         def operation() -> str:
             # Resolve all configured credentials up front. In a one-file,
             # no-console executable this callback remains entirely in Tk; it
             # never falls back to getpass/stdin.
-            for endpoint_name in (
+            endpoints = (
                 "source",
                 "landing_destination",
                 "bronze_destination",
-            ):
+            )
+            self.worker_queue.put(
+                ("planning_progress", (5, "Validando as credenciais configuradas…"))
+            )
+            configured_endpoints = [
+                endpoint_name
+                for endpoint_name in endpoints
+                if config.get(endpoint_name) is not None
+            ]
+            for endpoint_index, endpoint_name in enumerate(configured_endpoints, start=1):
                 endpoint = config.get(endpoint_name)
-                if endpoint is None:
-                    continue
                 self.secret_resolver.resolve_auth(
                     endpoint["authentication"], endpoint_name=endpoint_name
                 )
-            plans, results = self._engine(config).plan()
+                credential_percent = 5 + int(
+                    (endpoint_index / max(len(configured_endpoints), 1)) * 10
+                )
+                self.worker_queue.put(
+                    (
+                        "planning_progress",
+                        (
+                            credential_percent,
+                            f"Credenciais validadas ({endpoint_index} de "
+                            f"{len(configured_endpoints)})…",
+                        ),
+                    )
+                )
+            plans, results = self._engine(config).plan(
+                progress_callback=lambda percent, message: self.worker_queue.put(
+                    ("planning_progress", (percent, message))
+                )
+            )
+            self.worker_queue.put(
+                (
+                    "planning_progress",
+                    (
+                        92,
+                        "Analisando o espaço livre nas pastas de exportação e "
+                        "importação dos arquivos BCP…",
+                    ),
+                )
+            )
             disk_projection = build_disk_projection_summary(config, plans)
+            self.worker_queue.put(
+                (
+                    "planning_progress",
+                    (97, "Preparando a projeção consolidada e os resultados…"),
+                )
+            )
             output = render_plan_rows(plans)
             invalid = [result for result in results if result.status != TableStatus.PENDING.value]
             if invalid:
@@ -3794,6 +3960,13 @@ class BcpGuiApplication:
                 ("connection_summary", connection_summary_rows(config))
             )
             self.worker_queue.put(("disk_projection", disk_projection))
+            self.worker_queue.put(
+                (
+                    "planning_progress",
+                    (100, "Planejamento concluído. Finalizando a apresentação…"),
+                )
+            )
+            time.sleep(0.35)
             return output
 
         self._start_worker("Planejando", operation)
@@ -3989,6 +4162,9 @@ class BcpGuiApplication:
                     self.plan_status.set("Planejamento concluído")
                 elif kind == "disk_projection":
                     self._refresh_disk_projection(payload)
+                elif kind == "planning_progress":
+                    percent, message = payload
+                    self._update_planning_progress(int(percent), str(message))
                 elif kind == "secret_prompt":
                     self._handle_secret_prompt(payload)
                 elif kind == "execution_id":
@@ -4057,6 +4233,7 @@ class BcpGuiApplication:
         return f"{labels.get(name, name)}:\n{pretty_json(safe)}"
 
     def _finish_worker(self, *, success: bool, error: str | None = None) -> None:
+        self._close_planning_progress()
         self.busy = False
         self.progress.stop()
         for button in self.action_buttons:

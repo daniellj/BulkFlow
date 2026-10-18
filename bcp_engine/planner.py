@@ -413,6 +413,7 @@ def build_plan(
     profile_resolver: Callable[..., Any] = resolve_profile,
     catalog_comparer: Callable[..., Any] = compare_catalog,
     profile_directory: Path | None = None,
+    progress_callback: Callable[[int, int, Mapping[str, Any]], None] | None = None,
 ) -> PlanningResult:
     """Produz panorama individual sem executar DDL/DML.
 
@@ -440,9 +441,11 @@ def build_plan(
     retained_planning_bytes: int | None = 0
     results: list[TablePlan] = []
 
-    for table in tables:
+    for table_index, table in enumerate(tables):
         source = table["source"]
         destination = table["destination"]
+        if progress_callback is not None:
+            progress_callback(table_index, len(tables), source)
         destination_role = endpoint_role(
             config,
             DESTINATION_KEYS[destination["area"]],

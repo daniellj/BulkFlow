@@ -732,6 +732,29 @@ class PlannerTests(unittest.TestCase):
         self.assertIsNone(table.destination_catalog_state)
         self.assertIn("DESTINATION_NOT_INSPECTED", table.warnings)
 
+    def test_plan_reports_each_table_to_progress_callback(self):
+        reported = []
+        config = planner_config(("alpha", "beta", "gamma"))
+
+        build_plan(
+            config,
+            object(),
+            disk_free_provider=lambda _path: 100_000,
+            progress_callback=lambda completed, total, source: reported.append(
+                (completed, total, source["table"])
+            ),
+            **self.common_dependencies(),
+        )
+
+        self.assertEqual(
+            reported,
+            [
+                (0, 3, "alpha"),
+                (1, 3, "beta"),
+                (2, 3, "gamma"),
+            ],
+        )
+
     def test_direct_keyless_plan_uses_metadata_estimate_and_one_block(self):
         dependencies = self.common_dependencies()
         dependencies["watermark_discoverer"] = lambda *_args, **_kwargs: WatermarkSelection(

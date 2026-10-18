@@ -754,6 +754,43 @@ class GuiConstructionTests(unittest.TestCase):
         self.assertIn("Importar no destino", message)
         self.assertIn("todos os arquivos", message)
 
+    def test_disk_guidance_uses_total_projection_when_confirmed_files_are_kept(self):
+        try:
+            from bcp_engine.gui import build_disk_projection_guidance
+        except ImportError as error:  # pragma: no cover
+            self.skipTest(f"Dependência gráfica indisponível: {error}")
+
+        guidance = build_disk_projection_guidance(
+            destination_instance="SQL\\DESTINO",
+            export_directory=r"C:\BCP",
+            import_directory=r"\\sql\BCP",
+            delete_confirmed_files=False,
+            max_file_bytes=157_286_400,
+        )
+
+        self.assertEqual(guidance.count("X Projeção de disco"), 3)
+        self.assertNotIn("Projeção do lote", guidance)
+
+    def test_disk_guidance_uses_batch_limit_in_mb_when_files_are_deleted(self):
+        try:
+            from bcp_engine.gui import build_disk_projection_guidance
+        except ImportError as error:  # pragma: no cover
+            self.skipTest(f"Dependência gráfica indisponível: {error}")
+
+        guidance = build_disk_projection_guidance(
+            destination_instance="SQL\\DESTINO",
+            export_directory=r"C:\BCP",
+            import_directory=r"c:/bcp/",
+            delete_confirmed_files=True,
+            max_file_bytes=157_286_400,
+        )
+
+        self.assertIn(
+            r"- Espaço disponível em C:\BCP X Projeção do lote: 150,00 MB",
+            guidance,
+        )
+        self.assertEqual(guidance.count("Projeção do lote"), 1)
+
     def test_source_gui_ddl_field_uses_exact_project_local_default(self):
         try:
             from bcp_engine.gui import RUNTIME_DATA_ROOT, RUNTIME_DDL_DIRECTORY
