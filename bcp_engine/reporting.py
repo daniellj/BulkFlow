@@ -27,6 +27,27 @@ def format_bytes(value: int | float | None) -> str:
     return f"{number:.2f} PiB"
 
 
+def format_duration(seconds: float | None) -> str:
+    if seconds is None or seconds < 0:
+        return "indisponível"
+    total_milliseconds = int(round(seconds * 1000))
+    hours, remainder = divmod(total_milliseconds, 3_600_000)
+    minutes, remainder = divmod(remainder, 60_000)
+    whole_seconds, milliseconds = divmod(remainder, 1_000)
+    return f"{hours:02d}:{minutes:02d}:{whole_seconds:02d}.{milliseconds:03d}"
+
+
+def execution_duration_seconds(report: ExecutionReport) -> float | None:
+    if not report.finished_at:
+        return None
+    try:
+        started = datetime.fromisoformat(report.started_at)
+        finished = datetime.fromisoformat(report.finished_at)
+    except (TypeError, ValueError):
+        return None
+    return max(0.0, (finished - started).total_seconds())
+
+
 def _first(plan: Mapping[str, Any], *names: str, default: Any = None) -> Any:
     for name in names:
         if name in plan and plan[name] is not None:
@@ -125,6 +146,14 @@ def render_execution(report: ExecutionReport) -> str:
             lines.append(f"  próxima ação: {table.next_action}")
         for warning in table.warnings:
             lines.append(f"  ADVERTÊNCIA: {warning}")
+    lines.extend(
+        [
+            "Resumo final:",
+            f"  linhas exportadas: {sum(item.rows_exported for item in report.tables):,}".replace(",", "."),
+            f"  linhas importadas: {sum(item.rows_imported for item in report.tables):,}".replace(",", "."),
+            f"  tempo total: {format_duration(execution_duration_seconds(report))}",
+        ]
+    )
     if report.global_error:
         lines.append(f"Falha global: {report.global_error}")
     elif report.exit_code() == 0:

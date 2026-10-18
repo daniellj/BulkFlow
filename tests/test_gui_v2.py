@@ -610,7 +610,20 @@ class GuiConstructionTests(unittest.TestCase):
         except ImportError as error:  # pragma: no cover
             self.skipTest(f"Dependência gráfica indisponível: {error}")
 
+        class Value:
+            def __init__(self, value):
+                self.value = value
+
+            def get(self):
+                return self.value
+
+            def set(self, value):
+                self.value = value
+
         application = object.__new__(BcpGuiApplication)
+        application.verbose_logging = Value(True)
+        application.execution_progress_value = Value(0)
+        application.execution_progress_percent = Value("0%")
         rendered = application._format_event(
             "database_command",
             {
@@ -630,6 +643,28 @@ class GuiConstructionTests(unittest.TestCase):
         )
         self.assertIn("COMANDO [BULK IN", bulk)
         self.assertIn("OPENROWSET", bulk)
+
+        application.verbose_logging.set(False)
+        self.assertEqual(
+            application._format_event(
+                "bcp_command", {"context": "BCP", "command": "bcp segredo"}
+            ),
+            "",
+        )
+        batch = application._format_event(
+            "batch_progress",
+            {
+                "phase": "export",
+                "status": "started",
+                "block_number": 3,
+                "total_blocks": 1500,
+                "source_table": "produto",
+                "percent": 42,
+            },
+        )
+        self.assertIn("Exportação lote 3 de 1500", batch)
+        self.assertEqual(application.execution_progress_value.get(), 42)
+        self.assertEqual(application.execution_progress_percent.get(), "42%")
 
         structured = application._format_event(
             "identity", {"principal": "u684", "roles": ["reader", "writer"]}
@@ -1445,6 +1480,8 @@ class GuiConstructionTests(unittest.TestCase):
                 application.global_variables["destination_sql_directory"].get(),
                 application.global_variables["executor_directory"].get(),
             )
+            self.assertFalse(application.verbose_logging.get())
+            self.assertEqual(application.execution_progress_percent.get(), "0%")
             self.assertEqual(application.cdc_retention_days.get(), "182,50 dias")
             application.global_variables["cdc_retention_minutes"].set("1440")
             self.assertEqual(application.cdc_retention_days.get(), "1,00 dia")

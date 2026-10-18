@@ -10,7 +10,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from bcp_engine.planner import TablePlan  # noqa: E402
-from bcp_engine.reporting import render_plan_rows  # noqa: E402
+from bcp_engine.models import ExecutionReport, TableResult  # noqa: E402
+from bcp_engine.reporting import render_execution, render_plan_rows  # noqa: E402
 
 
 class PlanRenderingTests(unittest.TestCase):
@@ -59,6 +60,25 @@ class PlanRenderingTests(unittest.TestCase):
         self.assertIn("fator de segurança: 1.25", rendered)
         self.assertIn("amostra: 18 linhas", rendered)
         self.assertNotIn("BCP total estimado: indisponível", rendered)
+
+    def test_execution_summary_reports_total_rows_and_elapsed_time(self):
+        report = ExecutionReport(
+            execution_id="00000000-0000-4000-8000-000000000001",
+            command="run",
+            started_at="2026-10-18T10:00:00+00:00",
+            finished_at="2026-10-18T10:02:03.456000+00:00",
+            tables=[
+                TableResult("a", "dst_a", "COMPLETED", rows_exported=100, rows_imported=100),
+                TableResult("b", "dst_b", "COMPLETED", rows_exported=250, rows_imported=250),
+            ],
+        )
+
+        rendered = render_execution(report)
+
+        self.assertIn("Resumo final:", rendered)
+        self.assertIn("linhas exportadas: 350", rendered)
+        self.assertIn("linhas importadas: 350", rendered)
+        self.assertIn("tempo total: 00:02:03.456", rendered)
 
 
 if __name__ == "__main__":

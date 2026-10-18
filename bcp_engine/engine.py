@@ -1523,7 +1523,7 @@ class BcpEngine:
                 if hasattr(state, "blocks")
                 else 0
             )
-            for table in tables:
+            for table_index, table in enumerate(tables, start=1):
                 started = time.perf_counter()
                 prepared: PreparedTable | None = None
                 sql_table_registered = False
@@ -1705,6 +1705,9 @@ class BcpEngine:
                         )
                         sql_execution_registered = True
                         sql_table_registered = True
+                    prepared.execution_table_index = table_index
+                    prepared.execution_table_count = len(tables)
+                    prepared.execution_estimated_blocks = plan.get("estimated_blocks")
                     self._process_blocks(
                         source, destination, importer, state, store, base_bcp, prepared,
                         execution_id, dataset_id, source_identity.as_dict(),
@@ -1966,6 +1969,16 @@ class BcpEngine:
                         if hasattr(state, "blocks")
                         else retained_bytes + result.bytes_exported
                     )
+                self.event(
+                    "execution_progress",
+                    {
+                        "percent": min(99, int((table_index / max(len(tables), 1)) * 100)),
+                        "table_index": table_index,
+                        "table_count": len(tables),
+                        "source_table": table["source"]["table"],
+                        "status": result.status,
+                    },
+                )
                 if stop_after_table:
                     break
             if importer is not None and sql_execution_registered:
@@ -2083,6 +2096,43 @@ class BcpEngine:
         destination_identity: Mapping[str, Any] | None,
         result: TableResult,
     ) -> None:
+        table_index = int(getattr(prepared, "execution_table_index", 1))
+        table_count = int(getattr(prepared, "execution_table_count", 1))
+        estimated_blocks = getattr(prepared, "execution_estimated_blocks", None)
+        planned_blocks = max(1, int(estimated_blocks or 1))
+
+        def batch_progress(phase: str, number: int, status: str) -> None:
+            displayed_total = max(planned_blocks, number)
+            phases_per_block = 2 if self.config["execute_import"] else 1
+            phase_offset = 0 if phase == "export" else 1
+            completed_units = (
+                (number - 1) * phases_per_block
+                + phase_offset
+                + (1 if status == "completed" else 0)
+            )
+            table_fraction = min(
+                completed_units / max(displayed_total * phases_per_block, 1),
+                0.999,
+            )
+            percent = min(
+                99,
+                int(((table_index - 1 + table_fraction) / max(table_count, 1)) * 100),
+            )
+            event = getattr(self, "event", _noop_event)
+            event(
+                "batch_progress",
+                {
+                    "phase": phase,
+                    "status": status,
+                    "block_number": number,
+                    "total_blocks": displayed_total,
+                    "table_index": table_index,
+                    "table_count": table_count,
+                    "source_table": prepared.effective["source"]["table"],
+                    "percent": percent,
+                },
+            )
+
         import_plan = (
             build_import_plan(
                 prepared.layout,
@@ -2121,6 +2171,8 @@ class BcpEngine:
                     block=block,
                     window=reconciled_window,
                 )
+                block_number = int(block["block_number"])
+                batch_progress("import", block_number, "started")
                 manifest = importer.import_manifest(
                     store, block["manifest_path"], import_plan,
                     self.config["executor_directory"], self.config["destination_sql_directory"],
@@ -2128,6 +2180,7 @@ class BcpEngine:
                 state.mark_imported(execution_id, prepared.table_id, block["block_id"], manifest.rows_exported)
                 result.rows_imported += manifest.rows_exported
                 result.last_imported = manifest.upper_bound
+                batch_progress("import", block_number, "completed")
                 if effective_delete_confirmed_files(self.config):
                     if not manifest.empty_range:
                         store.remove_confirmed_data(block["manifest_path"])
@@ -2229,6 +2282,7 @@ class BcpEngine:
                         "ou ajuste conscientemente o limite de arquivo."
                     )
             paths = store.block_paths(prepared.table_id, number, block["block_id"])
+            batch_progress("export", number, "started")
             if paths.manifest.exists():
                 manifest = store.load_and_verify(paths.manifest)
                 self._validate_manifest_for_planned_block(
@@ -2334,9 +2388,11 @@ class BcpEngine:
                             redacted_exception(exc),
                         )
                     raise
+            batch_progress("export", number, "completed")
             if self.config["execute_import"] and not manifest.empty_range:
                 assert importer is not None
                 assert import_plan is not None
+                batch_progress("import", number, "started")
                 importer.import_manifest(
                     store, paths.manifest, import_plan,
                     self.config["executor_directory"], self.config["destination_sql_directory"],
@@ -2345,17 +2401,20 @@ class BcpEngine:
                     execution_id, prepared.table_id, block["block_id"], manifest.rows_exported
                 )
                 result.rows_imported += manifest.rows_exported
+                batch_progress("import", number, "completed")
                 if effective_delete_confirmed_files(self.config):
                     store.remove_confirmed_data(paths.manifest)
             elif manifest.empty_range and self.config["execute_import"]:
                 # Registra o bloco vazio também no controle SQL, sem OPENROWSET.
                 assert importer is not None
                 assert import_plan is not None
+                batch_progress("import", number, "started")
                 importer.import_manifest(
                     store, paths.manifest, import_plan,
                     self.config["executor_directory"], self.config["destination_sql_directory"],
                 )
                 state.mark_imported(execution_id, prepared.table_id, block["block_id"], 0)
+                batch_progress("import", number, "completed")
             else:
                 result.retained_files += 0 if manifest.empty_range else 1
             result.rows_exported += manifest.rows_exported

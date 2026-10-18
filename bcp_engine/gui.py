@@ -1308,6 +1308,9 @@ class BcpGuiApplication:
             value="Acompanhamento automático: ativo"
         )
         self.follow_log_tail = True
+        self.verbose_logging = tk.BooleanVar(value=False)
+        self.execution_progress_value = tk.DoubleVar(value=0)
+        self.execution_progress_percent = tk.StringVar(value="0%")
         self.planning_progress_window: ttk.Toplevel | None = None
         self.planning_progress_value = tk.DoubleVar(value=0)
         self.planning_progress_percent = tk.StringVar(value="0%")
@@ -1716,8 +1719,21 @@ class BcpGuiApplication:
 
         footer = ttk.Frame(self.root, padding=(12, 4, 12, 10))
         footer.pack(fill="x")
-        self.progress = ttk.Progressbar(footer, mode="indeterminate", length=180)
+        self.progress = ttk.Progressbar(
+            footer,
+            mode="determinate",
+            maximum=100,
+            variable=self.execution_progress_value,
+            length=240,
+            bootstyle="success-striped",
+        )
         self.progress.pack(side="left")
+        ttk.Label(
+            footer,
+            textvariable=self.execution_progress_percent,
+            width=6,
+            anchor="e",
+        ).pack(side="left", padx=(8, 0))
         ttk.Label(footer, textvariable=self.operation_status).pack(side="left", padx=10)
 
     def _build_process_flow_tab(self) -> None:
@@ -3322,18 +3338,24 @@ class BcpGuiApplication:
             textvariable=self.log_follow_status,
             bootstyle="secondary",
         ).grid(row=0, column=0, sticky="w")
+        ttk.Checkbutton(
+            footer,
+            text="Modo verbose",
+            variable=self.verbose_logging,
+            bootstyle="round-toggle",
+        ).grid(row=0, column=1, padx=(8, 0))
         ttk.Button(
             footer,
             text="Ir para o mais recente",
             command=self._follow_latest_log,
             bootstyle="outline-primary",
-        ).grid(row=0, column=1, padx=(8, 0))
+        ).grid(row=0, column=2, padx=(8, 0))
         ttk.Button(
             footer,
             text="Limpar acompanhamento",
             command=self._clear_log,
             bootstyle="outline-secondary",
-        ).grid(row=0, column=2, padx=(8, 0))
+        ).grid(row=0, column=3, padx=(8, 0))
 
 
     def _invalidate_disk_projection(self) -> None:
@@ -4378,7 +4400,7 @@ class BcpGuiApplication:
     def _start_worker(self, label: str, operation: Callable[[], str]) -> None:
         self.busy = True
         self.operation_status.set(label + "…")
-        self.progress.start(12)
+        self._update_execution_progress(0)
         for button in self.action_buttons:
             button.configure(state="disabled")
         self._append_log(f"\n=== {label} ===")
@@ -4392,6 +4414,11 @@ class BcpGuiApplication:
                 self.worker_queue.put(("success", result))
 
         threading.Thread(target=target, name="bcp-gui-worker", daemon=True).start()
+
+    def _update_execution_progress(self, percent: int) -> None:
+        value = max(0, min(100, int(percent)))
+        self.execution_progress_value.set(value)
+        self.execution_progress_percent.set(f"{value}%")
 
     def _prompt_secret_from_worker(self, label: str) -> str:
         for endpoint_name, password in self._operation_passwords.items():
@@ -4467,9 +4494,30 @@ class BcpGuiApplication:
             return "\n".join(prefix + line for line in rendered.splitlines())
 
         if name == "bcp_command":
+            verbose = getattr(self, "verbose_logging", None)
+            if verbose is None or not bool(verbose.get()):
+                return ""
             return f"COMANDO [{safe.get('context')}]: {safe.get('command')}"
         if name == "bulk_import_command":
+            verbose = getattr(self, "verbose_logging", None)
+            if verbose is None or not bool(verbose.get()):
+                return ""
             return f"COMANDO [{safe.get('context')}]: {safe.get('command')}"
+        if name == "batch_progress":
+            self._update_execution_progress(int(safe.get("percent", 0)))
+            if safe.get("status") != "started":
+                return ""
+            phase = (
+                "Exportação" if safe.get("phase") == "export" else "Importação"
+            )
+            return (
+                f"{phase} lote {safe.get('block_number')} de "
+                f"{safe.get('total_blocks')}.\n"
+                f"Tabela: {safe.get('source_table')}."
+            )
+        if name == "execution_progress":
+            self._update_execution_progress(int(safe.get("percent", 0)))
+            return ""
         if name == "database_command":
             return ""
         if name == "table_plan" and safe.get("text"):
@@ -4490,7 +4538,8 @@ class BcpGuiApplication:
     def _finish_worker(self, *, success: bool, error: str | None = None) -> None:
         self._close_planning_progress()
         self.busy = False
-        self.progress.stop()
+        if success:
+            self._update_execution_progress(100)
         for button in self.action_buttons:
             button.configure(state="normal")
         self._update_ddl_section_state()
