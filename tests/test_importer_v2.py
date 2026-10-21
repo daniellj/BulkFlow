@@ -931,6 +931,7 @@ class ImportWithoutSourceTests(unittest.TestCase):
             self.assertEqual(report.exit_code(), 0)
             self.assertEqual(len(fake_importer.imported), 1)
             engine._finish_indexes.assert_called_once()
+            self.assertFalse(path.parent.parent.exists())
             self.assertTrue(destination.closed)
 
     def test_manifest_data_only_validates_control_without_ensuring_it(self):
@@ -955,6 +956,7 @@ class ImportWithoutSourceTests(unittest.TestCase):
             expected = json.loads(path.read_text(encoding="utf-8"))
             engine, _destination = self._engine(root)
             engine.config["delete_confirmed_files"] = False
+            engine.config["delete_completed_table_artifacts"] = False
             fake_importer = self._Importer()
 
             with patch("bcp_engine.engine.DestinationImporter", return_value=fake_importer):
@@ -1010,6 +1012,7 @@ class ImportWithoutSourceTests(unittest.TestCase):
             )
             self.assertEqual(report.tables[0].index_state, "PENDING")
             self.assertIn("índice indisponível", report.tables[0].reason)
+            self.assertTrue(path.exists())
             self.assertTrue(destination.closed)
 
     def test_manifest_import_skips_before_sql_control_when_space_is_insufficient(self):
@@ -1112,6 +1115,7 @@ class ImportWithoutSourceTests(unittest.TestCase):
             expected = json.loads(path.read_text(encoding="utf-8"))
             engine, _destination = self._engine(root)
             engine.config["delete_confirmed_files"] = False
+            engine.config["delete_completed_table_artifacts"] = False
             fake_importer = self._Importer()
             required_values = []
 

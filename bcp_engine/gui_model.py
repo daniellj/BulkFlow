@@ -971,6 +971,7 @@ def default_gui_config(project_root: Path | None = None) -> dict[str, Any]:
         "max_file_bytes": 157_286_400,
         "minimum_free_space_bytes": 10_737_418_240,
         "delete_confirmed_files": True,
+        "delete_completed_table_artifacts": True,
         "continue_after_table_error": True,
         "cdc_retention_minutes": 262_800,
         "control_schema": "dbo",

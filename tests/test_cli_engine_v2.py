@@ -20,7 +20,7 @@ import bcp_engine.engine as engine_module  # noqa: E402
 from bcp_engine.cdc import DatabaseCdcResult, TableCdcResult  # noqa: E402
 from bcp_engine.catalog import NoEligibleWatermarkError  # noqa: E402
 from bcp_engine.engine import BcpEngine  # noqa: E402
-from bcp_engine.models import TableStatus  # noqa: E402
+from bcp_engine.models import TableResult, TableStatus  # noqa: E402
 
 
 CONFIG_PATH = Path("config.test.json")
@@ -423,6 +423,31 @@ def make_engine():
 
 
 class EngineBoundaryTests(unittest.TestCase):
+    def test_table_artifact_cleanup_only_runs_for_successful_imported_table(self):
+        engine = make_engine()
+        engine.config["delete_completed_table_artifacts"] = True
+        store = Mock()
+        completed = TableResult("src", "dst", TableStatus.COMPLETED.value)
+        failed = TableResult("src", "dst", TableStatus.PARTIAL_ERROR.value)
+
+        engine._cleanup_completed_table_artifacts(store, "a" * 64, failed)
+        store.remove_completed_table_artifacts.assert_not_called()
+
+        engine._cleanup_completed_table_artifacts(store, "a" * 64, completed)
+        store.remove_completed_table_artifacts.assert_called_once_with("a" * 64)
+
+    def test_table_artifact_cleanup_failure_is_warning_not_load_failure(self):
+        engine = make_engine()
+        engine.config["delete_completed_table_artifacts"] = True
+        store = Mock()
+        store.remove_completed_table_artifacts.side_effect = OSError("arquivo ocupado")
+        result = TableResult("src", "dst", TableStatus.COMPLETED.value)
+
+        engine._cleanup_completed_table_artifacts(store, "a" * 64, result)
+
+        self.assertEqual(result.status, TableStatus.COMPLETED.value)
+        self.assertIn("arquivo ocupado", result.warnings[0])
+
     def run_patches(self, tables):
         stack = ExitStack()
         FakeLocalState.instances = []

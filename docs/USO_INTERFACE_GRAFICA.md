@@ -44,6 +44,7 @@ must be completed. Its principal defaults are:
 - CDC disabled for each table;
 - structure creation enabled;
 - maximum file size of 157,286,400 bytes (150 MiB);
+- removal of auxiliary artifacts for each completed table enabled;
 - `dbo` control schema and secondary indexes before the load;
 - `ODBC Driver 18 for SQL Server` driver and `bcp` executable;
 - when running from source, control under `Local\BulkFlow\.bcp-control`,
@@ -78,6 +79,13 @@ non-mutating, and explicitly selecting **Aplicar DDL** remains a separate
 authorization to apply scripts to structure-capable destinations regardless of this checkbox.
 The field's tooltip explains this behavior. **Apagar arquivos exportados após
 confirmação** removes a data file only after the active-destination commit has been proven.
+**Excluir artefatos auxiliares após concluir cada tabela** is enabled by
+default. After the whole table is imported, its cardinality is verified, and
+its indexes are complete, the table artifact tree (manifests, XML files, and
+batch logs) is removed. Execution reports remain. Failed, cancelled, or
+incomplete tables retain everything required by `resume`. This setting is
+independent of the preceding one: when confirmed-file deletion is enabled,
+each `.bcp` file is still removed immediately after its own import is proven.
 
 ### Perimeter and suggested users
 

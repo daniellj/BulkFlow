@@ -1221,3 +1221,56 @@ class ArtifactStore:
             return
         path = manifest_file.parent / manifest.data_file
         _contained(self.execution_root, path).unlink(missing_ok=True)
+
+    def remove_completed_table_artifacts(self, table_id: str) -> None:
+        """Remove only one successfully completed table's artifact subtree.
+
+        The caller owns the business decision that the table is complete. This
+        method owns path containment and refuses links/reparse points so cleanup
+        cannot escape the execution directory.
+        """
+
+        validate_sha256_hex(table_id, "table_id")
+        candidate = self.execution_root / _safe_component(table_id, max_length=32)
+        if not candidate.exists():
+            return
+        candidate_info = candidate.lstat()
+        candidate_attributes = getattr(candidate_info, "st_file_attributes", 0)
+        if candidate.is_symlink() or candidate_attributes & getattr(
+            stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400
+        ):
+            raise RuntimeError("Link/reparse point não é permitido na tabela")
+        directory = _contained(self.execution_root, candidate)
+        if not stat.S_ISDIR(candidate_info.st_mode) or not directory.is_dir():
+            raise RuntimeError("Diretório de artefatos da tabela não é confiável")
+
+        if os.name == "nt":
+            descendants = _windows_tree(directory)
+        else:
+            descendants: list[Path] = []
+            pending = [directory]
+            while pending:
+                parent = pending.pop()
+                for entry in os.scandir(parent):
+                    path = _contained(directory, Path(entry.path))
+                    info = entry.stat(follow_symlinks=False)
+                    if stat.S_ISLNK(info.st_mode):
+                        raise RuntimeError(
+                            f"Link não é permitido em artefatos: {path}"
+                        )
+                    descendants.append(path)
+                    if stat.S_ISDIR(info.st_mode):
+                        pending.append(path)
+            _validate_posix_artifact_paths(
+                self.root,
+                self.execution_root,
+                [directory, *descendants],
+            )
+
+        for path in sorted(descendants, key=lambda item: len(item.parts), reverse=True):
+            if path.is_dir():
+                path.rmdir()
+            else:
+                path.unlink()
+        directory.rmdir()
+        _fsync_directory(self.execution_root)

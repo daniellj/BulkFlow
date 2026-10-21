@@ -42,6 +42,7 @@
   "max_file_bytes": 2147483648,
   "minimum_free_space_bytes": 10737418240,
   "delete_confirmed_files": true,
+  "delete_completed_table_artifacts": true,
   "continue_after_table_error": true,
   "odbc_driver": "ODBC Driver 18 for SQL Server",
   "bcp_executable": "bcp",

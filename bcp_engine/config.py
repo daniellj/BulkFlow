@@ -61,7 +61,8 @@ ROOT_KEYS = {
     "keyless_direct_load_max_rows", "allow_schema_evolution",
     "resolve_column_collisions",
     "column_collision_strategy",
-    "delete_confirmed_files", "continue_after_table_error", "estimates",
+    "delete_confirmed_files", "delete_completed_table_artifacts",
+    "continue_after_table_error", "estimates",
     "batching", "structure", "bronze_event_id", "tables", "odbc_driver",
     "bcp_executable", "connection_timeout_seconds", "sql_timeout_seconds",
     "bcp_timeout_seconds", "cdc_retention_minutes", "control_schema", "tls",
@@ -110,6 +111,7 @@ DEFAULTS: dict[str, Any] = {
     "max_file_bytes": 157_286_400,
     "minimum_free_space_bytes": 10_737_418_240,
     "delete_confirmed_files": True,
+    "delete_completed_table_artifacts": True,
     "continue_after_table_error": True,
     "odbc_driver": "ODBC Driver 18 for SQL Server",
     "bcp_executable": "bcp",
@@ -753,7 +755,8 @@ def validate_config(value: Any) -> dict[str, Any]:
         raise ConfigError("active_destination deve ser bronze ou landing")
     for key in (
         "execute_import", "create_structure_if_needed",
-        "delete_confirmed_files", "continue_after_table_error",
+        "delete_confirmed_files", "delete_completed_table_artifacts",
+        "continue_after_table_error",
         "allow_schema_evolution", "resolve_column_collisions",
     ):
         cfg[key] = _bool(cfg[key], key)
@@ -1072,6 +1075,9 @@ def operational_fingerprint(config: Mapping[str, Any]) -> str:
         "max_file_bytes": config["max_file_bytes"],
         "minimum_free_space_bytes": config["minimum_free_space_bytes"],
         "delete_confirmed_files": config["delete_confirmed_files"],
+        "delete_completed_table_artifacts": config[
+            "delete_completed_table_artifacts"
+        ],
         "continue_after_table_error": config["continue_after_table_error"],
         "estimates": config["estimates"],
         "structure": config["structure"],

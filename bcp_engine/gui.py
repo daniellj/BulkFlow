@@ -297,6 +297,12 @@ FIELD_HELP: dict[str, str] = {
     ),
     "allow_schema_evolution": "Permite somente a adição segura de novas colunas encontradas na Origem.",
     "delete_confirmed_files": "Remove arquivos exportados apenas depois da confirmação durável da importação.",
+    "delete_completed_table_artifacts": (
+        "Após a importação e a validação integral de cada tabela, remove seus "
+        "manifestos, arquivos de formato, logs e diretórios auxiliares. Tabelas "
+        "canceladas, incompletas ou com erro são preservadas para retomada. Os "
+        "controles local/SQL e os relatórios consolidados permanecem."
+    ),
     "continue_after_table_error": "Registra a falha da tabela e continua o processamento das tabelas seguintes.",
     "require_watermark_index": "Exige índice compatível com a marca d'água antes de autorizar a extração.",
     "executor_directory": (
@@ -1239,6 +1245,7 @@ class BcpGuiApplication:
             "max_file_bytes": tk.StringVar(),
             "minimum_free_space_bytes": tk.StringVar(),
             "delete_confirmed_files": tk.BooleanVar(),
+            "delete_completed_table_artifacts": tk.BooleanVar(value=True),
             "continue_after_table_error": tk.BooleanVar(),
             "odbc_driver": tk.StringVar(),
             "bcp_executable": tk.StringVar(),
@@ -1926,6 +1933,10 @@ class BcpGuiApplication:
             (
                 "delete_confirmed_files",
                 "Apagar arquivos exportados após confirmação",
+            ),
+            (
+                "delete_completed_table_artifacts",
+                "Excluir artefatos auxiliares após concluir cada tabela",
             ),
             ("continue_after_table_error", "Continuar após erro de tabela"),
             ("require_watermark_index", "Exigir índice compatível com a marca d'água"),
@@ -3630,6 +3641,7 @@ class BcpGuiApplication:
             "allow_schema_evolution",
             "resolve_column_collisions",
             "delete_confirmed_files",
+            "delete_completed_table_artifacts",
             "continue_after_table_error",
         ):
             candidate[name] = bool(self.global_variables[name].get())
@@ -3815,6 +3827,7 @@ class BcpGuiApplication:
             "allow_schema_evolution",
             "resolve_column_collisions",
             "delete_confirmed_files",
+            "delete_completed_table_artifacts",
             "continue_after_table_error",
         ):
             self.global_variables[name].set(bool(normalized[name]))
@@ -4574,6 +4587,12 @@ class BcpGuiApplication:
         if name == "execution_progress":
             self._update_execution_progress(int(safe.get("percent", 0)))
             return ""
+        if name == "table_artifacts_removed":
+            return (
+                "Artefatos auxiliares removidos após a conclusão da tabela: "
+                + str(safe.get("source_table", "<não informada>"))
+                + "."
+            )
         if name == "database_command":
             return ""
         if name == "table_plan" and safe.get("text"):

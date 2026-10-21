@@ -27,6 +27,8 @@ This distribution includes:
 - optional monthly partitioning on destination tables;
 - free-space verification on the executor and active data-destination volumes;
 - manifests, SHA-256, SQLite/SQL controls, and idempotent resume;
+- optional per-table auxiliary-artifact cleanup after verified completion,
+  enabled by default while preserving incomplete work for resume;
 - self-contained Windows executables for the GUI and CLI.
 
 ## Quick start

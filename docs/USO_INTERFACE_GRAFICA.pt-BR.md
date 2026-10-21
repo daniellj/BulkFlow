@@ -44,6 +44,7 @@ principais defaults são:
 - CDC desabilitado em cada tabela;
 - criação de estrutura habilitada;
 - arquivo máximo de 157.286.400 bytes (150 MiB);
+- exclusão dos artefatos auxiliares de cada tabela concluída habilitada;
 - schema de controle `dbo` e índices secundários antes da carga;
 - Driver `ODBC Driver 18 for SQL Server` e executável `bcp`;
 - no código-fonte, controle em `Local\BulkFlow\.bcp-control`, exportação e
@@ -80,6 +81,14 @@ autorização separada para aplicar scripts nos destinos com estrutura, qualquer
 o estado desse checkbox. O tooltip do campo explica esse efeito. **Apagar
 arquivos exportados após confirmação** só remove
 o arquivo de dados depois que o commit no destino ativo foi comprovado.
+**Excluir artefatos auxiliares após concluir cada tabela** vem marcada por
+padrão. Depois que a tabela inteira foi importada, sua contagem foi conferida e
+os índices terminaram, ela remove a árvore da tabela com manifestos, XMLs e
+logs de lote. Relatórios da execução permanecem. Tabelas com falha,
+cancelamento ou carga incompleta conservam todos os artefatos necessários para
+`resume`. Essa opção é independente da anterior: os arquivos `.bcp` continuam
+sendo removidos lote a lote, imediatamente após cada importação confirmada,
+quando **Apagar arquivos exportados após confirmação** estiver habilitada.
 
 ### Perímetro e usuários sugeridos
 

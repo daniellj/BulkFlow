@@ -161,6 +161,22 @@ class ArtifactPublicationTests(unittest.TestCase):
         reconciled = self.store.load_for_reconciliation(self.paths.manifest)
         self.assertEqual(reconciled.block_id, self.block_id)
 
+    def test_completed_table_cleanup_removes_only_its_artifact_tree(self):
+        self.store.publish(self.paths, self._write_inputs())
+        other_id = "f" * 64
+        other_paths = self.store.block_paths(other_id, 1, str(uuid.uuid4()))
+        other_paths.directory.joinpath("keep.log").write_text(
+            "preservar", encoding="utf-8"
+        )
+
+        table_directory = self.paths.directory.parent
+        self.store.remove_completed_table_artifacts(self.table_id)
+
+        self.assertFalse(table_directory.exists())
+        self.assertTrue(other_paths.directory.exists())
+        self.assertTrue(self.store.execution_root.exists())
+        self.store.remove_completed_table_artifacts(self.table_id)
+
     def test_manifest_data_path_cannot_escape_block_directory(self):
         self.store.publish(self.paths, self._write_inputs())
         payload = json.loads(self.paths.manifest.read_text(encoding="utf-8"))

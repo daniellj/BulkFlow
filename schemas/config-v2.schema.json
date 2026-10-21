@@ -105,6 +105,11 @@
     "max_file_bytes": {"type": "integer", "minimum": 1, "default": 157286400},
     "minimum_free_space_bytes": {"type": "integer", "minimum": 0, "default": 10737418240},
     "delete_confirmed_files": {"type": "boolean", "default": true},
+    "delete_completed_table_artifacts": {
+      "type": "boolean",
+      "default": true,
+      "description": "Após a importação e validação integral de uma tabela, remove manifestos, formatos, logs e diretórios auxiliares dessa tabela. Não se aplica a tabelas canceladas, incompletas ou com erro."
+    },
     "continue_after_table_error": {"type": "boolean", "default": true},
     "odbc_driver": {"type": "string", "minLength": 1, "default": "ODBC Driver 18 for SQL Server"},
     "bcp_executable": {"type": "string", "minLength": 1, "default": "bcp"},

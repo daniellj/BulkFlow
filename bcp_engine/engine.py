@@ -1807,6 +1807,9 @@ class BcpEngine:
                             execution_id, prepared.table_id, status=result.status,
                             index_state=result.index_state, finished_at=utc_now(),
                         )
+                        self._cleanup_completed_table_artifacts(
+                            store, prepared.table_id, result
+                        )
                 except _CancellationRequested as exc:
                     report.cancelled = True
                     result.status = TableStatus.CANCELLED.value
@@ -2120,6 +2123,35 @@ class BcpEngine:
                 if manifest_path and store.retained_data_exists(manifest_path):
                     retained += 1
         result.retained_files = retained
+
+    def _cleanup_completed_table_artifacts(
+        self,
+        store: ArtifactStore,
+        table_id: str,
+        result: TableResult,
+    ) -> None:
+        if not bool(
+            self.config.get("delete_completed_table_artifacts", False)
+        ) or result.status not in {
+            TableStatus.COMPLETED.value,
+            TableStatus.EMPTY.value,
+        }:
+            return
+        try:
+            store.remove_completed_table_artifacts(table_id)
+            self.event(
+                "table_artifacts_removed",
+                {
+                    "source_table": result.source_table,
+                    "destination_table": result.destination_table,
+                    "table_id": table_id,
+                },
+            )
+        except Exception as cleanup_error:
+            result.warnings.append(
+                "Falha ao excluir artefatos auxiliares da tabela concluída: "
+                + redacted_exception(cleanup_error)
+            )
 
     def _process_blocks(
         self,
@@ -2918,6 +2950,9 @@ class BcpEngine:
                         index_state=result.index_state,
                     )
                     table_finished = True
+                    self._cleanup_completed_table_artifacts(
+                        store, table_id, result
+                    )
                 except _DestinationSpaceSkip as exc:
                     result.status = TableStatus.SKIPPED_DESTINATION_SPACE.value
                     result.reason = str(exc)

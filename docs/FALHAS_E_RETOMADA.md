@@ -463,6 +463,12 @@ captured by the execution, not necessarily the source's current `COUNT_BIG`.
 
 ## Prohibited actions during recovery
 
+With `delete_completed_table_artifacts=true` (the default), automatic cleanup
+runs only after a table reaches `COMPLETED` or `EMPTY` with cardinality and
+indexes confirmed. Failures and cancellation retain the complete table tree
+for resume. `delete_confirmed_files` remains independent: each confirmed
+`.bcp` may still be removed immediately after its corresponding batch.
+
 - run `run` expecting it to recognize the earlier execution;
 - reuse the UUID with a different structural configuration;
 - truncate the active destination tables or control tables;

@@ -461,6 +461,12 @@ atual da origem.
 
 ## Ações proibidas durante uma recuperação
 
+Com `delete_completed_table_artifacts=true` (padrão), a limpeza automática só
+ocorre depois que a tabela chega a `COMPLETED` ou `EMPTY`, com cardinalidade e
+índices confirmados. Falha e cancelamento preservam a árvore inteira da tabela
+para retomada. A política `delete_confirmed_files` continua independente: cada
+`.bcp` confirmado pode ser apagado imediatamente ao fim do respectivo lote.
+
 - executar `run` esperando que ele reconheça a execução anterior;
 - reutilizar o UUID com uma configuração estrutural diferente;
 - truncar tabelas do destino ativo ou tabelas de controle;
