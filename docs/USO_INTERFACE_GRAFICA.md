@@ -6,6 +6,10 @@ The `ttkbootstrap` interface uses the same V2 contract and engine as the CLI.
 There is no second load implementation: its actions call the planning, DDL,
 execution, resume, import, and status services.
 
+Every tab provides vertical and horizontal scrolling. On smaller monitors,
+fields and buttons beyond the visible viewport remain accessible through the
+scrollbars or mouse wheel. Logs and tables preserve their own scrolling.
+
 The application is infrastructure-agnostic. Docker and fixed ports belong only
 to the local lab.
 

@@ -82,6 +82,65 @@ from .watermark_validation import (
 RUNTIME_DATA_ROOT = runtime_data_root()
 RUNTIME_DDL_DIRECTORY = runtime_ddl_directory()
 RUNTIME_CONFIG_DIRECTORY = runtime_config_directory()
+
+
+class _ScrollableTab(ttk.Frame):
+    """Notebook page with viewport-aware horizontal and vertical scrolling."""
+
+    def __init__(self, master: tk.Misc, *, padding: int = 14) -> None:
+        super().__init__(master)
+        self.rowconfigure(0, weight=1)
+        self.columnconfigure(0, weight=1)
+        background = ttk.Style().lookup("TFrame", "background") or "#f0f0f0"
+        self.canvas = tk.Canvas(
+            self,
+            highlightthickness=0,
+            borderwidth=0,
+            background=background,
+        )
+        self.vertical = ttk.Scrollbar(
+            self, orient="vertical", command=self.canvas.yview
+        )
+        self.horizontal = ttk.Scrollbar(
+            self, orient="horizontal", command=self.canvas.xview
+        )
+        self.canvas.configure(
+            yscrollcommand=self.vertical.set,
+            xscrollcommand=self.horizontal.set,
+        )
+        self.canvas.grid(row=0, column=0, sticky="nsew")
+        self.vertical.grid(row=0, column=1, sticky="ns")
+        self.horizontal.grid(row=1, column=0, sticky="ew")
+        self.content = ttk.Frame(self.canvas, padding=padding)
+        self._window = self.canvas.create_window(
+            (0, 0), window=self.content, anchor="nw"
+        )
+        self.content.bind("<Configure>", self._sync_scroll_region, add="+")
+        self.canvas.bind("<Configure>", self._fit_content_to_viewport, add="+")
+
+    def _sync_scroll_region(self, _event: tk.Event | None = None) -> None:
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
+    def _fit_content_to_viewport(self, event: tk.Event) -> None:
+        self.canvas.itemconfigure(
+            self._window,
+            width=max(event.width, self.content.winfo_reqwidth()),
+            height=max(event.height, self.content.winfo_reqheight()),
+        )
+        self._sync_scroll_region()
+
+    def contains(self, widget: tk.Misc) -> bool:
+        current: tk.Misc | None = widget
+        while current is not None:
+            if current is self.content or current is self.canvas:
+                return True
+            current = getattr(current, "master", None)
+        return False
+
+    def scroll_vertical(self, units: int) -> None:
+        self.canvas.yview_scroll(units, "units")
+
+
 PRODUCT_NAME = "BulkFlow - SQL Server Data Export & Load"
 WINDOW_TITLE = PRODUCT_NAME
 TABLE_CDC_LABEL = "Ativar CDC na tabela de origem"
@@ -1160,7 +1219,9 @@ class BcpGuiApplication:
         # Reserve enough vertical space for the complete operations workflow,
         # including a useful Acompanhamento pane, on the first render.
         self.root.geometry("1280x980")
-        self.root.minsize(1100, 820)
+        # Smaller monitors remain usable because every notebook page owns a
+        # viewport with horizontal and vertical scrolling.
+        self.root.minsize(760, 520)
         try:
             self.root.state("zoomed")
         except tk.TclError:
@@ -1675,17 +1736,27 @@ class BcpGuiApplication:
     def _build_window(self) -> None:
         toolbar = ttk.Frame(self.root, padding=(12, 10))
         toolbar.pack(fill="x")
-        ttk.Label(toolbar, text=PRODUCT_NAME, font=("Segoe UI", 16, "bold")).pack(
-            side="left", padx=(0, 18)
-        )
-        ttk.Button(toolbar, text="Nova", command=self._new_configuration, bootstyle="secondary").pack(
-            side="left", padx=3
-        )
-        ttk.Button(toolbar, text="Abrir…", command=self._open_configuration, bootstyle="secondary").pack(
-            side="left", padx=3
-        )
+        toolbar_header = ttk.Frame(toolbar)
+        toolbar_header.pack(fill="x")
+        toolbar_actions = ttk.Frame(toolbar)
+        toolbar_actions.pack(fill="x", pady=(8, 0))
+        ttk.Label(
+            toolbar_header, text=PRODUCT_NAME, font=("Segoe UI", 16, "bold")
+        ).pack(side="left", padx=(0, 18))
         ttk.Button(
-            toolbar,
+            toolbar_actions,
+            text="Nova",
+            command=self._new_configuration,
+            bootstyle="secondary",
+        ).pack(side="left", padx=3)
+        ttk.Button(
+            toolbar_actions,
+            text="Abrir…",
+            command=self._open_configuration,
+            bootstyle="secondary",
+        ).pack(side="left", padx=3)
+        ttk.Button(
+            toolbar_actions,
             text="Salvar para GUI/CLI",
             command=self._save_configuration,
             bootstyle="primary",
@@ -1693,35 +1764,47 @@ class BcpGuiApplication:
             side="left", padx=3
         )
         ttk.Button(
-            toolbar,
+            toolbar_actions,
             text="Salvar como…",
             command=lambda: self._save_configuration(save_as=True),
             bootstyle="outline-primary",
         ).pack(side="left", padx=3)
         ttk.Button(
-            toolbar,
+            toolbar_actions,
             text="Validar configuração",
             command=self._validate_button,
             bootstyle="outline-success",
         ).pack(side="left", padx=(16, 3))
-        ttk.Label(toolbar, textvariable=self.config_path_label, bootstyle="secondary").pack(
-            side="right", padx=8
-        )
+        ttk.Label(
+            toolbar_header,
+            textvariable=self.config_path_label,
+            bootstyle="secondary",
+        ).pack(side="right", padx=8)
 
         self.notebook = ttk.Notebook(self.root, padding=(10, 0, 10, 8))
         self.notebook.pack(fill="both", expand=True)
-        self.process_flow_tab = ttk.Frame(self.notebook, padding=14)
-        self.general_tab = ttk.Frame(self.notebook, padding=14)
-        self.connections_tab = ttk.Frame(self.notebook, padding=14)
-        self.tables_tab = ttk.Frame(self.notebook, padding=14)
-        self.operations_tab = ttk.Frame(self.notebook, padding=14)
-        self.tracking_tab = ttk.Frame(self.notebook, padding=14)
-        self.notebook.add(self.process_flow_tab, text="1. Fluxo Processo")
-        self.notebook.add(self.general_tab, text="2. Geral")
-        self.notebook.add(self.connections_tab, text="3. Conexões")
-        self.notebook.add(self.tables_tab, text="4. Tabelas")
-        self.notebook.add(self.operations_tab, text="5. Executar")
-        self.notebook.add(self.tracking_tab, text="6. Acompanhamento")
+        self._scrollable_tabs: list[_ScrollableTab] = []
+
+        def scrollable_page() -> tuple[_ScrollableTab, ttk.Frame]:
+            page = _ScrollableTab(self.notebook)
+            self._scrollable_tabs.append(page)
+            return page, page.content
+
+        self.process_flow_page, self.process_flow_tab = scrollable_page()
+        self.general_page, self.general_tab = scrollable_page()
+        self.connections_page, self.connections_tab = scrollable_page()
+        self.tables_page, self.tables_tab = scrollable_page()
+        self.operations_page, self.operations_tab = scrollable_page()
+        self.tracking_page, self.tracking_tab = scrollable_page()
+        self.notebook.add(self.process_flow_page, text="1. Fluxo Processo")
+        self.notebook.add(self.general_page, text="2. Geral")
+        self.notebook.add(self.connections_page, text="3. Conexões")
+        self.notebook.add(self.tables_page, text="4. Tabelas")
+        self.notebook.add(self.operations_page, text="5. Executar")
+        self.notebook.add(self.tracking_page, text="6. Acompanhamento")
+        self.root.bind_all("<MouseWheel>", self._scroll_active_tab, add="+")
+        self.root.bind_all("<Button-4>", self._scroll_active_tab, add="+")
+        self.root.bind_all("<Button-5>", self._scroll_active_tab, add="+")
         self._build_process_flow_tab()
         self._build_general_tab()
         self._build_connections_tab()
@@ -1747,6 +1830,28 @@ class BcpGuiApplication:
             anchor="e",
         ).pack(side="left", padx=(8, 0))
         ttk.Label(footer, textvariable=self.operation_status).pack(side="left", padx=10)
+
+    def _scroll_active_tab(self, event: tk.Event) -> str | None:
+        widget = event.widget
+        if isinstance(widget, (tk.Text, tk.Listbox, ttk.Treeview)):
+            return None
+        selected = self.notebook.select()
+        for page in self._scrollable_tabs:
+            if str(page) != selected or not page.contains(widget):
+                continue
+            if getattr(event, "num", None) == 4:
+                units = -3
+            elif getattr(event, "num", None) == 5:
+                units = 3
+            else:
+                delta = int(getattr(event, "delta", 0))
+                if delta == 0:
+                    return None
+                magnitude = max(1, abs(delta) // 120)
+                units = -magnitude if delta > 0 else magnitude
+            page.scroll_vertical(units)
+            return "break"
+        return None
 
     def _build_process_flow_tab(self) -> None:
         tab = self.process_flow_tab

@@ -6,6 +6,10 @@ A interface `ttkbootstrap` usa o mesmo contrato V2 e o mesmo motor da CLI. Não
 existe uma segunda implementação da carga: as ações chamam os serviços de
 planejamento, DDL, execução, retomada, importação e consulta de estado.
 
+Todas as abas possuem rolagem vertical e horizontal. Em monitores menores, os
+campos e botões que ultrapassarem a área visível continuam acessíveis pelas
+barras ou pela roda do mouse. Logs e tabelas preservam sua rolagem própria.
+
 A aplicação é agnóstica de infraestrutura. Docker e portas fixas pertencem
 somente ao laboratório local.
 

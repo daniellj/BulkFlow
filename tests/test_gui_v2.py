@@ -1418,6 +1418,11 @@ class GuiConstructionTests(unittest.TestCase):
             root.withdraw()
             application = BcpGuiApplication(root)
             root.update_idletasks()
+            self.assertEqual(root.minsize(), (760, 520))
+            self.assertEqual(len(application._scrollable_tabs), 6)
+            for page in application._scrollable_tabs:
+                self.assertEqual(str(page.vertical.cget("orient")), "vertical")
+                self.assertEqual(str(page.horizontal.cget("orient")), "horizontal")
             self.assertEqual(
                 [
                     application.notebook.tab(index, "text")
