@@ -19,6 +19,7 @@ from bcp_engine.auth import (
     build_odbc_connection_string,
     build_odbc_request,
     minimal_subprocess_environment,
+    prompt_secret_environment_variable,
 )
 from bcp_engine.bcp import BcpRunner
 from bcp_engine.config import read_config
@@ -30,6 +31,31 @@ EXAMPLES = ROOT / "examples"
 
 
 class SecretProviderTests(unittest.TestCase):
+    def test_prompt_bridge_reuses_temporary_cli_environment_secret(self):
+        calls: list[str] = []
+        environment_name = prompt_secret_environment_variable("source")
+        self.assertIsNotNone(environment_name)
+        resolver = SecretResolver(
+            environment={str(environment_name): "senha temporária"},
+            prompt=lambda label: calls.append(label) or "não usar",
+        )
+        value = resolver.resolve(
+            {"provider": "prompt", "reference": None},
+            credential_key="source:sql:leitor",
+        )
+        self.assertEqual(value.reveal(), "senha temporária")
+        self.assertEqual(calls, [])
+
+    def test_prompt_bridge_unknown_endpoint_keeps_interactive_prompt(self):
+        calls: list[str] = []
+        resolver = SecretResolver(prompt=lambda label: calls.append(label) or "digitada")
+        value = resolver.resolve(
+            {"provider": "prompt", "reference": None},
+            credential_key="custom_endpoint:sql:leitor",
+        )
+        self.assertEqual(value.reveal(), "digitada")
+        self.assertEqual(len(calls), 1)
+
     def test_prompt_is_cached_per_explicit_endpoint_credential(self):
         calls: list[str] = []
         resolver = SecretResolver(prompt=lambda label: calls.append(label) or "s enhá;}[]")

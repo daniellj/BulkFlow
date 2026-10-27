@@ -482,6 +482,20 @@ fluxo CLI** copia a linha completa. Ela começa com `cd` para a pasta
 que contém os executáveis, usa `.\` antes de ambos e referencia o JSON salvo
 por seu caminho absoluto.
 
+Antes da execução, o PowerShell solicita cada credencial necessária uma única
+vez com entrada mascarada. Credenciais com a mesma instância, porta, tipo de
+autenticação, domínio e usuário são compartilhadas entre as duas etapas. A
+senha permanece somente na memória e em variáveis de ambiente temporárias do
+processo, removidas no encerramento mesmo em caso de erro; ela não é gravada no
+JSON, no comando nem nos logs. O console identifica explicitamente a etapa
+`1/2` (DDL) e a etapa `2/2` (exportação/importação).
+
+O botão **Executar fluxo CLI**, ao lado de **Copiar fluxo CLI**, salva a
+configuração e inicia esse mesmo ciclo pela GUI. Nesse caminho, as senhas já
+digitadas nas conexões são repassadas somente ao ambiente do processo filho e
+não são solicitadas novamente. Salvar ou recarregar o formulário durante essa
+ação preserva os campos mascarados apenas na memória da GUI.
+
 O botão `...` ao lado de **Diretório dos scripts** abre diretamente em
 `Local\BulkFlow\ddl` e permite selecionar outra pasta. O caminho absoluto
 escolhido é usado em `ddl --output` no fluxo sugerido.

@@ -277,7 +277,12 @@ class SecretResolver:
         if key in self._cache:
             return self._cache[key]
         if provider == "prompt":
-            value = self.prompt(prompt_label or f"Senha para {credential_key}: ")
+            endpoint_name = credential_key.split(":", 1)[0]
+            override_reference = prompt_secret_environment_variable(endpoint_name)
+            if override_reference and override_reference in self.environment:
+                value = self.environment[override_reference]
+            else:
+                value = self.prompt(prompt_label or f"Senha para {credential_key}: ")
         elif provider == "env":
             if reference not in self.environment:
                 raise AuthError(f"Variável de ambiente de segredo não definida: {reference}")
@@ -308,6 +313,19 @@ class SecretResolver:
         # Strings Python não oferecem zeroização confiável; remover referências é
         # a garantia honesta disponível neste processo.
         self._cache.clear()
+
+
+_PROMPT_SECRET_ENVIRONMENT_VARIABLES = {
+    "source": "BULKFLOW_PROMPT_PASSWORD_SOURCE",
+    "bronze_destination": "BULKFLOW_PROMPT_PASSWORD_BRONZE_DESTINATION",
+    "landing_destination": "BULKFLOW_PROMPT_PASSWORD_LANDING_DESTINATION",
+}
+
+
+def prompt_secret_environment_variable(endpoint_name: str) -> str | None:
+    """Return the temporary CLI bridge variable for a prompt endpoint."""
+
+    return _PROMPT_SECRET_ENVIRONMENT_VARIABLES.get(endpoint_name)
 
 
 def _brace(value: Any) -> str:

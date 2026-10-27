@@ -481,6 +481,20 @@ next table starts. **Copiar fluxo CLI** copies the complete line. It starts
 with `cd` to the executable directory, uses the `.\` prefix for both
 executables, and references the saved JSON by its absolute path.
 
+Before execution, PowerShell requests each required credential once using
+masked input. Credentials with the same instance, port, authentication type,
+domain, and username are shared by both stages. Passwords remain only in
+memory and in temporary process environment variables, which are removed on
+exit even after an error; they are never written to the JSON, command, or
+logs. The console clearly identifies stage `1/2` (DDL) and stage `2/2`
+(export/import).
+
+**Executar fluxo CLI**, beside **Copiar fluxo CLI**, saves the configuration
+and starts the same cycle from the GUI. In this path, passwords already entered
+for the connections are passed only through the child process environment and
+are not requested again. Saving or reloading the form during this action keeps
+the masked fields only in GUI memory.
+
 The `...` button beside **Diretório dos scripts** opens directly in
 `Local\BulkFlow\ddl` and allows another directory to be selected. The chosen
 absolute path is used by `ddl --output` in the suggested workflow.

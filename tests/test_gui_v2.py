@@ -891,12 +891,41 @@ class GuiConstructionTests(unittest.TestCase):
         self.assertIn(r"; .\BulkFlowCLI.exe ddl --config", load)
         self.assertIn("--area both", load)
         self.assertIn("--apply --confirm", load)
-        self.assertIn("if ($LASTEXITCODE -eq 0)", load)
+        self.assertIn("Etapa 1/2", load)
+        self.assertIn("Etapa 2/2", load)
+        self.assertIn("a carga nao foi iniciada", load)
         self.assertIn(r".\BulkFlowCLI.exe run --config", load)
         self.assertLess(load.index(" ddl "), load.index(" run "))
         self.assertIn(str(path.resolve()), load)
         self.assertIn(str(ddl_output.resolve()), load)
         self.assertIn("--confirm-load", load)
+        credentials = (
+            ("BULKFLOW_PROMPT_PASSWORD_SOURCE", "Senha compartilhada", "same-login"),
+            (
+                "BULKFLOW_PROMPT_PASSWORD_BRONZE_DESTINATION",
+                "Senha compartilhada",
+                "same-login",
+            ),
+        )
+        secured = build_cli_workflow_command(
+            path,
+            execute_import=True,
+            ddl_area="both",
+            ddl_output=ddl_output,
+            cli_directory=ROOT / "release",
+            prompt_credentials=credentials,
+        )
+        self.assertEqual(secured.count("Read-Host"), 1)
+        self.assertIn("-AsSecureString", secured)
+        self.assertIn("$env:BULKFLOW_PROMPT_PASSWORD_SOURCE", secured)
+        self.assertIn("$env:BULKFLOW_PROMPT_PASSWORD_BRONZE_DESTINATION", secured)
+        self.assertIn("try {", secured)
+        self.assertIn("finally {", secured)
+        self.assertIn("Remove-Item Env:BULKFLOW_PROMPT_PASSWORD_SOURCE", secured)
+        self.assertIn(
+            "Remove-Item Env:BULKFLOW_PROMPT_PASSWORD_BRONZE_DESTINATION", secured
+        )
+        self.assertNotIn("senha-real", secured)
         export = build_cli_workflow_command(
             path,
             execute_import=False,

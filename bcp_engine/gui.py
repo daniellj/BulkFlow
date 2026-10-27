@@ -10,6 +10,7 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
 import queue
 import re
@@ -17,7 +18,7 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Sequence
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
@@ -26,7 +27,11 @@ from tkinter.scrolledtext import ScrolledText
 import ttkbootstrap as ttk
 from ttkbootstrap.widgets import ToolTip
 
-from .auth import AuthError, SecretResolver
+from .auth import (
+    AuthError,
+    SecretResolver,
+    prompt_secret_environment_variable,
+)
 from .config import MAX_CDC_RETENTION_MINUTES, read_config, validate_config
 from .engine import BcpEngine
 from .gui_model import (
@@ -267,6 +272,7 @@ def build_cli_workflow_command(
     ddl_area: str | None,
     ddl_output: str | Path,
     cli_directory: str | Path = CLI_EXECUTABLE_DIRECTORY,
+    prompt_credentials: Sequence[tuple[str, str, str]] = (),
 ) -> str:
     """Build a fail-fast PowerShell workflow for idempotent DDL then load."""
 
@@ -299,10 +305,52 @@ def build_cli_workflow_command(
     run_arguments = [r".\BulkFlowCLI.exe", "run", "--config", resolved_config]
     run_arguments.append("--confirm-load" if execute_import else "--export-only")
     run = subprocess.list2cmdline(run_arguments)
-    return (
-        f"{change_directory}; {ddl}; "
-        f"if ($LASTEXITCODE -eq 0) {{ {run} }}"
+
+    def ps_literal(value: str) -> str:
+        return "'" + value.replace("'", "''") + "'"
+
+    grouped: dict[str, list[tuple[str, str]]] = {}
+    for environment_name, label, identity in prompt_credentials:
+        grouped.setdefault(identity, []).append((environment_name, label))
+    secret_setup: list[str] = []
+    secret_cleanup: list[str] = []
+    for index, entries in enumerate(grouped.values(), start=1):
+        variable = f"$bulkFlowPassword{index}"
+        label = entries[0][1]
+        secret_setup.append(
+            f"{variable} = [System.Net.NetworkCredential]::new('', "
+            f"(Read-Host {ps_literal(label)} -AsSecureString)).Password"
+        )
+        for environment_name, _label in entries:
+            secret_setup.append(f"$env:{environment_name} = {variable}")
+            secret_cleanup.append(
+                f"Remove-Item Env:{environment_name} -ErrorAction SilentlyContinue"
+            )
+        secret_cleanup.append(f"{variable} = $null")
+
+    run_stage = (
+        "Exportar e importar dados, uma tabela por vez"
+        if execute_import
+        else "Exportar dados, uma tabela por vez"
     )
+    workflow = (
+        "Write-Host '[BulkFlow] Etapa 1/2 - Criar ou atualizar estruturas com "
+        f"DDL idempotente'; {ddl}; "
+        "if ($LASTEXITCODE -ne 0) { throw '[BulkFlow] Falha na etapa 1/2; "
+        "a carga nao foi iniciada.' }; "
+        f"Write-Host '[BulkFlow] Etapa 2/2 - {run_stage}'; {run}; "
+        "if ($LASTEXITCODE -ne 0) { throw '[BulkFlow] Falha na etapa 2/2.' }"
+    )
+    if secret_setup:
+        workflow = (
+            "; ".join(secret_setup)
+            + "; try { "
+            + workflow
+            + " } finally { "
+            + "; ".join(secret_cleanup)
+            + " }"
+        )
+    return f"{change_directory}; {workflow}"
 
 
 def build_run_confirmation(*, execute_import: bool, destination_database: str) -> str:
@@ -1705,12 +1753,59 @@ class BcpGuiApplication:
             if ddl_areas
             else None
         )
+        prompt_credentials: list[tuple[str, str, str]] = []
+        credential_groups: dict[str, list[tuple[str, str]]] = {}
+        for endpoint_name in (
+            "source",
+            "bronze_destination",
+            "landing_destination",
+        ):
+            if endpoint_name != "source" and not bool(
+                self.endpoint_enabled[endpoint_name].get()
+            ):
+                continue
+            variables = self.endpoint_variables[endpoint_name]
+            authentication_type = AUTHENTICATION_LABELS.get(
+                str(variables["authentication_type"].get()), ""
+            )
+            secret_provider = SECRET_PROVIDER_LABELS.get(
+                str(variables["secret_provider"].get()), ""
+            )
+            environment_name = prompt_secret_environment_variable(endpoint_name)
+            if (
+                authentication_type not in {"sql", "windows_credentials"}
+                or secret_provider != "prompt"
+                or environment_name is None
+            ):
+                continue
+            username = str(variables["username"].get()).strip()
+            identity = "|".join(
+                (
+                    str(variables["instance"].get()).strip().casefold(),
+                    str(variables["port"].get()).strip(),
+                    authentication_type,
+                    str(variables["domain"].get()).strip().casefold(),
+                    username.casefold(),
+                )
+            )
+            credential_groups.setdefault(identity, []).append(
+                (environment_name, CONNECTION_TAB_TITLES[endpoint_name])
+            )
+        for identity, entries in credential_groups.items():
+            endpoint_names = " / ".join(label for _environment, label in entries)
+            username = identity.rsplit("|", 1)[-1] or "usuário configurado"
+            prompt_label = f"Senha de {username} para {endpoint_names}"
+            prompt_credentials.extend(
+                (environment_name, prompt_label, identity)
+                for environment_name, _label in entries
+            )
         self.cli_command_proposal.set(
             build_cli_workflow_command(
                 self.current_config_path,
                 execute_import=bool(self.global_variables["execute_import"].get()),
                 ddl_area=cli_ddl_area,
                 ddl_output=self.ddl_output.get(),
+                prompt_credentials=prompt_credentials,
             )
         )
 
@@ -3534,6 +3629,13 @@ class BcpGuiApplication:
             command=self._copy_cli_command,
             bootstyle="outline-secondary",
         ).grid(row=0, column=2, padx=4)
+        execute_cli = ttk.Button(
+            cli_hint,
+            text="Executar fluxo CLI",
+            command=self._execute_cli_workflow,
+            bootstyle="success",
+        )
+        execute_cli.grid(row=0, column=3, padx=4)
 
         notice = ttk.Label(
             tab,
@@ -3547,7 +3649,18 @@ class BcpGuiApplication:
         notice.grid(row=4, column=0, sticky="w", pady=(0, 2))
 
         self.action_buttons.extend(
-            [install, verify, plan, generate, apply_ddl, run, resume, status, import_manifests]
+            [
+                install,
+                verify,
+                plan,
+                generate,
+                apply_ddl,
+                run,
+                resume,
+                status,
+                import_manifests,
+                execute_cli,
+            ]
         )
         self._update_prerequisite_descriptions()
 
@@ -3837,6 +3950,75 @@ class BcpGuiApplication:
         self.root.clipboard_clear()
         self.root.clipboard_append(command)
         self.operation_status.set("Fluxo completo da CLI copiado")
+
+    def _execute_cli_workflow(self) -> None:
+        if self.busy:
+            return
+        if not self._save_configuration():
+            return
+        config = self._prepare_operation()
+        if config is None or self.current_config_path is None:
+            return
+        ddl_areas = [
+            area
+            for endpoint_name, area in (
+                ("bronze_destination", "bronze"),
+                ("landing_destination", "landing"),
+            )
+            if config.get(endpoint_name) is not None
+            and str(config[endpoint_name].get("role"))
+            in {"structure_and_data", "structure_only"}
+        ]
+        ddl_area = "both" if len(ddl_areas) == 2 else ddl_areas[0] if ddl_areas else None
+        command = build_cli_workflow_command(
+            self.current_config_path,
+            execute_import=bool(config.get("execute_import")),
+            ddl_area=ddl_area,
+            ddl_output=self.ddl_output.get(),
+        )
+        if ddl_area is None:
+            messagebox.showinfo("Fluxo da CLI", command, parent=self.root)
+            return
+        environment = os.environ.copy()
+        for endpoint_name, password in self._operation_passwords.items():
+            environment_name = prompt_secret_environment_variable(endpoint_name)
+            if environment_name:
+                environment[environment_name] = password
+
+        def operation() -> str:
+            process = subprocess.Popen(
+                [
+                    "powershell.exe",
+                    "-NoLogo",
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-Command",
+                    command,
+                ],
+                cwd=str(CLI_EXECUTABLE_DIRECTORY),
+                env=environment,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            assert process.stdout is not None
+            for line in process.stdout:
+                rendered = line.rstrip()
+                if rendered:
+                    self.worker_queue.put(("cli_output", rendered))
+            return_code = process.wait()
+            if return_code != 0:
+                raise RuntimeError(
+                    "Fluxo CLI encerrado com código "
+                    f"{return_code}. Consulte as mensagens acima."
+                )
+            return "Fluxo CLI concluído com sucesso."
+
+        self._start_worker("Executando fluxo CLI", operation)
 
     def _endpoint_form_values(self, key: str) -> dict[str, Any]:
         variables = self.endpoint_variables[key]
@@ -4250,9 +4432,15 @@ class BcpGuiApplication:
             if not selected:
                 return False
             path = Path(selected)
+        preserved_passwords = {
+            endpoint_name: str(variables["password"].get())
+            for endpoint_name, variables in self.endpoint_variables.items()
+        }
         try:
             write_config_atomic(path, config)
             self._load_config_into_form(config, path=path)
+            for endpoint_name, password in preserved_passwords.items():
+                self.endpoint_variables[endpoint_name]["password"].set(password)
         except Exception as error:
             messagebox.showerror(
                 "Não foi possível salvar", redacted_exception(error), parent=self.root
@@ -4751,6 +4939,8 @@ class BcpGuiApplication:
                     self._handle_secret_prompt(payload)
                 elif kind == "execution_id":
                     self.execution_id.set(str(payload))
+                elif kind == "cli_output":
+                    self._append_log(str(payload))
                 elif kind == "success":
                     self._append_log(str(payload))
                     self._finish_worker(success=True)
