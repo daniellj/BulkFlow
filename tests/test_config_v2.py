@@ -259,6 +259,46 @@ class ConfigValidationTests(unittest.TestCase):
         ):
             validate_config(exact)
 
+    def test_temporary_execution_package_requires_dpapi_for_every_password(self):
+        package = read_config(EXAMPLES / "config.auth-sql.json")
+        package["execution_package"] = {
+            "temporary": True,
+            "delete_on_success": True,
+            "protection": "windows_dpapi_local_machine",
+        }
+        for endpoint_name in (
+            "source",
+            "bronze_destination",
+            "landing_destination",
+        ):
+            endpoint = package.get(endpoint_name)
+            if endpoint and endpoint["authentication"]["type"] != "windows_integrated":
+                endpoint["authentication"]["password"] = {
+                    "provider": "windows_dpapi",
+                    "reference": f"ciphertext-{endpoint_name}",
+                }
+        normalized = validate_config(package)
+        self.assertTrue(normalized["execution_package"]["delete_on_success"])
+
+        invalid = copy.deepcopy(package)
+        password_endpoint = next(
+            endpoint_name
+            for endpoint_name in (
+                "source",
+                "bronze_destination",
+                "landing_destination",
+            )
+            if invalid.get(endpoint_name)
+            and invalid[endpoint_name]["authentication"]["type"]
+            != "windows_integrated"
+        )
+        invalid[password_endpoint]["authentication"]["password"] = {
+            "provider": "prompt",
+            "reference": None,
+        }
+        with self.assertRaisesRegex(ConfigError, "provider=windows_dpapi"):
+            validate_config(invalid)
+
     def test_cdc_retention_defaults_and_requires_positive_sql_int(self):
         without_explicit_value = copy.deepcopy(self.full)
         without_explicit_value.pop("cdc_retention_minutes", None)

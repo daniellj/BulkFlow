@@ -257,6 +257,14 @@ only a secret reference in the JSON (`prompt`, `env`, or
 examples. The last provider is Windows-only. An environment variable is not
 encryption; limit its lifetime and remove it after execution.
 
+One-time packages saved by the GUI may use `windows_dpapi`. Its reference is a
+machine-scoped Windows DPAPI payload, and every password-bearing connection in
+the package must use that provider. The complete workflow suggested by the GUI
+deletes the JSON only after DDL and load both return zero; failure, a partial
+result, or cancellation preserves it. The scheduled CLI must run on the same
+machine that created the package, and the JSON read ACL must be limited to the
+executor and administrators.
+
 In the lab, all three endpoints use `u684`, but they do not share one reference
 by contract: use `BCP_SOURCE_SQL_PASSWORD`, `BCP_BRONZE_SQL_PASSWORD`, and
 `BCP_LANDING_SQL_PASSWORD`. In actual environments, each reference may resolve

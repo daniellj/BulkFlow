@@ -899,6 +899,17 @@ class GuiConstructionTests(unittest.TestCase):
         self.assertIn(str(path.resolve()), load)
         self.assertIn(str(ddl_output.resolve()), load)
         self.assertIn("--confirm-load", load)
+        temporary = build_cli_workflow_command(
+            path,
+            execute_import=True,
+            ddl_area="both",
+            ddl_output=ddl_output,
+            cli_directory=ROOT / "release",
+            delete_config_on_success=True,
+        )
+        self.assertIn("Remove-Item -LiteralPath", temporary)
+        self.assertIn("Pacote temporario removido com sucesso", temporary)
+        self.assertGreater(temporary.index("Remove-Item"), temporary.index(" run "))
         credentials = (
             ("BULKFLOW_PROMPT_PASSWORD_SOURCE", "Senha compartilhada", "same-login"),
             (
@@ -953,6 +964,35 @@ class GuiConstructionTests(unittest.TestCase):
                 ddl_output=ddl_output,
             ),
         )
+
+    def test_temporary_package_encrypts_passwords_and_never_keeps_plaintext(self):
+        try:
+            from bcp_engine.gui import build_temporary_execution_package
+        except ImportError as error:  # pragma: no cover
+            self.skipTest(f"Dependência gráfica indisponível: {error}")
+        from bcp_engine.config import read_config
+
+        config = read_config(ROOT / "examples" / "config.auth-sql.json")
+        passwords = {
+            "source": "source-secret",
+            "bronze_destination": "bronze-secret",
+            "landing_destination": "landing-secret",
+        }
+        encrypted = build_temporary_execution_package(
+            config,
+            config,
+            passwords,
+            protector=lambda value: "encrypted:" + value[::-1],
+        )
+        serialized = json.dumps(encrypted)
+        for password in passwords.values():
+            self.assertNotIn(password, serialized)
+        self.assertTrue(encrypted["execution_package"]["delete_on_success"])
+        for endpoint_name in passwords:
+            self.assertEqual(
+                encrypted[endpoint_name]["authentication"]["password"]["provider"],
+                "windows_dpapi",
+            )
 
     def test_save_dialog_opens_at_bulkflow_local_config_directory(self):
         try:

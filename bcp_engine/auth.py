@@ -268,7 +268,7 @@ class SecretResolver:
         reference = spec.get("reference")
         if provider == "prompt":
             key = ("prompt", credential_key)
-        elif provider in {"env", "windows_credential_manager"} and isinstance(reference, str) and reference:
+        elif provider in {"env", "windows_credential_manager", "windows_dpapi"} and isinstance(reference, str) and reference:
             # A mesma referência em dois endpoints é compartilhamento explícito,
             # nunca inferência por usuário/host.
             key = (provider, reference)
@@ -287,8 +287,12 @@ class SecretResolver:
             if reference not in self.environment:
                 raise AuthError(f"Variável de ambiente de segredo não definida: {reference}")
             value = self.environment[reference]
-        else:
+        elif provider == "windows_credential_manager":
             value = self.credential_reader(reference)
+        else:
+            from .windows_dpapi import unprotect_machine_secret
+
+            value = unprotect_machine_secret(reference)
         if not isinstance(value, str):
             raise AuthError("Provedor de segredo retornou valor que não é texto")
         secret = SecretValue(value, self.redactor)

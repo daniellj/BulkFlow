@@ -67,6 +67,7 @@ ROOT_KEYS = {
     "bcp_executable", "connection_timeout_seconds", "sql_timeout_seconds",
     "bcp_timeout_seconds", "cdc_retention_minutes", "control_schema", "tls",
     "artifact_reader_sids", "artifact_writer_sids",
+    "execution_package",
 }
 ENDPOINT_KEYS = {
     "role", "instance", "port", "database", "read_database", "schema", "structure_profile",
@@ -325,9 +326,9 @@ def validate_secret_spec(value: Any, field: str) -> dict[str, Any]:
     spec = _mapping(value, field)
     _unknown_keys(spec, SECRET_KEYS, field)
     provider = spec.get("provider")
-    if provider not in {"prompt", "env", "windows_credential_manager"}:
+    if provider not in {"prompt", "env", "windows_credential_manager", "windows_dpapi"}:
         raise ConfigError(
-            f"{field}.provider deve ser prompt, env ou windows_credential_manager"
+            f"{field}.provider deve ser prompt, env, windows_credential_manager ou windows_dpapi"
         )
     reference = spec.get("reference")
     if provider == "prompt":
@@ -753,6 +754,22 @@ def validate_config(value: Any) -> dict[str, Any]:
     cfg["active_destination"] = cfg.get("active_destination")
     if cfg["active_destination"] not in DESTINATION_KEYS:
         raise ConfigError("active_destination deve ser bronze ou landing")
+    if "execution_package" in cfg:
+        package = _mapping(cfg["execution_package"], "execution_package")
+        _unknown_keys(
+            package,
+            {"temporary", "delete_on_success", "protection"},
+            "execution_package",
+        )
+        if package.get("temporary") is not True or package.get("delete_on_success") is not True:
+            raise ConfigError(
+                "execution_package exige temporary=true e delete_on_success=true"
+            )
+        if package.get("protection") != "windows_dpapi_local_machine":
+            raise ConfigError(
+                "execution_package.protection deve ser windows_dpapi_local_machine"
+            )
+        cfg["execution_package"] = dict(package)
     for key in (
         "execute_import", "create_structure_if_needed",
         "delete_confirmed_files", "delete_completed_table_artifacts",
@@ -834,6 +851,20 @@ def validate_config(value: Any) -> dict[str, Any]:
             )
         else:
             cfg.pop(key, None)
+    if "execution_package" in cfg:
+        for endpoint_name in (
+            "source",
+            "bronze_destination",
+            "landing_destination",
+        ):
+            endpoint = cfg.get(endpoint_name)
+            if endpoint is None or endpoint["authentication"]["type"] == "windows_integrated":
+                continue
+            if endpoint["authentication"]["password"]["provider"] != "windows_dpapi":
+                raise ConfigError(
+                    "execution_package exige provider=windows_dpapi em todas as "
+                    "conexões que utilizam senha"
+                )
     data_areas = data_destination_areas(cfg)
     if len(data_areas) > 1:
         raise ConfigError(

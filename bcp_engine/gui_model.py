@@ -33,6 +33,7 @@ SECRET_PROVIDER_LABELS: dict[str, str] = {
     "Solicitar ao executar": "prompt",
     "Variável de ambiente": "env",
     "Gerenciador de Credenciais do Windows": "windows_credential_manager",
+    "Pacote temporário criptografado (DPAPI)": "windows_dpapi",
 }
 DESTINATION_LABELS: dict[str, str] = {
     "Destino 01": "bronze",
@@ -582,7 +583,12 @@ def build_authentication(
         raise ValueError("Tipo de autenticação inválido")
     if not username.strip():
         raise ValueError("Usuário é obrigatório para a autenticação selecionada")
-    if secret_provider not in {"prompt", "env", "windows_credential_manager"}:
+    if secret_provider not in {
+        "prompt",
+        "env",
+        "windows_credential_manager",
+        "windows_dpapi",
+    }:
         raise ValueError("Provedor de senha inválido")
     if secret_provider != "prompt" and not secret_reference.strip():
         raise ValueError("Referência do segredo é obrigatória para o provedor selecionado")

@@ -10,7 +10,6 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass
 import json
-import os
 from pathlib import Path
 import queue
 import re
@@ -82,6 +81,7 @@ from .watermark_validation import (
     render_watermark_validation_sql,
     watermark_validation_filename,
 )
+from .windows_dpapi import protect_machine_secret
 
 
 RUNTIME_DATA_ROOT = runtime_data_root()
@@ -273,6 +273,7 @@ def build_cli_workflow_command(
     ddl_output: str | Path,
     cli_directory: str | Path = CLI_EXECUTABLE_DIRECTORY,
     prompt_credentials: Sequence[tuple[str, str, str]] = (),
+    delete_config_on_success: bool = False,
 ) -> str:
     """Build a fail-fast PowerShell workflow for idempotent DDL then load."""
 
@@ -341,6 +342,12 @@ def build_cli_workflow_command(
         f"Write-Host '[BulkFlow] Etapa 2/2 - {run_stage}'; {run}; "
         "if ($LASTEXITCODE -ne 0) { throw '[BulkFlow] Falha na etapa 2/2.' }"
     )
+    if delete_config_on_success:
+        workflow += (
+            "; Write-Host '[BulkFlow] Fluxo concluido; removendo o pacote temporario'; "
+            f"Remove-Item -LiteralPath {ps_literal(resolved_config)} -Force -ErrorAction Stop; "
+            "Write-Host '[BulkFlow] Pacote temporario removido com sucesso'"
+        )
     if secret_setup:
         workflow = (
             "; ".join(secret_setup)
@@ -351,6 +358,50 @@ def build_cli_workflow_command(
             + " }"
         )
     return f"{change_directory}; {workflow}"
+
+
+def build_temporary_execution_package(
+    config: Mapping[str, Any],
+    previous_config: Mapping[str, Any],
+    passwords: Mapping[str, str],
+    *,
+    protector: Callable[[str], str] = protect_machine_secret,
+) -> dict[str, Any]:
+    """Return a validated one-time config with only DPAPI-encrypted passwords."""
+
+    package = deepcopy(dict(config))
+    for endpoint_name in (
+        "source",
+        "bronze_destination",
+        "landing_destination",
+    ):
+        endpoint = package.get(endpoint_name)
+        if endpoint is None or endpoint["authentication"]["type"] == "windows_integrated":
+            continue
+        password = str(passwords.get(endpoint_name, ""))
+        if password:
+            endpoint["authentication"]["password"] = {
+                "provider": "windows_dpapi",
+                "reference": protector(password),
+            }
+            continue
+        previous = previous_config.get(endpoint_name) or {}
+        previous_secret = (
+            (previous.get("authentication") or {}).get("password") or {}
+        )
+        if previous_secret.get("provider") != "windows_dpapi":
+            raise ValueError(
+                "Informe a senha mascarada em Conexões -> "
+                + CONNECTION_TAB_TITLES[endpoint_name]
+                + "."
+            )
+        endpoint["authentication"]["password"] = dict(previous_secret)
+    package["execution_package"] = {
+        "temporary": True,
+        "delete_on_success": True,
+        "protection": "windows_dpapi_local_machine",
+    }
+    return validate_config(package)
 
 
 def build_run_confirmation(*, execute_import: bool, destination_database: str) -> str:
@@ -1806,6 +1857,11 @@ class BcpGuiApplication:
                 ddl_area=cli_ddl_area,
                 ddl_output=self.ddl_output.get(),
                 prompt_credentials=prompt_credentials,
+                delete_config_on_success=bool(
+                    (self.base_config.get("execution_package") or {}).get(
+                        "delete_on_success"
+                    )
+                ),
             )
         )
 
@@ -3629,13 +3685,6 @@ class BcpGuiApplication:
             command=self._copy_cli_command,
             bootstyle="outline-secondary",
         ).grid(row=0, column=2, padx=4)
-        execute_cli = ttk.Button(
-            cli_hint,
-            text="Executar fluxo CLI",
-            command=self._execute_cli_workflow,
-            bootstyle="success",
-        )
-        execute_cli.grid(row=0, column=3, padx=4)
 
         notice = ttk.Label(
             tab,
@@ -3659,7 +3708,6 @@ class BcpGuiApplication:
                 resume,
                 status,
                 import_manifests,
-                execute_cli,
             ]
         )
         self._update_prerequisite_descriptions()
@@ -3951,75 +3999,6 @@ class BcpGuiApplication:
         self.root.clipboard_append(command)
         self.operation_status.set("Fluxo completo da CLI copiado")
 
-    def _execute_cli_workflow(self) -> None:
-        if self.busy:
-            return
-        if not self._save_configuration():
-            return
-        config = self._prepare_operation()
-        if config is None or self.current_config_path is None:
-            return
-        ddl_areas = [
-            area
-            for endpoint_name, area in (
-                ("bronze_destination", "bronze"),
-                ("landing_destination", "landing"),
-            )
-            if config.get(endpoint_name) is not None
-            and str(config[endpoint_name].get("role"))
-            in {"structure_and_data", "structure_only"}
-        ]
-        ddl_area = "both" if len(ddl_areas) == 2 else ddl_areas[0] if ddl_areas else None
-        command = build_cli_workflow_command(
-            self.current_config_path,
-            execute_import=bool(config.get("execute_import")),
-            ddl_area=ddl_area,
-            ddl_output=self.ddl_output.get(),
-        )
-        if ddl_area is None:
-            messagebox.showinfo("Fluxo da CLI", command, parent=self.root)
-            return
-        environment = os.environ.copy()
-        for endpoint_name, password in self._operation_passwords.items():
-            environment_name = prompt_secret_environment_variable(endpoint_name)
-            if environment_name:
-                environment[environment_name] = password
-
-        def operation() -> str:
-            process = subprocess.Popen(
-                [
-                    "powershell.exe",
-                    "-NoLogo",
-                    "-NoProfile",
-                    "-ExecutionPolicy",
-                    "Bypass",
-                    "-Command",
-                    command,
-                ],
-                cwd=str(CLI_EXECUTABLE_DIRECTORY),
-                env=environment,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
-            assert process.stdout is not None
-            for line in process.stdout:
-                rendered = line.rstrip()
-                if rendered:
-                    self.worker_queue.put(("cli_output", rendered))
-            return_code = process.wait()
-            if return_code != 0:
-                raise RuntimeError(
-                    "Fluxo CLI encerrado com código "
-                    f"{return_code}. Consulte as mensagens acima."
-                )
-            return "Fluxo CLI concluído com sucesso."
-
-        self._start_worker("Executando fluxo CLI", operation)
-
     def _endpoint_form_values(self, key: str) -> dict[str, Any]:
         variables = self.endpoint_variables[key]
         result = {name: variable.get() for name, variable in variables.items()}
@@ -4041,7 +4020,10 @@ class BcpGuiApplication:
             str(result["secret_provider"]),
             "Provedor da senha",
         )
-        if result["authentication_type"] in {"sql", "windows_credentials"}:
+        if (
+            result["authentication_type"] in {"sql", "windows_credentials"}
+            and result["secret_provider"] != "windows_dpapi"
+        ):
             result["secret_provider"] = "prompt"
             result["secret_reference"] = ""
         result.pop("password", None)
@@ -4419,6 +4401,62 @@ class BcpGuiApplication:
                 "Configuração inválida", redacted_exception(error), parent=self.root
             )
             return False
+        preserved_passwords = {
+            endpoint_name: str(variables["password"].get())
+            for endpoint_name, variables in getattr(
+                self, "endpoint_variables", {}
+            ).items()
+        }
+        entered_passwords = {
+            endpoint_name: password
+            for endpoint_name, password in preserved_passwords.items()
+            if password
+        }
+        if entered_passwords:
+            encrypted_package = messagebox.askyesnocancel(
+                "Configuração para execução CLI",
+                "Incluir as credenciais SQL criptografadas com DPAPI para permitir "
+                "execução pontual e não interativa?\n\n"
+                "Sim: o JSON será um pacote temporário, válido somente nesta máquina, "
+                "e o fluxo CLI sugerido o excluirá após sucesso completo. Em falha ou "
+                "cancelamento, ele será preservado para retomada.\n\n"
+                "Não: nenhuma senha será salva e a CLI solicitará as credenciais.",
+                parent=self.root,
+            )
+            if encrypted_package is None:
+                return False
+        else:
+            encrypted_package = any(
+                str(
+                    (((self.base_config.get(name) or {}).get("authentication") or {}).get("password") or {}).get("provider")
+                )
+                == "windows_dpapi"
+                for name in getattr(self, "endpoint_variables", {})
+            )
+        if encrypted_package:
+            try:
+                config = build_temporary_execution_package(
+                    config,
+                    self.base_config,
+                    preserved_passwords,
+                )
+            except Exception as error:
+                messagebox.showerror(
+                    "Não foi possível proteger as credenciais",
+                    redacted_exception(error),
+                    parent=self.root,
+                )
+                return False
+        else:
+            config.pop("execution_package", None)
+            for endpoint_name in getattr(self, "endpoint_variables", {}):
+                endpoint = config.get(endpoint_name)
+                if endpoint is None or endpoint["authentication"]["type"] == "windows_integrated":
+                    continue
+                endpoint["authentication"]["password"] = {
+                    "provider": "prompt",
+                    "reference": None,
+                }
         path = self.current_config_path
         if save_as or path is None:
             selected = filedialog.asksaveasfilename(
@@ -4432,10 +4470,6 @@ class BcpGuiApplication:
             if not selected:
                 return False
             path = Path(selected)
-        preserved_passwords = {
-            endpoint_name: str(variables["password"].get())
-            for endpoint_name, variables in self.endpoint_variables.items()
-        }
         try:
             write_config_atomic(path, config)
             self._load_config_into_form(config, path=path)
@@ -4939,8 +4973,6 @@ class BcpGuiApplication:
                     self._handle_secret_prompt(payload)
                 elif kind == "execution_id":
                     self.execution_id.set(str(payload))
-                elif kind == "cli_output":
-                    self._append_log(str(payload))
                 elif kind == "success":
                     self._append_log(str(payload))
                     self._finish_worker(success=True)

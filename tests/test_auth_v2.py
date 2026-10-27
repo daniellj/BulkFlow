@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 import sys
 import unittest
@@ -24,6 +25,7 @@ from bcp_engine.auth import (
 from bcp_engine.bcp import BcpRunner
 from bcp_engine.config import read_config
 from bcp_engine.util import REDACTED, RedactingFormatter, SecretRedactor
+from bcp_engine.windows_dpapi import protect_machine_secret, unprotect_machine_secret
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -31,6 +33,23 @@ EXAMPLES = ROOT / "examples"
 
 
 class SecretProviderTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == "nt", "DPAPI is Windows-only")
+    def test_windows_dpapi_machine_scope_round_trip(self):
+        plaintext = "senha SQL pontual çã;{}"
+        ciphertext = protect_machine_secret(plaintext)
+        self.assertNotIn(plaintext, ciphertext)
+        self.assertEqual(unprotect_machine_secret(ciphertext), plaintext)
+
+    @patch("bcp_engine.windows_dpapi.unprotect_machine_secret", return_value="dpapi-secret")
+    def test_windows_dpapi_provider_is_resolved_and_cached(self, decrypt):
+        resolver = SecretResolver()
+        spec = {"provider": "windows_dpapi", "reference": "ciphertext"}
+        first = resolver.resolve(spec, credential_key="source:sql:u684")
+        second = resolver.resolve(spec, credential_key="source:sql:u684")
+        self.assertIs(first, second)
+        self.assertEqual(first.reveal(), "dpapi-secret")
+        decrypt.assert_called_once_with("ciphertext")
+
     def test_prompt_bridge_reuses_temporary_cli_environment_secret(self):
         calls: list[str] = []
         environment_name = prompt_secret_environment_variable("source")

@@ -489,11 +489,16 @@ exit even after an error; they are never written to the JSON, command, or
 logs. The console clearly identifies stage `1/2` (DDL) and stage `2/2`
 (export/import).
 
-**Executar fluxo CLI**, beside **Copiar fluxo CLI**, saves the configuration
-and starts the same cycle from the GUI. In this path, passwords already entered
-for the connections are passed only through the child process environment and
-are not requested again. Saving or reloading the form during this action keeps
-the masked fields only in GUI memory.
+When **Salvar configuração para GUI/CLI** is used with populated password
+fields, the GUI offers to create a non-interactive one-time package. If
+confirmed, each password is encrypted with machine-scoped Windows DPAPI; the
+JSON never contains plaintext or hashed passwords. The suggested workflow runs
+DDL and load without prompting and deletes the JSON only after both commands
+return zero. Failure, a partial result, or cancellation preserves the package
+for resume. Because DPAPI is machine-scoped, keep the file on that host and
+restrict its read ACL to the executor identity (for example, SQL Server Agent)
+and administrators. Choosing **No** keeps the JSON password-free and retains
+masked terminal prompts.
 
 The `...` button beside **Diretório dos scripts** opens directly in
 `Local\BulkFlow\ddl` and allows another directory to be selected. The chosen

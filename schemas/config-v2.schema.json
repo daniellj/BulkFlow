@@ -44,6 +44,16 @@
       "description": "Rota interna do único destino cuja função inclui dados. Quando execute_import=true, deve coincidir com a função dos destinos."
     },
     "execute_import": {"type": "boolean", "default": true},
+    "execution_package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["temporary", "delete_on_success"],
+      "properties": {
+        "temporary": {"const": true},
+        "delete_on_success": {"const": true},
+        "protection": {"const": "windows_dpapi_local_machine"}
+      }
+    },
     "create_structure_if_needed": {
       "type": "boolean",
       "default": true,
@@ -412,7 +422,7 @@
           "additionalProperties": false,
           "required": ["provider", "reference"],
           "properties": {
-            "provider": {"enum": ["env", "windows_credential_manager"]},
+            "provider": {"enum": ["env", "windows_credential_manager", "windows_dpapi"]},
             "reference": {"type": "string", "minLength": 1}
           }
         }

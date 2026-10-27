@@ -490,11 +490,16 @@ processo, removidas no encerramento mesmo em caso de erro; ela não é gravada n
 JSON, no comando nem nos logs. O console identifica explicitamente a etapa
 `1/2` (DDL) e a etapa `2/2` (exportação/importação).
 
-O botão **Executar fluxo CLI**, ao lado de **Copiar fluxo CLI**, salva a
-configuração e inicia esse mesmo ciclo pela GUI. Nesse caminho, as senhas já
-digitadas nas conexões são repassadas somente ao ambiente do processo filho e
-não são solicitadas novamente. Salvar ou recarregar o formulário durante essa
-ação preserva os campos mascarados apenas na memória da GUI.
+Ao usar **Salvar configuração para GUI/CLI** com senhas preenchidas, a GUI
+oferece a criação de um pacote pontual não interativo. Se confirmado, cada senha
+é criptografada pelo DPAPI no escopo da máquina Windows; o JSON nunca contém a
+senha em texto ou hash. O fluxo sugerido executa DDL e carga sem solicitar
+credenciais e exclui o JSON somente depois de ambos terminarem com código zero.
+Falha, resultado parcial ou cancelamento preservam o pacote para retomada. Como
+o escopo DPAPI é a máquina, o arquivo deve permanecer na mesma máquina e ter
+ACL de leitura limitada à identidade executora (por exemplo, SQL Server Agent)
+e aos administradores. Escolher **Não** mantém o JSON sem senha e a solicitação
+mascarada no terminal.
 
 O botão `...` ao lado de **Diretório dos scripts** abre diretamente em
 `Local\BulkFlow\ddl` e permite selecionar outra pasta. O caminho absoluto

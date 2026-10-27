@@ -256,6 +256,14 @@ Configure apenas uma referência a segredo no JSON (`prompt`, `env` ou
 O último provedor é exclusivo do Windows. Variável de ambiente não equivale a
 criptografia; limite sua vida útil e remova-a após a execução.
 
+Pacotes pontuais salvos pela GUI podem usar `windows_dpapi`. Nesse caso, a
+referência é um payload criptografado no escopo da máquina Windows e todas as
+conexões com senha devem usar esse provedor. O fluxo completo sugerido pela GUI
+remove o JSON somente após DDL e carga concluírem com código zero; falha,
+resultado parcial ou cancelamento preservam o pacote. O CLI agendado precisa
+executar na mesma máquina que criou o pacote, e a ACL do JSON deve permitir
+leitura apenas ao executor e aos administradores.
+
 No laboratório, os três endpoints usam `u684`, mas não reutilizam a mesma
 referência por contrato: use `BCP_SOURCE_SQL_PASSWORD`,
 `BCP_BRONZE_SQL_PASSWORD` e `BCP_LANDING_SQL_PASSWORD`. Em ambientes reais,
