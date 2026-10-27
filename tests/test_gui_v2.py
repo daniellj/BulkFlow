@@ -871,21 +871,117 @@ class GuiConstructionTests(unittest.TestCase):
             "config_transferencia_s_999_qa.json",
         )
 
-    def test_cli_command_uses_saved_gui_configuration(self):
+    def test_cli_workflow_applies_idempotent_ddl_before_sequential_load(self):
         try:
-            from bcp_engine.gui import build_cli_run_command
+            from bcp_engine.gui import build_cli_workflow_command
         except ImportError as error:  # pragma: no cover
             self.skipTest(f"Dependência gráfica indisponível: {error}")
 
         path = ROOT / "Local" / "BulkFlow" / "config_transferencia_s999.json"
-        load = build_cli_run_command(path, execute_import=True)
-        self.assertIn("BulkFlowCLI.exe run --config", load)
+        ddl_output = ROOT / "Local" / "BulkFlow" / "ddl"
+        load = build_cli_workflow_command(
+            path,
+            execute_import=True,
+            ddl_area="both",
+            ddl_output=ddl_output,
+            cli_directory=ROOT / "release",
+        )
+        self.assertTrue(load.startswith("cd "))
+        self.assertIn(str((ROOT / "release").resolve()), load)
+        self.assertIn(r"; .\BulkFlowCLI.exe ddl --config", load)
+        self.assertIn("--area both", load)
+        self.assertIn("--apply --confirm", load)
+        self.assertIn("if ($LASTEXITCODE -eq 0)", load)
+        self.assertIn(r".\BulkFlowCLI.exe run --config", load)
+        self.assertLess(load.index(" ddl "), load.index(" run "))
         self.assertIn(str(path.resolve()), load)
+        self.assertIn(str(ddl_output.resolve()), load)
         self.assertIn("--confirm-load", load)
-        export = build_cli_run_command(path, execute_import=False)
+        export = build_cli_workflow_command(
+            path,
+            execute_import=False,
+            ddl_area="bronze",
+            ddl_output=ddl_output,
+            cli_directory=ROOT / "release",
+        )
         self.assertIn("--export-only", export)
         self.assertNotIn("--confirm-load", export)
-        self.assertIn("Salve a configuração", build_cli_run_command(None, execute_import=True))
+        self.assertIn(
+            "Salve a configuração",
+            build_cli_workflow_command(
+                None,
+                execute_import=True,
+                ddl_area="both",
+                ddl_output=ddl_output,
+            ),
+        )
+        self.assertIn(
+            "Nenhum destino habilitado",
+            build_cli_workflow_command(
+                path,
+                execute_import=True,
+                ddl_area=None,
+                ddl_output=ddl_output,
+            ),
+        )
+
+    def test_save_dialog_opens_at_bulkflow_local_config_directory(self):
+        try:
+            from bcp_engine.gui import BcpGuiApplication, RUNTIME_CONFIG_DIRECTORY
+        except ImportError as error:  # pragma: no cover
+            self.skipTest(f"Dependência gráfica indisponível: {error}")
+
+        application = object.__new__(BcpGuiApplication)
+        application.busy = False
+        application.root = object()
+        application.current_config_path = None
+        application._collect_config = Mock(
+            return_value={"bronze_destination": {"schema": "s999"}}
+        )
+        with patch(
+            "bcp_engine.gui.filedialog.asksaveasfilename", return_value=""
+        ) as save_dialog:
+            self.assertFalse(application._save_configuration())
+        self.assertEqual(
+            save_dialog.call_args.kwargs["initialdir"],
+            str(RUNTIME_CONFIG_DIRECTORY),
+        )
+        self.assertEqual(
+            save_dialog.call_args.kwargs["initialfile"],
+            "config_transferencia_s999.json",
+        )
+
+    def test_ddl_directory_picker_opens_at_local_ddl_and_allows_override(self):
+        try:
+            from bcp_engine.gui import BcpGuiApplication, RUNTIME_DDL_DIRECTORY
+        except ImportError as error:  # pragma: no cover
+            self.skipTest(f"Dependência gráfica indisponível: {error}")
+
+        class Value:
+            def __init__(self, value):
+                self.value = value
+
+            def get(self):
+                return self.value
+
+            def set(self, value):
+                self.value = value
+
+        application = object.__new__(BcpGuiApplication)
+        application.root = object()
+        application.ddl_output = Value(str(RUNTIME_DDL_DIRECTORY))
+        selected = RUNTIME_DDL_DIRECTORY.parent / "ddl-escolhido"
+        with patch(
+            "bcp_engine.gui.filedialog.askdirectory",
+            return_value=str(selected),
+        ) as directory_dialog:
+            application._select_ddl_output_directory()
+        self.assertEqual(
+            directory_dialog.call_args.kwargs["initialdir"],
+            str(RUNTIME_DDL_DIRECTORY.resolve()),
+        )
+        self.assertFalse(directory_dialog.call_args.kwargs["mustexist"])
+        self.assertEqual(application.ddl_output.get(), str(selected.resolve()))
 
     def test_export_only_confirmation_explains_destination_and_complete_export(self):
         try:

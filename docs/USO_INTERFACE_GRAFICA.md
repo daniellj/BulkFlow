@@ -465,9 +465,25 @@ volume is the constraint. See
 
 **Abrir** uses the same V2 JSON as the CLI. **Validar configuração** does not
 connect to SQL. **Salvar** uses atomic publication and writes only a validated
-configuration.
+configuration. The save dialog opens directly in `Local\BulkFlow\config` but
+allows another directory to be selected. The suggested CLI workflow contains
+the absolute path of the JSON that was actually saved.
 
 The generated file can be reused without conversion:
+
+Below **Manifesto / Diretório**, the GUI shows a one-line PowerShell **Fluxo
+completo sugerido para CLI**. It first runs
+`.\BulkFlowCLI.exe ddl --apply --confirm` to apply idempotent SQL scripts to
+every enabled destination whose role permits structure. Only when that command
+returns exit code zero does it run `.\BulkFlowCLI.exe run --confirm-load`. The
+engine preserves strict ordering: all batches for one table finish before the
+next table starts. **Copiar fluxo CLI** copies the complete line. It starts
+with `cd` to the executable directory, uses the `.\` prefix for both
+executables, and references the saved JSON by its absolute path.
+
+The `...` button beside **Diretório dos scripts** opens directly in
+`Local\BulkFlow\ddl` and allows another directory to be selected. The chosen
+absolute path is used by `ddl --output` in the suggested workflow.
 
 ```powershell
 .\release\BulkFlowCLI.exe prerequisites --config .\config.gui.json

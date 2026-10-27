@@ -144,9 +144,9 @@ def runtime_config_directory(project_root: Path | None = None) -> Path:
     """Return the default directory for GUI configuration files."""
 
     if project_root is not None:
-        return Path(project_root).resolve()
+        return runtime_data_root(project_root) / "config"
     if not is_frozen_application():
-        return Path(__file__).resolve().parents[1]
+        return runtime_data_root() / "config"
     return runtime_data_root() / "config"
 
 

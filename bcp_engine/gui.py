@@ -84,6 +84,26 @@ RUNTIME_DDL_DIRECTORY = runtime_ddl_directory()
 RUNTIME_CONFIG_DIRECTORY = runtime_config_directory()
 
 
+def _cli_executable_directory() -> Path:
+    """Return the directory containing the GUI/CLI release executables."""
+
+    if bool(getattr(sys, "frozen", False)):
+        executable_directory = Path(sys.executable).resolve().parent
+        project_candidate = executable_directory.parent
+        if (
+            executable_directory.name.casefold() == "release"
+            and (project_candidate / "bcp_bronze.py").is_file()
+            and (project_candidate / "templates").is_dir()
+        ):
+            return executable_directory
+        return executable_directory
+    project_root = Path(__file__).resolve().parents[1]
+    return project_root / "release"
+
+
+CLI_EXECUTABLE_DIRECTORY = _cli_executable_directory()
+
+
 class _ScrollableTab(ttk.Frame):
     """Notebook page with viewport-aware horizontal and vertical scrolling."""
 
@@ -240,12 +260,49 @@ def build_process_flow_description(
     return "\n↓\n".join(steps) + "\n\n" + notes
 
 
-def build_cli_run_command(config_path: Path | None, *, execute_import: bool) -> str:
+def build_cli_workflow_command(
+    config_path: Path | None,
+    *,
+    execute_import: bool,
+    ddl_area: str | None,
+    ddl_output: str | Path,
+    cli_directory: str | Path = CLI_EXECUTABLE_DIRECTORY,
+) -> str:
+    """Build a fail-fast PowerShell workflow for idempotent DDL then load."""
+
     if config_path is None:
         return "Salve a configuração para gerar o comando da CLI."
-    arguments = ["BulkFlowCLI.exe", "run", "--config", str(config_path.resolve())]
-    arguments.append("--confirm-load" if execute_import else "--export-only")
-    return subprocess.list2cmdline(arguments)
+    if ddl_area not in {"bronze", "landing", "both"}:
+        return (
+            "Nenhum destino habilitado permite criar tabelas. Configure uma função "
+            "com estrutura antes de gerar o fluxo da CLI."
+        )
+    resolved_config = str(config_path.resolve())
+    resolved_output = str(Path(ddl_output).expanduser().resolve())
+    change_directory = subprocess.list2cmdline(
+        ["cd", str(Path(cli_directory).expanduser().resolve())]
+    )
+    ddl = subprocess.list2cmdline(
+        [
+            r".\BulkFlowCLI.exe",
+            "ddl",
+            "--config",
+            resolved_config,
+            "--area",
+            ddl_area,
+            "--output",
+            resolved_output,
+            "--apply",
+            "--confirm",
+        ]
+    )
+    run_arguments = [r".\BulkFlowCLI.exe", "run", "--config", resolved_config]
+    run_arguments.append("--confirm-load" if execute_import else "--export-only")
+    run = subprocess.list2cmdline(run_arguments)
+    return (
+        f"{change_directory}; {ddl}; "
+        f"if ($LASTEXITCODE -eq 0) {{ {run} }}"
+    )
 
 
 def build_run_confirmation(*, execute_import: bool, destination_database: str) -> str:
@@ -482,7 +539,11 @@ FIELD_HELP: dict[str, str] = {
         "materializa a homônima da Origem e mantém apenas a coluna técnica ou de "
         "metadados definida pelo perfil do destino."
     ),
-    "ddl_output": "Diretório em que os scripts DDL gerados serão gravados.",
+    "ddl_output": (
+        "Diretório em que os scripts DDL idempotentes serão gravados. O padrão é "
+        "Local\\BulkFlow\\ddl; use o botão ... para escolher outra pasta. O caminho "
+        "absoluto selecionado será incluído no fluxo sugerido da CLI."
+    ),
     "execution_id": "UUID usado para consultar ou retomar uma execução existente.",
     "manifest_path": "Manifesto, índice ou diretório para uma importação independente no destino de dados.",
 }
@@ -1458,6 +1519,9 @@ class BcpGuiApplication:
             "write", lambda *_args: self._update_collision_strategy_state()
         )
         self.ddl_area.trace_add("write", lambda *_args: self._update_ddl_section_state())
+        self.ddl_output.trace_add(
+            "write", lambda *_args: self._update_contextual_guidance()
+        )
 
     def _update_ddl_area_default(self) -> None:
         create_variable = getattr(self, "global_variables", {}).get(
@@ -1622,10 +1686,31 @@ class BcpGuiApplication:
             f"Próxima ação: validar e planejar ({mode})"
         )
         self._update_process_flow_card_styles(**flow_options)
+        ddl_areas = [
+            area
+            for key, area in (
+                ("bronze_destination", "bronze"),
+                ("landing_destination", "landing"),
+            )
+            if bool(self.endpoint_enabled[key].get())
+            and DESTINATION_ROLE_LABELS.get(
+                str(self.endpoint_variables[key]["role"].get())
+            )
+            in {"structure_and_data", "structure_only"}
+        ]
+        cli_ddl_area = (
+            "both"
+            if len(ddl_areas) == 2
+            else ddl_areas[0]
+            if ddl_areas
+            else None
+        )
         self.cli_command_proposal.set(
-            build_cli_run_command(
+            build_cli_workflow_command(
                 self.current_config_path,
                 execute_import=bool(self.global_variables["execute_import"].get()),
+                ddl_area=cli_ddl_area,
+                ddl_output=self.ddl_output.get(),
             )
         )
 
@@ -2415,6 +2500,18 @@ class BcpGuiApplication:
         selected = filedialog.askdirectory(parent=self.root, title="Selecionar diretório")
         if selected:
             variable.set(selected)
+
+    def _select_ddl_output_directory(self) -> None:
+        current = Path(str(self.ddl_output.get())).expanduser()
+        initial = current if current.is_dir() else RUNTIME_DDL_DIRECTORY
+        selected = filedialog.askdirectory(
+            parent=self.root,
+            title="Selecionar diretório para os scripts DDL",
+            initialdir=str(initial.resolve()),
+            mustexist=False,
+        )
+        if selected:
+            self.ddl_output.set(str(Path(selected).resolve()))
 
     def _build_connections_tab(self) -> None:
         notebook = ttk.Notebook(self.connections_tab)
@@ -3293,21 +3390,38 @@ class BcpGuiApplication:
         self._register_default_widget(
             ddl_output, self.ddl_output, str(RUNTIME_DDL_DIRECTORY), "entry"
         )
+        select_ddl_output = ttk.Button(
+            ddl,
+            text="...",
+            width=4,
+            command=self._select_ddl_output_directory,
+            bootstyle="secondary-outline",
+        )
+        select_ddl_output.grid(row=0, column=5, padx=(0, 4), pady=4)
+        ToolTip(
+            select_ddl_output,
+            text=(
+                "Escolha a pasta dos scripts DDL. O seletor abre por padrão em "
+                f"{RUNTIME_DDL_DIRECTORY}."
+            ),
+            wraplength=600,
+        )
         generate = ttk.Button(
             ddl, text="Gerar DDL", command=lambda: self._ddl(False), bootstyle="secondary"
         )
         generate.grid(
-            row=0, column=5, padx=4, pady=4
+            row=0, column=6, padx=4, pady=4
         )
         apply_ddl = ttk.Button(
             ddl, text="Aplicar DDL", command=lambda: self._ddl(True), bootstyle="warning"
         )
         apply_ddl.grid(
-            row=0, column=6, padx=4, pady=4
+            row=0, column=7, padx=4, pady=4
         )
         self.ddl_non_area_controls = [
             self.ddl_collision_checkbutton,
             ddl_output,
+            select_ddl_output,
             generate,
             apply_ddl,
         ]
@@ -3316,7 +3430,7 @@ class BcpGuiApplication:
             textvariable=self.ddl_none_warning,
             bootstyle="danger",
             wraplength=1130,
-        ).grid(row=1, column=0, columnspan=7, sticky="w", padx=4, pady=(2, 0))
+        ).grid(row=1, column=0, columnspan=8, sticky="w", padx=4, pady=(2, 0))
         self._update_ddl_section_state()
 
         transfer = ttk.Labelframe(
@@ -3387,7 +3501,7 @@ class BcpGuiApplication:
         cli_hint = ttk.Frame(transfer)
         cli_hint.grid(row=2, column=0, columnspan=6, sticky="ew", pady=(2, 4))
         cli_hint.columnconfigure(1, weight=1)
-        ttk.Label(cli_hint, text="Comando sugerido para CLI").grid(
+        ttk.Label(cli_hint, text="Fluxo completo sugerido para CLI").grid(
             row=0, column=0, sticky="w", padx=4
         )
         cli_command = ttk.Entry(
@@ -3396,17 +3510,27 @@ class BcpGuiApplication:
             state="readonly",
         )
         cli_command.grid(row=0, column=1, sticky="ew", padx=4)
-        cli_tooltip = ToolTip(cli_command, text=self.cli_command_proposal.get())
+        cli_tooltip = ToolTip(
+            cli_command,
+            text=(
+                "Aplica primeiro o DDL idempotente. A carga sequencial, uma tabela "
+                "por vez, começa somente quando o comando DDL termina com código zero."
+            ),
+            wraplength=700,
+        )
         cli_command.bind(
             "<Enter>",
             lambda _event, tip=cli_tooltip: setattr(
-                tip, "text", self.cli_command_proposal.get()
+                tip,
+                "text",
+                "DDL idempotente seguido da carga tabela por tabela:\n"
+                + self.cli_command_proposal.get(),
             ),
             add="+",
         )
         ttk.Button(
             cli_hint,
-            text="Copiar comando",
+            text="Copiar fluxo CLI",
             command=self._copy_cli_command,
             bootstyle="outline-secondary",
         ).grid(row=0, column=2, padx=4)
@@ -3698,16 +3822,21 @@ class BcpGuiApplication:
 
     def _copy_cli_command(self) -> None:
         command = self.cli_command_proposal.get().strip()
-        if not command or self.current_config_path is None:
+        if (
+            not command
+            or self.current_config_path is None
+            or command.startswith("Nenhum destino habilitado")
+        ):
             messagebox.showinfo(
-                "Comando da CLI",
-                "Salve a configuração antes de copiar o comando da CLI.",
+                "Fluxo da CLI",
+                command
+                or "Salve a configuração antes de copiar o fluxo da CLI.",
                 parent=self.root,
             )
             return
         self.root.clipboard_clear()
         self.root.clipboard_append(command)
-        self.operation_status.set("Comando da CLI copiado")
+        self.operation_status.set("Fluxo completo da CLI copiado")
 
     def _endpoint_form_values(self, key: str) -> dict[str, Any]:
         variables = self.endpoint_variables[key]

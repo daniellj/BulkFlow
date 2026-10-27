@@ -28,7 +28,7 @@ class RuntimePathTests(unittest.TestCase):
             )
             self.assertEqual(runtime_export_directory(root), expected / "bcp-data")
             self.assertEqual(runtime_ddl_directory(root), expected / "ddl")
-            self.assertEqual(runtime_config_directory(root), root.resolve())
+            self.assertEqual(runtime_config_directory(root), expected / "config")
 
     def test_default_source_directories_are_created_idempotently(self):
         with tempfile.TemporaryDirectory() as temporary:

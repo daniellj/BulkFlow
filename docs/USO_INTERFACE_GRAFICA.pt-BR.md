@@ -465,8 +465,26 @@ Consulte [Falhas, checkpoints e retomada](FALHAS_E_RETOMADA.pt-BR.md).
 
 **Abrir** usa o mesmo JSON V2 da CLI. **Validar configuração** não conecta a
 SQL. **Salvar** usa publicação atômica e só grava uma configuração validada.
+O seletor abre diretamente em `Local\BulkFlow\config`, mas permite escolher
+outra pasta. O caminho absoluto do JSON efetivamente salvo aparece no fluxo
+sugerido da CLI.
 
 O arquivo gerado pode ser reutilizado sem conversão:
+
+Logo abaixo de **Manifesto / Diretório**, o GUI apresenta um **Fluxo completo
+sugerido para CLI** em uma única linha PowerShell. Ele executa primeiro
+`.\BulkFlowCLI.exe ddl --apply --confirm` para aplicar os scripts SQL
+idempotentes em todos os destinos habilitados cuja função permita estrutura.
+Somente quando esse comando retorna código zero, executa
+`.\BulkFlowCLI.exe run --confirm-load`. O motor mantém a ordem estrita: conclui
+os lotes de uma tabela antes de iniciar a tabela seguinte. O botão **Copiar
+fluxo CLI** copia a linha completa. Ela começa com `cd` para a pasta
+que contém os executáveis, usa `.\` antes de ambos e referencia o JSON salvo
+por seu caminho absoluto.
+
+O botão `...` ao lado de **Diretório dos scripts** abre diretamente em
+`Local\BulkFlow\ddl` e permite selecionar outra pasta. O caminho absoluto
+escolhido é usado em `ddl --output` no fluxo sugerido.
 
 ```powershell
 .\release\BulkFlowCLI.exe prerequisites --config .\config.gui.json
